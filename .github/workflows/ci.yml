@@ -1,0 +1,54 @@
+name: ThreadProof CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Web typecheck
+        run: pnpm --filter @threadproof/web typecheck
+
+      - name: Web production build
+        run: pnpm --filter @threadproof/web build
+
+      - name: Smart-contract compile
+        run: pnpm --filter @threadproof/contracts compile
+
+      - name: Circuit invariant shape guard
+        run: pnpm --filter @threadproof/circuits test
+
+      - name: Reject committed secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '(^|/)(\.env($|\.)|.*\.(pem|key|p12|jks)$|secrets/)' | grep -v '\.env\.example$'; then
+            echo "Potential secret file is tracked by Git."
+            exit 1
+          fi
