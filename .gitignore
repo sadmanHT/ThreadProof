@@ -1,0 +1,44 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+.next/
+dist/
+build/
+coverage/
+artifacts/
+cache/
+typechain-types/
+
+# generated ZK artifacts
+packages/circuits/artifacts/
+packages/circuits/ptau/
+packages/circuits/keys/
+packages/circuits/witnesses/
+
+# secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+secrets/
+
+# Besu runtime data
+infrastructure/besu/data/
+infrastructure/besu/**/data/
+infrastructure/besu/**/keys/
+
+# Supabase local state
+supabase/.branches/
+supabase/.temp/
+
+# tooling
+.vercel/
+.turbo/
+.DS_Store
+.idea/
+.vscode/
