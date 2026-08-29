@@ -27,7 +27,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
@@ -40,6 +39,9 @@ jobs:
 
       - name: Smart-contract compile
         run: pnpm --filter @threadproof/contracts compile
+
+      - name: Smart-contract tests
+        run: pnpm --filter @threadproof/contracts test
 
       - name: Circuit invariant shape guard
         run: pnpm --filter @threadproof/circuits test
