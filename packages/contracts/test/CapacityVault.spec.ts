@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import { ethers, network } from "hardhat";
 
 const ZERO_A: [bigint, bigint] = [0n, 0n];
 const ZERO_B: [[bigint, bigint], [bigint, bigint]] = [[0n, 0n], [0n, 0n]];
@@ -56,11 +56,11 @@ describe("CapacityVault", function () {
     const orders = await OrderRegistry.deploy(await registry.getAddress());
     await orders.waitForDeployment();
 
-    const network = await ethers.provider.getNetwork();
+    const networkInfo = await ethers.provider.getNetwork();
     const orderDomain = {
       name: "ThreadProof OrderRegistry",
       version: "1",
-      chainId: network.chainId,
+      chainId: networkInfo.chainId,
       verifyingContract: await orders.getAddress(),
     };
 
@@ -249,6 +249,40 @@ describe("CapacityVault", function () {
     const state = await f.vault.getCapacityState(f.factoryId, f.periodId, f.processId);
     expect(state.activeCommitment).to.equal(2002n);
     expect(await f.vault.usedNullifiers(3003n)).to.equal(true);
+  });
+
+  it("serializes two valid same-state spends so exactly one finalizes", async function () {
+    const f = await fixture();
+    const spendA = request(f, f.initialCommitment, 2002n, 3003n, "concurrent-order-a");
+    const spendB = request(f, f.initialCommitment, 4004n, 5005n, "concurrent-order-b");
+    await registerOrder(f, spendA.orderId, spendA.orderCommitment);
+    await registerOrder(f, spendB.orderId, spendB.orderCommitment);
+
+    await network.provider.send("evm_setAutomine", [false]);
+    try {
+      const firstNonce = await f.factorySigner.getNonce("pending");
+      const txA = await f.vault
+        .connect(f.factorySigner)
+        .spendCapacity(spendA, ZERO_A, ZERO_B, ZERO_C, { gasLimit: 1_500_000, nonce: firstNonce });
+      const txB = await f.vault
+        .connect(f.factorySigner)
+        .spendCapacity(spendB, ZERO_A, ZERO_B, ZERO_C, { gasLimit: 1_500_000, nonce: firstNonce + 1 });
+
+      await network.provider.send("evm_mine");
+
+      const receiptA = await ethers.provider.getTransactionReceipt(txA.hash);
+      const receiptB = await ethers.provider.getTransactionReceipt(txB.hash);
+      expect(receiptA).to.not.equal(null);
+      expect(receiptB).to.not.equal(null);
+      expect([receiptA!.status, receiptB!.status].sort()).to.deep.equal([0, 1]);
+
+      const state = await f.vault.getCapacityState(f.factoryId, f.periodId, f.processId);
+      expect([2002n, 4004n]).to.include(state.activeCommitment);
+      const usedCount = Number(await f.vault.usedNullifiers(3003n)) + Number(await f.vault.usedNullifiers(5005n));
+      expect(usedCount).to.equal(1);
+    } finally {
+      await network.provider.send("evm_setAutomine", [true]);
+    }
   });
 
   it("rejects a second spend of a stale capacity commitment even if the verifier returns true", async function () {
