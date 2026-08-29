@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {IThreadProofRegistry} from "./interfaces/IThreadProofRegistry.sol";
+import {ThreadProofEIP712} from "./utils/ThreadProofEIP712.sol";
 
 /// @title OrderRegistry
 /// @notice Canonical buyer-authorized order versions for ThreadProof capacity and subcontract workflows.
 /// @dev Commercial payloads remain private. The chain stores only commitments, policy context and signed version history.
-contract OrderRegistry is EIP712 {
+contract OrderRegistry is ThreadProofEIP712 {
     uint8 public constant BUYER_ORGANIZATION_ROLE = 1;
     uint8 public constant FACTORY_ORGANIZATION_ROLE = 2;
 
@@ -110,7 +109,7 @@ contract OrderRegistry is EIP712 {
         address buyerSigner
     );
 
-    constructor(address organizationRegistryAddress) EIP712("ThreadProof OrderRegistry", "1") {
+    constructor(address organizationRegistryAddress) ThreadProofEIP712("ThreadProof OrderRegistry", "1") {
         if (organizationRegistryAddress == address(0)) revert InvalidAddress();
         organizationRegistry = IThreadProofRegistry(organizationRegistryAddress);
     }
@@ -134,8 +133,9 @@ contract OrderRegistry is EIP712 {
             revert InvalidNonce(expectedNonce, authorization.nonce);
         }
 
-        bytes32 digest = _hashTypedDataV4(_orderVersionStructHash(authorization));
-        address signer = ECDSA.recover(digest, buyerSignature);
+        bytes32 structHash = _orderVersionStructHash(authorization);
+        bytes32 digest = _hashTypedDataV4(structHash);
+        address signer = _recoverTypedDataSigner(structHash, buyerSignature);
         if (organizationRegistry.organizationOfAccount(signer) != authorization.buyerOrganizationId) {
             revert UnauthorizedBuyerSigner(authorization.buyerOrganizationId, signer);
         }
@@ -231,7 +231,7 @@ contract OrderRegistry is EIP712 {
                 authorization.deadline
             )
         );
-        address signer = ECDSA.recover(_hashTypedDataV4(structHash), buyerSignature);
+        address signer = _recoverTypedDataSigner(structHash, buyerSignature);
         if (organizationRegistry.organizationOfAccount(signer) != authorization.buyerOrganizationId) {
             revert UnauthorizedBuyerSigner(authorization.buyerOrganizationId, signer);
         }
