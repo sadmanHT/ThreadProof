@@ -149,6 +149,11 @@ contract ThreadProofRegistry is AccessControl {
         return organization;
     }
 
+    /// @notice Compact role accessor for protocol contracts that need business-role authorization.
+    function roleOf(bytes32 organizationId) external view returns (uint8) {
+        return uint8(_requireOrganization(organizationId).role);
+    }
+
     function isActive(bytes32 organizationId) external view returns (bool) {
         return _organizations[organizationId].status == OrganizationStatus.Active;
     }
