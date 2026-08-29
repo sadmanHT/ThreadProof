@@ -6,7 +6,7 @@
     "compile": "hardhat compile",
     "test": "hardhat test",
     "clean": "hardhat clean",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "hardhat compile && tsc --noEmit",
     "deploy:local": "hardhat run scripts/deploy-local.ts"
   },
   "dependencies": {
