@@ -15,6 +15,7 @@ contract CapacityVault is AccessControl, Pausable {
     bytes32 public constant RELAYER_ROLE = keccak256("RELAYER_ROLE");
     bytes32 public constant VERIFIER_ADMIN_ROLE = keccak256("VERIFIER_ADMIN_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+    bytes32 public constant CAPACITY_CREDENTIAL_TYPE = keccak256("CAPACITY_CREDENTIAL");
 
     // BN254 scalar field used by Groth16/Circom public signals.
     uint256 public constant SNARK_SCALAR_FIELD =
@@ -57,6 +58,7 @@ contract CapacityVault is AccessControl, Pausable {
     error StaleCapacityState(uint256 expected, uint256 supplied);
     error NullifierAlreadyUsed(uint256 nullifier);
     error InvalidCredential(bytes32 credentialId);
+    error InvalidCredentialBinding(bytes32 credentialId, bytes32 expectedScopeHash);
     error PolicyMismatch(bytes32 expected, bytes32 supplied);
     error CircuitVersionMismatch(uint32 expected, uint32 supplied);
     error UnknownVerifier(uint32 circuitVersion);
@@ -125,7 +127,24 @@ contract CapacityVault is AccessControl, Pausable {
         _requireFieldElement(initialCommitment);
         if (initialCommitment == 0) revert InvalidCommitment();
         if (!organizationRegistry.isActive(factoryOrganizationId)) revert InactiveFactory(factoryOrganizationId);
-        if (!credentialRegistry.isCredentialActive(capacityCredentialId)) revert InvalidCredential(capacityCredentialId);
+
+        bytes32 expectedScopeHash = capacityCredentialScopeHash(
+            factoryOrganizationId,
+            periodId,
+            processId,
+            policyHash,
+            initialCommitment
+        );
+        if (
+            !credentialRegistry.isCredentialValidFor(
+                capacityCredentialId,
+                factoryOrganizationId,
+                CAPACITY_CREDENTIAL_TYPE,
+                expectedScopeHash
+            )
+        ) {
+            revert InvalidCredentialBinding(capacityCredentialId, expectedScopeHash);
+        }
         if (address(verifiers[circuitVersion]) == address(0)) revert UnknownVerifier(circuitVersion);
 
         bytes32 key = capacityStateKey(factoryOrganizationId, periodId, processId);
@@ -240,6 +259,18 @@ contract CapacityVault is AccessControl, Pausable {
         bytes32 processId
     ) public pure returns (bytes32) {
         return keccak256(abi.encode(factoryOrganizationId, periodId, processId));
+    }
+
+    /// @notice Deterministic capacity-credential scope enforced at initial certification.
+    /// @dev Binding includes the initial commitment so one credential cannot certify a different opening.
+    function capacityCredentialScopeHash(
+        bytes32 factoryOrganizationId,
+        bytes32 periodId,
+        bytes32 processId,
+        bytes32 policyHash,
+        uint256 initialCommitment
+    ) public pure returns (bytes32) {
+        return keccak256(abi.encode(factoryOrganizationId, periodId, processId, policyHash, initialCommitment));
     }
 
     function pause() external onlyRole(PAUSER_ROLE) {
