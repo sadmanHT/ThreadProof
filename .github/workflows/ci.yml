@@ -46,6 +46,9 @@ jobs:
       - name: Smart-contract tests
         run: pnpm --filter @threadproof/contracts test
 
+      - name: Local contract deployment smoke test
+        run: pnpm --filter @threadproof/contracts deploy:local
+
       - name: Circuit invariant shape guard
         run: pnpm --filter @threadproof/circuits test
 
