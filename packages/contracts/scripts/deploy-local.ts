@@ -1,23 +1,24 @@
 import { ethers, network } from "hardhat";
 
 async function main() {
-  const [deployer] = await ethers.getSigners();
-  if (!deployer) {
-    throw new Error("No deployer signer is configured for this Hardhat network");
+  const accounts = (await network.provider.send("eth_accounts")) as string[];
+  const deployerAddress = accounts[0];
+  if (!deployerAddress) {
+    throw new Error("No deployer account is configured for this Hardhat network");
   }
 
   console.log(`Deploying ThreadProof local contracts on ${network.name}`);
-  console.log(`Deployer: ${deployer.address}`);
+  console.log(`Deployer: ${deployerAddress}`);
   console.warn(
     "DEV ONLY: this script deploys MockCapacitySpendVerifier. It is not a production ZK verifier."
   );
 
   const Registry = await ethers.getContractFactory("ThreadProofRegistry");
-  const registry = await Registry.deploy(deployer.address);
+  const registry = await Registry.deploy(deployerAddress);
   await registry.waitForDeployment();
 
   const CredentialRegistry = await ethers.getContractFactory("CredentialRegistry");
-  const credentials = await CredentialRegistry.deploy(deployer.address, await registry.getAddress());
+  const credentials = await CredentialRegistry.deploy(deployerAddress, await registry.getAddress());
   await credentials.waitForDeployment();
 
   const OrderRegistry = await ethers.getContractFactory("OrderRegistry");
@@ -30,7 +31,7 @@ async function main() {
 
   const CapacityVault = await ethers.getContractFactory("CapacityVault");
   const capacityVault = await CapacityVault.deploy(
-    deployer.address,
+    deployerAddress,
     await credentials.getAddress(),
     await orders.getAddress(),
     await registry.getAddress()
@@ -40,11 +41,11 @@ async function main() {
   const circuitVersion = 1;
   await (await capacityVault.registerVerifier(circuitVersion, await mockVerifier.getAddress())).wait();
 
-  const chain = await ethers.provider.getNetwork();
+  const chainIdHex = (await network.provider.send("eth_chainId")) as string;
   const deployment = {
     network: network.name,
-    chainId: chain.chainId.toString(),
-    deployer: deployer.address,
+    chainId: BigInt(chainIdHex).toString(),
+    deployer: deployerAddress,
     contracts: {
       ThreadProofRegistry: await registry.getAddress(),
       CredentialRegistry: await credentials.getAddress(),
