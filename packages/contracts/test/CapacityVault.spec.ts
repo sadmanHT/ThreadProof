@@ -5,17 +5,44 @@ const ZERO_A: [bigint, bigint] = [0n, 0n];
 const ZERO_B: [[bigint, bigint], [bigint, bigint]] = [[0n, 0n], [0n, 0n]];
 const ZERO_C: [bigint, bigint] = [0n, 0n];
 
+const ORDER_TYPES = {
+  OrderVersion: [
+    { name: "orderId", type: "bytes32" },
+    { name: "buyerOrganizationId", type: "bytes32" },
+    { name: "primaryFactoryOrganizationId", type: "bytes32" },
+    { name: "version", type: "uint32" },
+    { name: "previousVersionHash", type: "bytes32" },
+    { name: "orderCommitment", type: "uint256" },
+    { name: "policyHash", type: "bytes32" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint64" },
+  ],
+};
+
+const CANCEL_TYPES = {
+  CancelOrder: [
+    { name: "orderId", type: "bytes32" },
+    { name: "buyerOrganizationId", type: "bytes32" },
+    { name: "expectedVersion", type: "uint32" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint64" },
+  ],
+};
+
 describe("CapacityVault", function () {
   async function fixture() {
-    const [admin, factorySigner, auditorSigner, attacker, otherFactorySigner] = await ethers.getSigners();
+    const [admin, buyerSigner, factorySigner, auditorSigner, attacker, otherFactorySigner, relayer] =
+      await ethers.getSigners();
 
     const Registry = await ethers.getContractFactory("ThreadProofRegistry");
     const registry = await Registry.deploy(admin.address);
     await registry.waitForDeployment();
 
+    const buyerId = ethers.keccak256(ethers.toUtf8Bytes("buyer-one"));
     const factoryId = ethers.keccak256(ethers.toUtf8Bytes("factory-alpha"));
     const otherFactoryId = ethers.keccak256(ethers.toUtf8Bytes("factory-beta"));
     const auditorId = ethers.keccak256(ethers.toUtf8Bytes("auditor-one"));
+    await registry.registerOrganization(buyerId, buyerSigner.address, 1, ethers.ZeroHash);
     await registry.registerOrganization(factoryId, factorySigner.address, 2, ethers.ZeroHash);
     await registry.registerOrganization(otherFactoryId, otherFactorySigner.address, 2, ethers.ZeroHash);
     await registry.registerOrganization(auditorId, auditorSigner.address, 3, ethers.ZeroHash);
@@ -25,12 +52,29 @@ describe("CapacityVault", function () {
     await credentials.waitForDeployment();
     await credentials.grantRole(await credentials.ISSUER_ROLE(), auditorSigner.address);
 
+    const OrderRegistry = await ethers.getContractFactory("OrderRegistry");
+    const orders = await OrderRegistry.deploy(await registry.getAddress());
+    await orders.waitForDeployment();
+
+    const network = await ethers.provider.getNetwork();
+    const orderDomain = {
+      name: "ThreadProof OrderRegistry",
+      version: "1",
+      chainId: network.chainId,
+      verifyingContract: await orders.getAddress(),
+    };
+
     const MockVerifier = await ethers.getContractFactory("MockCapacitySpendVerifier");
     const verifier = await MockVerifier.deploy();
     await verifier.waitForDeployment();
 
     const Vault = await ethers.getContractFactory("CapacityVault");
-    const vault = await Vault.deploy(admin.address, await credentials.getAddress(), await registry.getAddress());
+    const vault = await Vault.deploy(
+      admin.address,
+      await credentials.getAddress(),
+      await orders.getAddress(),
+      await registry.getAddress()
+    );
     await vault.waitForDeployment();
     await vault.registerVerifier(1, await verifier.getAddress());
     await vault.grantRole(await vault.CERTIFIER_ROLE(), auditorSigner.address);
@@ -73,14 +117,19 @@ describe("CapacityVault", function () {
 
     return {
       admin,
+      buyerSigner,
       factorySigner,
       auditorSigner,
       attacker,
       otherFactorySigner,
+      relayer,
       registry,
       credentials,
+      orders,
+      orderDomain,
       verifier,
       vault,
+      buyerId,
       factoryId,
       otherFactoryId,
       capacityCredentialId,
@@ -114,11 +163,73 @@ describe("CapacityVault", function () {
     };
   }
 
+  async function registerOrder(
+    values: Awaited<ReturnType<typeof fixture>>,
+    orderId: string,
+    orderCommitment: bigint
+  ) {
+    const latest = await ethers.provider.getBlock("latest");
+    const nonce = await values.orders.nonces(values.buyerId);
+    const authorization = {
+      orderId,
+      buyerOrganizationId: values.buyerId,
+      primaryFactoryOrganizationId: values.factoryId,
+      version: 1,
+      previousVersionHash: ethers.ZeroHash,
+      orderCommitment,
+      policyHash: values.policyHash,
+      nonce,
+      deadline: BigInt(latest!.timestamp) + 3_600n,
+    };
+    const signature = await values.buyerSigner.signTypedData(values.orderDomain, ORDER_TYPES, authorization);
+    await values.orders.connect(values.relayer).submitOrderVersion(authorization, signature);
+    return authorization;
+  }
+
+  async function amendOrder(
+    values: Awaited<ReturnType<typeof fixture>>,
+    orderId: string,
+    orderCommitment: bigint
+  ) {
+    const state = await values.orders.getOrder(orderId);
+    const latest = await ethers.provider.getBlock("latest");
+    const nonce = await values.orders.nonces(values.buyerId);
+    const authorization = {
+      orderId,
+      buyerOrganizationId: values.buyerId,
+      primaryFactoryOrganizationId: values.factoryId,
+      version: Number(state.currentVersion) + 1,
+      previousVersionHash: state.currentVersionHash,
+      orderCommitment,
+      policyHash: values.policyHash,
+      nonce,
+      deadline: BigInt(latest!.timestamp) + 3_600n,
+    };
+    const signature = await values.buyerSigner.signTypedData(values.orderDomain, ORDER_TYPES, authorization);
+    await values.orders.connect(values.relayer).submitOrderVersion(authorization, signature);
+    return authorization;
+  }
+
+  async function cancelOrder(values: Awaited<ReturnType<typeof fixture>>, orderId: string) {
+    const state = await values.orders.getOrder(orderId);
+    const latest = await ethers.provider.getBlock("latest");
+    const cancellation = {
+      orderId,
+      buyerOrganizationId: values.buyerId,
+      expectedVersion: Number(state.currentVersion),
+      nonce: await values.orders.nonces(values.buyerId),
+      deadline: BigInt(latest!.timestamp) + 3_600n,
+    };
+    const signature = await values.buyerSigner.signTypedData(values.orderDomain, CANCEL_TYPES, cancellation);
+    await values.orders.connect(values.relayer).cancelOrder(cancellation, signature);
+  }
+
   async function deployUninitializedVault(values: Awaited<ReturnType<typeof fixture>>) {
     const Vault = await ethers.getContractFactory("CapacityVault");
     const vault = await Vault.deploy(
       values.admin.address,
       await values.credentials.getAddress(),
+      await values.orders.getAddress(),
       await values.registry.getAddress()
     );
     await vault.waitForDeployment();
@@ -127,9 +238,10 @@ describe("CapacityVault", function () {
     return vault;
   }
 
-  it("atomically advances the canonical commitment and consumes the nullifier", async function () {
+  it("atomically advances the canonical commitment and consumes the nullifier for the current signed order", async function () {
     const f = await fixture();
     const spend = request(f, f.initialCommitment, 2002n, 3003n, "order-1");
+    await registerOrder(f, spend.orderId, spend.orderCommitment);
 
     await expect(f.vault.connect(f.factorySigner).spendCapacity(spend, ZERO_A, ZERO_B, ZERO_C))
       .to.emit(f.vault, "CapacitySpent");
@@ -142,6 +254,7 @@ describe("CapacityVault", function () {
   it("rejects a second spend of a stale capacity commitment even if the verifier returns true", async function () {
     const f = await fixture();
     const spend = request(f, f.initialCommitment, 2002n, 3003n, "order-1");
+    await registerOrder(f, spend.orderId, spend.orderCommitment);
     await f.vault.connect(f.factorySigner).spendCapacity(spend, ZERO_A, ZERO_B, ZERO_C);
 
     await expect(f.vault.connect(f.factorySigner).spendCapacity(spend, ZERO_A, ZERO_B, ZERO_C))
@@ -149,12 +262,14 @@ describe("CapacityVault", function () {
       .withArgs(2002n, f.initialCommitment);
   });
 
-  it("rejects nullifier replay against the new current state", async function () {
+  it("rejects nullifier replay against a new current order and capacity state", async function () {
     const f = await fixture();
     const first = request(f, f.initialCommitment, 2002n, 3003n, "order-1");
+    await registerOrder(f, first.orderId, first.orderCommitment);
     await f.vault.connect(f.factorySigner).spendCapacity(first, ZERO_A, ZERO_B, ZERO_C);
 
     const replay = request(f, 2002n, 4004n, 3003n, "order-2");
+    await registerOrder(f, replay.orderId, replay.orderCommitment);
     await expect(f.vault.connect(f.factorySigner).spendCapacity(replay, ZERO_A, ZERO_B, ZERO_C))
       .to.be.revertedWithCustomError(f.vault, "NullifierAlreadyUsed")
       .withArgs(3003n);
@@ -163,6 +278,7 @@ describe("CapacityVault", function () {
   it("rejects submission by an unrelated organization/account", async function () {
     const f = await fixture();
     const spend = request(f, f.initialCommitment, 2002n, 3003n, "order-1");
+    await registerOrder(f, spend.orderId, spend.orderCommitment);
 
     await expect(f.vault.connect(f.attacker).spendCapacity(spend, ZERO_A, ZERO_B, ZERO_C))
       .to.be.revertedWithCustomError(f.vault, "UnauthorizedFactoryCaller")
@@ -171,8 +287,9 @@ describe("CapacityVault", function () {
 
   it("rejects a new spend after the underlying capacity credential is revoked", async function () {
     const f = await fixture();
-    await f.credentials.connect(f.auditorSigner).revokeCredential(f.capacityCredentialId);
     const spend = request(f, f.initialCommitment, 2002n, 3003n, "order-1");
+    await registerOrder(f, spend.orderId, spend.orderCommitment);
+    await f.credentials.connect(f.auditorSigner).revokeCredential(f.capacityCredentialId);
 
     await expect(f.vault.connect(f.factorySigner).spendCapacity(spend, ZERO_A, ZERO_B, ZERO_C))
       .to.be.revertedWithCustomError(f.vault, "InvalidCredential")
@@ -181,8 +298,9 @@ describe("CapacityVault", function () {
 
   it("rejects a mathematically invalid proof before mutating capacity state", async function () {
     const f = await fixture();
-    await f.verifier.setResult(false);
     const spend = request(f, f.initialCommitment, 2002n, 3003n, "order-1");
+    await registerOrder(f, spend.orderId, spend.orderCommitment);
+    await f.verifier.setResult(false);
 
     await expect(f.vault.connect(f.factorySigner).spendCapacity(spend, ZERO_A, ZERO_B, ZERO_C))
       .to.be.revertedWithCustomError(f.vault, "InvalidProof");
@@ -190,6 +308,41 @@ describe("CapacityVault", function () {
     const state = await f.vault.getCapacityState(f.factoryId, f.periodId, f.processId);
     expect(state.activeCommitment).to.equal(f.initialCommitment);
     expect(await f.vault.usedNullifiers(3003n)).to.equal(false);
+  });
+
+  it("rejects an otherwise valid proof for an order that was never buyer-authorized", async function () {
+    const f = await fixture();
+    const spend = request(f, f.initialCommitment, 2002n, 3003n, "unknown-order");
+
+    await expect(f.vault.connect(f.factorySigner).spendCapacity(spend, ZERO_A, ZERO_B, ZERO_C))
+      .to.be.revertedWithCustomError(f.vault, "InvalidOrderAuthorization")
+      .withArgs(spend.orderId);
+  });
+
+  it("invalidates an old PoFC order commitment after a buyer amendment becomes current", async function () {
+    const f = await fixture();
+    const spend = request(f, f.initialCommitment, 2002n, 3003n, "order-amended");
+    await registerOrder(f, spend.orderId, spend.orderCommitment);
+    await amendOrder(f, spend.orderId, spend.orderCommitment + 1n);
+
+    await expect(f.vault.connect(f.factorySigner).spendCapacity(spend, ZERO_A, ZERO_B, ZERO_C))
+      .to.be.revertedWithCustomError(f.vault, "InvalidOrderAuthorization")
+      .withArgs(spend.orderId);
+
+    const state = await f.vault.getCapacityState(f.factoryId, f.periodId, f.processId);
+    expect(state.activeCommitment).to.equal(f.initialCommitment);
+    expect(await f.vault.usedNullifiers(spend.nullifier)).to.equal(false);
+  });
+
+  it("invalidates capacity authorization immediately when the buyer cancels the order", async function () {
+    const f = await fixture();
+    const spend = request(f, f.initialCommitment, 2002n, 3003n, "order-cancelled");
+    await registerOrder(f, spend.orderId, spend.orderCommitment);
+    await cancelOrder(f, spend.orderId);
+
+    await expect(f.vault.connect(f.factorySigner).spendCapacity(spend, ZERO_A, ZERO_B, ZERO_C))
+      .to.be.revertedWithCustomError(f.vault, "InvalidOrderAuthorization")
+      .withArgs(spend.orderId);
   });
 
   it("rejects a capacity credential issued to a different factory", async function () {
