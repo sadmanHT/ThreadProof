@@ -38,6 +38,7 @@ contract CredentialRegistry is AccessControl {
     error UnknownCredential(bytes32 credentialId);
     error InvalidValidityWindow();
     error InactiveIssuer(bytes32 issuerOrganizationId);
+    error InactiveSubject(bytes32 subjectOrganizationId);
     error UnauthorizedIssuer(bytes32 credentialId);
     error InvalidStatus();
 
@@ -76,6 +77,7 @@ contract CredentialRegistry is AccessControl {
         if (credentialId == bytes32(0)) revert InvalidCredentialId();
         if (_credentials[credentialId].status != CredentialStatus.Unknown) revert CredentialAlreadyExists(credentialId);
         if (validUntil <= validFrom) revert InvalidValidityWindow();
+        if (!organizationRegistry.isActive(subjectOrganizationId)) revert InactiveSubject(subjectOrganizationId);
 
         bytes32 issuerOrganizationId = organizationRegistry.organizationOfAccount(msg.sender);
         if (issuerOrganizationId == bytes32(0) || !organizationRegistry.isActive(issuerOrganizationId)) {
@@ -129,8 +131,27 @@ contract CredentialRegistry is AccessControl {
         return record;
     }
 
-    function isCredentialActive(bytes32 credentialId) external view returns (bool) {
+    function isCredentialActive(bytes32 credentialId) public view returns (bool) {
+        return _isRecordActive(_credentials[credentialId]);
+    }
+
+    /// @notice Checks that a currently usable credential is bound to the exact subject, type and scope required.
+    /// @dev Used by protocol contracts so a valid credential for one factory/process cannot authorize another.
+    function isCredentialValidFor(
+        bytes32 credentialId,
+        bytes32 subjectOrganizationId,
+        bytes32 credentialType,
+        bytes32 scopeHash
+    ) external view returns (bool) {
         CredentialRecord storage record = _credentials[credentialId];
+        return
+            _isRecordActive(record) &&
+            record.subjectOrganizationId == subjectOrganizationId &&
+            record.credentialType == credentialType &&
+            record.scopeHash == scopeHash;
+    }
+
+    function _isRecordActive(CredentialRecord storage record) internal view returns (bool) {
         if (record.status != CredentialStatus.Active) return false;
         if (block.timestamp < record.validFrom || block.timestamp > record.validUntil) return false;
         if (!organizationRegistry.isActive(record.issuerOrganizationId)) return false;
