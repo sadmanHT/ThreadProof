@@ -5,6 +5,7 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ICapacitySpendVerifier} from "./interfaces/ICapacitySpendVerifier.sol";
 import {ICredentialRegistry} from "./interfaces/ICredentialRegistry.sol";
+import {IOrderRegistry} from "./interfaces/IOrderRegistry.sol";
 import {IThreadProofRegistry} from "./interfaces/IThreadProofRegistry.sol";
 
 /// @title CapacityVault
@@ -44,6 +45,7 @@ contract CapacityVault is AccessControl, Pausable {
     }
 
     ICredentialRegistry public immutable credentialRegistry;
+    IOrderRegistry public immutable orderRegistry;
     IThreadProofRegistry public immutable organizationRegistry;
 
     mapping(bytes32 stateKey => CapacityState state) private _capacityStates;
@@ -59,6 +61,7 @@ contract CapacityVault is AccessControl, Pausable {
     error NullifierAlreadyUsed(uint256 nullifier);
     error InvalidCredential(bytes32 credentialId);
     error InvalidCredentialBinding(bytes32 credentialId, bytes32 expectedScopeHash);
+    error InvalidOrderAuthorization(bytes32 orderId);
     error PolicyMismatch(bytes32 expected, bytes32 supplied);
     error CircuitVersionMismatch(uint32 expected, uint32 supplied);
     error UnknownVerifier(uint32 circuitVersion);
@@ -92,15 +95,18 @@ contract CapacityVault is AccessControl, Pausable {
     constructor(
         address initialAdmin,
         address credentialRegistryAddress,
+        address orderRegistryAddress,
         address organizationRegistryAddress
     ) {
         if (
             initialAdmin == address(0) ||
             credentialRegistryAddress == address(0) ||
+            orderRegistryAddress == address(0) ||
             organizationRegistryAddress == address(0)
         ) revert InvalidAddress();
 
         credentialRegistry = ICredentialRegistry(credentialRegistryAddress);
+        orderRegistry = IOrderRegistry(orderRegistryAddress);
         organizationRegistry = IThreadProofRegistry(organizationRegistryAddress);
 
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
@@ -200,6 +206,16 @@ contract CapacityVault is AccessControl, Pausable {
         }
         if (!credentialRegistry.isCredentialActive(state.capacityCredentialId)) {
             revert InvalidCredential(state.capacityCredentialId);
+        }
+        if (
+            !orderRegistry.isCurrentOrderAuthorization(
+                request.orderId,
+                request.factoryOrganizationId,
+                request.orderCommitment,
+                request.policyHash
+            )
+        ) {
+            revert InvalidOrderAuthorization(request.orderId);
         }
 
         _requireFieldElement(request.oldCapacityCommitment);
