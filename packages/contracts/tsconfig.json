@@ -5,6 +5,6 @@
     "moduleResolution": "Node",
     "types": ["node", "mocha"]
   },
-  "include": ["hardhat.config.ts", "scripts/**/*.ts", "test/**/*.ts"],
-  "exclude": ["node_modules", "artifacts", "cache", "typechain-types"]
+  "include": ["hardhat.config.ts", "scripts/**/*.ts", "typechain-types/**/*.ts"],
+  "exclude": ["node_modules", "artifacts", "cache", "test"]
 }
