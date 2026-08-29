@@ -7,34 +7,23 @@ const ZERO_C: [bigint, bigint] = [0n, 0n];
 
 describe("CapacityVault", function () {
   async function fixture() {
-    const [admin, factorySigner, auditorSigner, attacker] = await ethers.getSigners();
+    const [admin, factorySigner, auditorSigner, attacker, otherFactorySigner] = await ethers.getSigners();
 
     const Registry = await ethers.getContractFactory("ThreadProofRegistry");
     const registry = await Registry.deploy(admin.address);
     await registry.waitForDeployment();
 
     const factoryId = ethers.keccak256(ethers.toUtf8Bytes("factory-alpha"));
+    const otherFactoryId = ethers.keccak256(ethers.toUtf8Bytes("factory-beta"));
     const auditorId = ethers.keccak256(ethers.toUtf8Bytes("auditor-one"));
     await registry.registerOrganization(factoryId, factorySigner.address, 2, ethers.ZeroHash);
+    await registry.registerOrganization(otherFactoryId, otherFactorySigner.address, 2, ethers.ZeroHash);
     await registry.registerOrganization(auditorId, auditorSigner.address, 3, ethers.ZeroHash);
 
     const CredentialRegistry = await ethers.getContractFactory("CredentialRegistry");
     const credentials = await CredentialRegistry.deploy(admin.address, await registry.getAddress());
     await credentials.waitForDeployment();
     await credentials.grantRole(await credentials.ISSUER_ROLE(), auditorSigner.address);
-
-    const capacityCredentialId = ethers.keccak256(ethers.toUtf8Bytes("capacity-credential-alpha-oct-sewing"));
-    const latest = await ethers.provider.getBlock("latest");
-    const now = BigInt(latest!.timestamp);
-    await credentials.connect(auditorSigner).issueCredential(
-      capacityCredentialId,
-      factoryId,
-      ethers.keccak256(ethers.toUtf8Bytes("CAPACITY_CREDENTIAL")),
-      ethers.keccak256(ethers.toUtf8Bytes("credential-body")),
-      ethers.keccak256(ethers.toUtf8Bytes("october-sewing")),
-      now - 60n,
-      now + 86_400n
-    );
 
     const MockVerifier = await ethers.getContractFactory("MockCapacitySpendVerifier");
     const verifier = await MockVerifier.deploy();
@@ -50,6 +39,27 @@ describe("CapacityVault", function () {
     const processId = ethers.keccak256(ethers.toUtf8Bytes("SEWING"));
     const policyHash = ethers.keccak256(ethers.toUtf8Bytes("policy-v1"));
     const initialCommitment = 1001n;
+    const capacityCredentialId = ethers.keccak256(ethers.toUtf8Bytes("capacity-credential-alpha-oct-sewing"));
+    const capacityCredentialType = await vault.CAPACITY_CREDENTIAL_TYPE();
+    const scopeHash = await vault.capacityCredentialScopeHash(
+      factoryId,
+      periodId,
+      processId,
+      policyHash,
+      initialCommitment
+    );
+
+    const latest = await ethers.provider.getBlock("latest");
+    const now = BigInt(latest!.timestamp);
+    await credentials.connect(auditorSigner).issueCredential(
+      capacityCredentialId,
+      factoryId,
+      capacityCredentialType,
+      ethers.keccak256(ethers.toUtf8Bytes("credential-body")),
+      scopeHash,
+      now - 60n,
+      now + 86_400n
+    );
 
     await vault.connect(auditorSigner).certifyCapacity(
       factoryId,
@@ -66,16 +76,20 @@ describe("CapacityVault", function () {
       factorySigner,
       auditorSigner,
       attacker,
+      otherFactorySigner,
       registry,
       credentials,
       verifier,
       vault,
       factoryId,
+      otherFactoryId,
       capacityCredentialId,
+      capacityCredentialType,
       periodId,
       processId,
       policyHash,
       initialCommitment,
+      now,
     };
   }
 
@@ -98,6 +112,19 @@ describe("CapacityVault", function () {
       nullifier,
       circuitVersion: 1,
     };
+  }
+
+  async function deployUninitializedVault(values: Awaited<ReturnType<typeof fixture>>) {
+    const Vault = await ethers.getContractFactory("CapacityVault");
+    const vault = await Vault.deploy(
+      values.admin.address,
+      await values.credentials.getAddress(),
+      await values.registry.getAddress()
+    );
+    await vault.waitForDeployment();
+    await vault.registerVerifier(1, await values.verifier.getAddress());
+    await vault.grantRole(await vault.CERTIFIER_ROLE(), values.auditorSigner.address);
+    return vault;
   }
 
   it("atomically advances the canonical commitment and consumes the nullifier", async function () {
@@ -163,5 +190,121 @@ describe("CapacityVault", function () {
     const state = await f.vault.getCapacityState(f.factoryId, f.periodId, f.processId);
     expect(state.activeCommitment).to.equal(f.initialCommitment);
     expect(await f.vault.usedNullifiers(3003n)).to.equal(false);
+  });
+
+  it("rejects a capacity credential issued to a different factory", async function () {
+    const f = await fixture();
+    const vault = await deployUninitializedVault(f);
+    const credentialId = ethers.keccak256(ethers.toUtf8Bytes("wrong-subject-credential"));
+    const scopeHash = await vault.capacityCredentialScopeHash(
+      f.factoryId,
+      f.periodId,
+      f.processId,
+      f.policyHash,
+      5005n
+    );
+
+    await f.credentials.connect(f.auditorSigner).issueCredential(
+      credentialId,
+      f.otherFactoryId,
+      f.capacityCredentialType,
+      ethers.keccak256(ethers.toUtf8Bytes("wrong-subject-body")),
+      scopeHash,
+      f.now - 60n,
+      f.now + 86_400n
+    );
+
+    await expect(
+      vault.connect(f.auditorSigner).certifyCapacity(
+        f.factoryId,
+        f.periodId,
+        f.processId,
+        5005n,
+        credentialId,
+        f.policyHash,
+        1
+      )
+    ).to.be.revertedWithCustomError(vault, "InvalidCredentialBinding");
+  });
+
+  it("rejects a credential whose scope was certified for a different period/process/policy/commitment", async function () {
+    const f = await fixture();
+    const vault = await deployUninitializedVault(f);
+    const credentialId = ethers.keccak256(ethers.toUtf8Bytes("wrong-scope-credential"));
+    const wrongPeriod = ethers.keccak256(ethers.toUtf8Bytes("2026-11"));
+    const wrongScopeHash = await vault.capacityCredentialScopeHash(
+      f.factoryId,
+      wrongPeriod,
+      f.processId,
+      f.policyHash,
+      6006n
+    );
+
+    await f.credentials.connect(f.auditorSigner).issueCredential(
+      credentialId,
+      f.factoryId,
+      f.capacityCredentialType,
+      ethers.keccak256(ethers.toUtf8Bytes("wrong-scope-body")),
+      wrongScopeHash,
+      f.now - 60n,
+      f.now + 86_400n
+    );
+
+    const expectedScope = await vault.capacityCredentialScopeHash(
+      f.factoryId,
+      f.periodId,
+      f.processId,
+      f.policyHash,
+      6006n
+    );
+    await expect(
+      vault.connect(f.auditorSigner).certifyCapacity(
+        f.factoryId,
+        f.periodId,
+        f.processId,
+        6006n,
+        credentialId,
+        f.policyHash,
+        1
+      )
+    )
+      .to.be.revertedWithCustomError(vault, "InvalidCredentialBinding")
+      .withArgs(credentialId, expectedScope);
+  });
+
+  it("rejects an active non-capacity credential for capacity certification", async function () {
+    const f = await fixture();
+    const vault = await deployUninitializedVault(f);
+    const credentialId = ethers.keccak256(ethers.toUtf8Bytes("safety-credential"));
+    const commitment = 7007n;
+    const scopeHash = await vault.capacityCredentialScopeHash(
+      f.factoryId,
+      f.periodId,
+      f.processId,
+      f.policyHash,
+      commitment
+    );
+
+    await f.credentials.connect(f.auditorSigner).issueCredential(
+      credentialId,
+      f.factoryId,
+      ethers.keccak256(ethers.toUtf8Bytes("SAFETY_CREDENTIAL")),
+      ethers.keccak256(ethers.toUtf8Bytes("safety-body")),
+      scopeHash,
+      f.now - 60n,
+      f.now + 86_400n
+    );
+
+    await expect(
+      vault.connect(f.auditorSigner).certifyCapacity(
+        f.factoryId,
+        f.periodId,
+        f.processId,
+        commitment,
+        credentialId,
+        f.policyHash,
+        1
+      )
+    ).to.be.revertedWithCustomError(vault, "InvalidCredentialBinding");
   });
 });
