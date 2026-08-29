@@ -1,0 +1,21 @@
+{
+  "name": "threadproof",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.0",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck",
+    "contracts:compile": "pnpm --filter @threadproof/contracts compile",
+    "contracts:test": "pnpm --filter @threadproof/contracts test",
+    "circuits:compile": "pnpm --filter @threadproof/circuits compile",
+    "circuits:test": "pnpm --filter @threadproof/circuits test"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.6",
+    "typescript": "^5.9.2"
+  }
+}
