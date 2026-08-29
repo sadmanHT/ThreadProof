@@ -6,7 +6,8 @@
     "compile": "hardhat compile",
     "test": "hardhat test",
     "clean": "hardhat clean",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "deploy:local": "hardhat run scripts/deploy-local.ts"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0"
