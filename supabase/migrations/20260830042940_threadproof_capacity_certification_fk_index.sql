@@ -1,0 +1,2 @@
+create index capacity_certification_jobs_created_by_idx
+  on public.capacity_certification_jobs(created_by);
