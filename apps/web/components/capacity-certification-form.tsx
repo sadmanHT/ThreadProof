@@ -59,6 +59,7 @@ export function CapacityCertificationForm({ auditorOrganizations, factories, res
       setStage("credential");
       const credentialTx = await context.wallet.writeContract({
         account: context.account,
+        chain: null,
         address: prepared.credentialRegistryAddress,
         abi: credentialRegistryWriteAbi,
         functionName: "issueCredential",
@@ -79,6 +80,7 @@ export function CapacityCertificationForm({ auditorOrganizations, factories, res
     setStage("certifying");
     const certificationTx = await context.wallet.writeContract({
       account: context.account as Address,
+      chain: null,
       address: prepared.capacityVaultAddress,
       abi: capacityVaultWriteAbi,
       functionName: "certifyCapacity",
