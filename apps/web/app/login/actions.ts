@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { safeLocalPath } from "@/lib/safe-local-path";
 import { createClient } from "@/lib/supabase/server";
 
 const credentialsSchema = z.object({
@@ -11,13 +12,9 @@ const credentialsSchema = z.object({
   next: z.string().optional(),
 });
 
-function safeNext(value: string | undefined) {
-  return value && value.startsWith("/") && !value.startsWith("//") ? value : "/app";
-}
-
 function authError(message: string, next?: string): never {
   const params = new URLSearchParams({ error: message });
-  if (next) params.set("next", safeNext(next));
+  if (next) params.set("next", safeLocalPath(next));
   redirect(`/login?${params.toString()}`);
 }
 
@@ -28,7 +25,7 @@ export async function loginAction(formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email: parsed.data.email, password: parsed.data.password });
   if (error) authError(error.message, parsed.data.next);
-  redirect(safeNext(parsed.data.next));
+  redirect(safeLocalPath(parsed.data.next));
 }
 
 export async function signupAction(formData: FormData) {
@@ -38,6 +35,6 @@ export async function signupAction(formData: FormData) {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signUp({ email: parsed.data.email, password: parsed.data.password, options: { data: { display_name: parsed.data.displayName ?? null } } });
   if (error) authError(error.message, parsed.data.next);
-  if (data.session) redirect(safeNext(parsed.data.next));
+  if (data.session) redirect(safeLocalPath(parsed.data.next));
   redirect(`/login?message=${encodeURIComponent("Account created. Confirm your email, then sign in.")}`);
 }

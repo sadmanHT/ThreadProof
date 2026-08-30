@@ -39,6 +39,36 @@ jobs:
       - name: Web production build
         run: pnpm --filter @threadproof/web build
 
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install pinned Playwright Chromium
+        run: pnpm --filter @threadproof/web exec playwright install --with-deps chromium
+      - name: Browser auth-boundary tests
+        run: pnpm --filter @threadproof/web e2e
+      - name: Upload Playwright failure report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.sha }}
+          retention-days: 3
+          if-no-files-found: ignore
+          path: apps/web/playwright-report/
+
   worker:
     runs-on: ubuntu-latest
     timeout-minutes: 10
