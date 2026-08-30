@@ -31,6 +31,13 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
+      - name: Upload resolved lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: pnpm-lock-${{ github.sha }}
+          retention-days: 1
+          if-no-files-found: error
+          path: pnpm-lock.yaml
       - name: Web typecheck
         run: pnpm --filter @threadproof/web typecheck
       - name: Web production build
