@@ -7,6 +7,7 @@ export const capacityVaultAbi = parseAbi([
   "event CapacitySpent(bytes32 indexed stateKey,bytes32 indexed orderId,uint256 indexed nullifier,uint256 oldCommitment,uint256 newCommitment,uint256 orderCommitment,uint32 circuitVersion)",
   "event CapacityAllocationRecorded(bytes32 indexed allocationId,bytes32 indexed orderId,bytes32 indexed factoryOrganizationId,bytes32 stateKey,uint256 nullifier)",
   "event VerifierRegistered(uint32 indexed circuitVersion,address indexed verifier)",
+  "event VerifierProvenanceRegistered(uint32 indexed circuitVersion,address indexed verifier,bytes32 indexed circuitArtifactHash,bytes32 verificationKeyHash,bytes32 verifierCodeHash)",
 ]);
 
 export const orderRegistryAbi = parseAbi([
