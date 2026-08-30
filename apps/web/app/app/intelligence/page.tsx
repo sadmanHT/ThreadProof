@@ -121,18 +121,19 @@ export default async function IntelligencePage({ searchParams }: Props) {
       {message ? <div className="alert alert-success">{message}</div> : null}
       {error ? <div className="alert alert-error">{error}</div> : null}
 
-      <section className="protocol-banner"><div><span className="kicker">PRIVACY MODE</span><h2>{providerTier === "free" ? "Free-tier guard enabled" : titleCase(providerTier)}</h2></div><p>{confidentialEnabled ? "Counterparty-confidential processing has been explicitly enabled. Use this only with synthetic demo material or a provider tier approved for confidential commercial data." : "Counterparty-confidential documents are blocked. Audit Copilot uses only sanitized consortium-visible read-model fields; ZK-private and governance-protected data are never sent to the model."}</p></section>
+      <section className="protocol-banner"><div><span className="kicker">PRIVACY MODE</span><h2>{providerTier === "free" ? "Free-tier guard enabled" : titleCase(providerTier)}</h2></div><p>{confidentialEnabled ? "Approved counterparty-confidential processing is enabled for this deployment." : "Real counterparty-confidential documents are blocked in free-tier mode. Synthetic competition/demo documents are allowed only after explicit confirmation. Audit Copilot uses sanitized consortium-visible read-model fields; ZK-private and governance-protected data are never sent to Gemini."}</p></section>
 
       <section className="dashboard-grid">
         <article className="panel">
-          <div className="panel-heading"><div><span className="kicker">DOCUMENT INTELLIGENCE</span><h2>Order / amendment extraction</h2></div><span className={`badge ${confidentialEnabled ? "success" : "warning"}`}>{confidentialEnabled ? "Enabled" : "Confidential mode off"}</span></div>
+          <div className="panel-heading"><div><span className="kicker">DOCUMENT INTELLIGENCE</span><h2>Order / amendment extraction</h2></div><span className={`badge ${confidentialEnabled ? "success" : "warning"}`}>{confidentialEnabled ? "Confidential mode approved" : "Synthetic demo only"}</span></div>
           <form className="stack-form" action={runOrderIntelligenceAction}>
             <label>Organization<select name="organizationId" required>{viewer.memberships.map((membership) => <option key={membership.organization_id} value={membership.organization_id}>{membership.organization.display_name} · {titleCase(membership.organization.role)}</option>)}</select></label>
-            <label>Compare against an existing visible order <span className="optional">optional</span><select name="purchaseOrderId" defaultValue=""><option value="">No comparison baseline</option>{(orders ?? []).map((order) => <option key={order.id} value={order.id}>{order.external_reference}{order.title ? ` · ${order.title}` : ""} · {titleCase(order.status)}</option>)}</select></label>
+            <label>Compare against an existing visible order <span className="optional">available only in approved confidential mode</span><select name="purchaseOrderId" defaultValue=""><option value="">No comparison baseline</option>{(orders ?? []).map((order) => <option key={order.id} value={order.id}>{order.external_reference}{order.title ? ` · ${order.title}` : ""} · {titleCase(order.status)}</option>)}</select></label>
             <label>Paste PO/amendment text <span className="optional">optional if PDF attached</span><textarea name="sourceText" rows={9} placeholder="Paste purchase-order or amendment text. Instructions embedded in documents are treated as untrusted content." /></label>
             <label>PDF document <span className="optional">max 4.5 MB</span><input name="document" type="file" accept="application/pdf,.pdf" /></label>
+            {!confidentialEnabled ? <label><span>Free-tier data confirmation</span><span className="form-help"><input name="syntheticDemo" type="checkbox" value="true" required /> I confirm that this input is synthetic/demo data and contains no real confidential commercial information.</span></label> : null}
             <div className="callout"><strong>Human review is mandatory</strong><span>Extracted quantity, dates, SMV and amendments are suggestions. The application recomputes workload; it never accepts an AI feasibility judgment.</span></div>
-            <button className="button primary" disabled={!confidentialEnabled}>Analyze document with Gemini</button>
+            <button className="button primary">Analyze document with Gemini</button>
           </form>
         </article>
 
