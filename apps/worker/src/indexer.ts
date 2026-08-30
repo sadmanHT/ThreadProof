@@ -31,7 +31,7 @@ function asHex(value: unknown): string {
 }
 
 function asNumber(value: unknown): number {
-  const number = typeof value === "bigint" ? Number(value) : Number(value);
+  const number = Number(value);
   if (!Number.isSafeInteger(number)) throw new Error("Event integer exceeds JavaScript safe integer range");
   return number;
 }
@@ -49,15 +49,18 @@ function commitmentHex(value: unknown) {
   return `0x${scalar.toString(16)}`;
 }
 
+function sameHex(left: unknown, right: unknown) {
+  return typeof left === "string" && typeof right === "string" && left.toLowerCase() === right.toLowerCase();
+}
+
 function decode(log: Log): Decoded | null {
   try {
-    const decoded = decodeEventLog({
+    return decodeEventLog({
       abi: protocolEventsAbi as any,
       data: log.data,
       topics: log.topics,
       strict: false,
     }) as { eventName: string; args: Record<string, unknown> };
-    return decoded;
   } catch {
     return null;
   }
@@ -72,11 +75,23 @@ async function mirrorOrganizationStatus(supabase: ServiceClient, args: Record<st
     .eq("chain_organization_id", asHex(args.organizationId));
 }
 
+async function failCertificationJob(supabase: ServiceClient, jobId: string, code: string, detail: string) {
+  const { error } = await supabase.from("capacity_certification_jobs").update({
+    status: "failed",
+    error_code: code,
+    error_detail: detail,
+    updated_at: new Date().toISOString(),
+  }).eq("id", jobId);
+  if (error) throw error;
+}
+
 async function mirrorCredentialIssued(
   supabase: ServiceClient,
   args: Record<string, unknown>,
   txHash: string,
+  blockNumber: number,
 ) {
+  const credentialId = asHex(args.credentialId);
   const subjectChainId = asHex(args.subjectOrganizationId);
   const issuerChainId = asHex(args.issuerOrganizationId);
   const [{ data: subject }, { data: issuer }] = await Promise.all([
@@ -84,18 +99,20 @@ async function mirrorCredentialIssued(
     supabase.from("organizations").select("id").eq("chain_organization_id", issuerChainId).maybeSingle(),
   ]);
   if (!subject || !issuer) {
-    console.warn(`Credential ${asHex(args.credentialId)} references organization(s) not yet linked in Postgres`);
+    console.warn(`Credential ${credentialId} references organization(s) not yet linked in Postgres`);
     return;
   }
+
   const credentialTypeHex = asHex(args.credentialType);
-  const credentialType = credentialTypeHex.toLowerCase() === CAPACITY_CREDENTIAL_TYPE.toLowerCase()
-    ? "CAPACITY_CREDENTIAL"
-    : credentialTypeHex;
-  const validFrom = new Date(asNumber(args.validFrom) * 1000).toISOString();
-  const validUntil = new Date(asNumber(args.validUntil) * 1000).toISOString();
+  const isCapacityCredential = credentialTypeHex.toLowerCase() === CAPACITY_CREDENTIAL_TYPE.toLowerCase();
+  const credentialType = isCapacityCredential ? "CAPACITY_CREDENTIAL" : credentialTypeHex;
+  const validFromSeconds = asNumber(args.validFrom);
+  const validUntilSeconds = asNumber(args.validUntil);
+  const validFrom = new Date(validFromSeconds * 1000).toISOString();
+  const validUntil = new Date(validUntilSeconds * 1000).toISOString();
 
   const { error } = await supabase.from("credentials").upsert({
-    chain_credential_id: asHex(args.credentialId),
+    chain_credential_id: credentialId,
     subject_organization_id: subject.id,
     issuer_organization_id: issuer.id,
     credential_type: credentialType,
@@ -107,6 +124,39 @@ async function mirrorCredentialIssued(
     chain_tx_hash: txHash,
   }, { onConflict: "chain_credential_id" });
   if (error) throw error;
+
+  if (!isCapacityCredential) return;
+  const { data: job, error: jobError } = await supabase
+    .from("capacity_certification_jobs")
+    .select("*")
+    .eq("chain_credential_id", credentialId)
+    .maybeSingle();
+  if (jobError) throw jobError;
+  if (!job) return;
+
+  const validFromMatches = Math.floor(new Date(job.valid_from).getTime() / 1000) === validFromSeconds;
+  const validUntilMatches = Math.floor(new Date(job.valid_until).getTime() / 1000) === validUntilSeconds;
+  if (
+    job.factory_organization_id !== subject.id ||
+    job.auditor_organization_id !== issuer.id ||
+    !sameHex(job.credential_scope_hash, args.scopeHash) ||
+    !sameHex(job.credential_digest, args.digest) ||
+    !validFromMatches ||
+    !validUntilMatches
+  ) {
+    await failCertificationJob(supabase, job.id, "credential_event_mismatch", "CredentialIssued did not match the staged factory, auditor, scope, digest, or validity window.");
+    return;
+  }
+
+  const { error: updateError } = await supabase.from("capacity_certification_jobs").update({
+    status: "credential_confirmed",
+    credential_tx_hash: txHash,
+    credential_block_number: blockNumber,
+    error_code: null,
+    error_detail: null,
+    updated_at: new Date().toISOString(),
+  }).eq("id", job.id).in("status", ["prepared", "credential_submitted", "credential_confirmed"]);
+  if (updateError) throw updateError;
 }
 
 async function mirrorCredentialStatus(supabase: ServiceClient, args: Record<string, unknown>) {
@@ -197,18 +247,86 @@ async function mirrorOrderCancelled(supabase: ServiceClient, args: Record<string
 async function mirrorCapacityCertified(
   supabase: ServiceClient,
   args: Record<string, unknown>,
+  txHash: string,
   blockNumber: number,
 ) {
-  await supabase.from("private_capacity_openings").update({
-    chain_period_id: asHex(args.periodId),
-    chain_process_id: asHex(args.processId),
-    capacity_commitment: String(args.commitment),
-    policy_hash: asHex(args.policyHash),
-    circuit_version: asNumber(args.circuitVersion),
+  const stateKey = asHex(args.stateKey);
+  const factoryChainId = asHex(args.factoryOrganizationId);
+  const credentialId = asHex(args.capacityCredentialId);
+  const periodId = asHex(args.periodId);
+  const processId = asHex(args.processId);
+  const policyHash = asHex(args.policyHash);
+  const circuitVersion = asNumber(args.circuitVersion);
+  const commitment = String(args.commitment);
+
+  const [{ data: factory, error: factoryError }, { data: job, error: jobError }, { data: credential, error: credentialError }] = await Promise.all([
+    supabase.from("organizations").select("id").eq("chain_organization_id", factoryChainId).maybeSingle(),
+    supabase.from("capacity_certification_jobs").select("*").eq("chain_credential_id", credentialId).maybeSingle(),
+    supabase.from("credentials").select("id,subject_organization_id,scope_hash,status").eq("chain_credential_id", credentialId).maybeSingle(),
+  ]);
+  if (factoryError) throw factoryError;
+  if (jobError) throw jobError;
+  if (credentialError) throw credentialError;
+
+  if (!job || !factory || !credential) {
+    const { error: mirrorError } = await supabase.from("private_capacity_openings").update({
+      chain_period_id: periodId,
+      chain_process_id: processId,
+      capacity_commitment: commitment,
+      policy_hash: policyHash,
+      circuit_version: circuitVersion,
+      last_chain_block: blockNumber,
+      status: "active",
+      updated_at: new Date().toISOString(),
+    }).eq("chain_state_key", stateKey);
+    if (mirrorError) throw mirrorError;
+    console.warn(`CapacityCertified ${stateKey} has no complete private certification staging context; no new witness opening was created.`);
+    return;
+  }
+
+  if (
+    job.factory_organization_id !== factory.id ||
+    credential.subject_organization_id !== factory.id ||
+    credential.status !== "active" ||
+    !sameHex(job.chain_period_id, periodId) ||
+    !sameHex(job.chain_process_id, processId) ||
+    !sameHex(job.policy_hash, policyHash) ||
+    BigInt(job.capacity_commitment) !== BigInt(commitment) ||
+    job.circuit_version !== circuitVersion
+  ) {
+    await failCertificationJob(supabase, job.id, "capacity_event_mismatch", "CapacityCertified did not match the staged factory, period, process, policy, commitment, credential, or circuit version.");
+    return;
+  }
+
+  const { error: openingError } = await supabase.from("private_capacity_openings").upsert({
+    factory_organization_id: factory.id,
+    capacity_credential_id: credential.id,
+    period_id: job.period_label,
+    process_id: job.process_label,
+    chain_period_id: periodId,
+    chain_process_id: processId,
+    chain_state_key: stateKey,
+    capacity_commitment: commitment,
+    policy_hash: policyHash,
+    circuit_version: circuitVersion,
+    encrypted_remaining_capacity: job.encrypted_capacity,
+    encrypted_randomness: job.encrypted_randomness,
+    encryption_key_version: job.encryption_key_version,
     last_chain_block: blockNumber,
     status: "active",
     updated_at: new Date().toISOString(),
-  }).eq("chain_state_key", asHex(args.stateKey));
+  }, { onConflict: "chain_state_key" });
+  if (openingError) throw openingError;
+
+  const { error: jobUpdateError } = await supabase.from("capacity_certification_jobs").update({
+    status: "confirmed",
+    certification_tx_hash: txHash,
+    certification_block_number: blockNumber,
+    error_code: null,
+    error_detail: null,
+    updated_at: new Date().toISOString(),
+  }).eq("id", job.id);
+  if (jobUpdateError) throw jobUpdateError;
 }
 
 async function mirrorCapacitySpent(
@@ -233,7 +351,7 @@ async function applyMirror(
     case "OrganizationStatusChanged":
       return mirrorOrganizationStatus(supabase, decoded.args);
     case "CredentialIssued":
-      return mirrorCredentialIssued(supabase, decoded.args, txHash);
+      return mirrorCredentialIssued(supabase, decoded.args, txHash, blockNumber);
     case "CredentialStatusChanged":
       return mirrorCredentialStatus(supabase, decoded.args);
     case "OrderVersionRecorded":
@@ -241,7 +359,7 @@ async function applyMirror(
     case "OrderCancelled":
       return mirrorOrderCancelled(supabase, decoded.args);
     case "CapacityCertified":
-      return mirrorCapacityCertified(supabase, decoded.args, blockNumber);
+      return mirrorCapacityCertified(supabase, decoded.args, txHash, blockNumber);
     case "CapacitySpent":
       return mirrorCapacitySpent(supabase, txHash, blockNumber);
     default:
