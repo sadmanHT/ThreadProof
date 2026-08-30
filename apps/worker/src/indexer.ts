@@ -400,6 +400,7 @@ async function indexOnce() {
     env.THREADPROOF_CREDENTIAL_REGISTRY_ADDRESS,
     env.THREADPROOF_ORDER_REGISTRY_ADDRESS,
     env.THREADPROOF_CAPACITY_VAULT_ADDRESS,
+    env.THREADPROOF_SUBCONTRACT_GOVERNOR_ADDRESS,
   ] as Hex[];
   const logs = await client.getLogs({ address: addresses, fromBlock, toBlock });
 
