@@ -14,6 +14,7 @@ const commonSchema = z.object({
   THREADPROOF_CREDENTIAL_REGISTRY_ADDRESS: address.optional(),
   THREADPROOF_REGISTRY_ADDRESS: address.optional(),
   THREADPROOF_SUBCONTRACT_GOVERNOR_ADDRESS: address.optional(),
+  THREADPROOF_CHARTER_ADDRESS: address.optional(),
   THREADPROOF_RELAYER_PRIVATE_KEY: privateKey.optional(),
 });
 
@@ -33,6 +34,7 @@ const indexerSchema = commonSchema.extend({
   THREADPROOF_ORDER_REGISTRY_ADDRESS: address,
   THREADPROOF_CAPACITY_VAULT_ADDRESS: address,
   THREADPROOF_SUBCONTRACT_GOVERNOR_ADDRESS: address,
+  THREADPROOF_CHARTER_ADDRESS: address,
   THREADPROOF_INDEXER_START_BLOCK: z.coerce.bigint().nonnegative().default(0n),
   THREADPROOF_INDEXER_BLOCK_BATCH: z.coerce.bigint().positive().max(10_000n).default(1_000n),
 });

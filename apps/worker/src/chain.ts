@@ -22,6 +22,16 @@ export const subcontractGovernorAbi = parseAbi([
   "event SubcontractAuthorized(bytes32 indexed childOrderId,bytes32 indexed parentOrderId,bytes32 indexed subcontractorOrganizationId,bytes32 buyerOrganizationId,bytes32 parentFactoryOrganizationId,uint8 depth,uint32 sequence,bytes32 capacityAllocationId,address parentSigner)",
 ]);
 
+export const threadProofCharterEventsAbi = parseAbi([
+  "event ProposalCreated(bytes32 indexed proposalId,uint8 indexed proposalType,bytes32 indexed proposerOrganizationId,bytes32 actionHash,bytes32 metadataHash,uint64 policyVersion,uint8 approvalsRequired,uint64 expiresAt)",
+  "event ProposalApprovalRecorded(bytes32 indexed proposalId,bytes32 indexed organizationId,uint8 indexed constituency,uint8 approvalsReceived,uint8 approvalsRequired,uint8 approvalMask)",
+  "event ProposalThresholdReached(bytes32 indexed proposalId,uint64 approvedAt,uint64 executeAfter)",
+  "event ProposalCancelled(bytes32 indexed proposalId,bytes32 indexed proposerOrganizationId)",
+  "event ProposalExecuted(bytes32 indexed proposalId,uint8 indexed proposalType,address indexed executor)",
+  "event CharterPolicyUpdated(uint8 indexed proposalType,uint64 indexed newPolicyVersion,uint8 threshold,uint8 eligibleMask,uint8 requiredMask,uint64 timelockSeconds,uint64 votingPeriodSeconds)",
+  "event ProtectedIdentityDisclosureAuthorized(bytes32 indexed proposalId,bytes32 indexed subjectReference,bytes32 indexed evidenceHash)",
+]);
+
 export const threadProofRegistryAbi = parseAbi([
   "function organizationOfAccount(address account) view returns (bytes32)",
   "function isActiveAccount(address account) view returns (bool)",
@@ -45,4 +55,5 @@ export const protocolEventsAbi = [
   ...orderRegistryAbi.filter((item) => item.type === "event"),
   ...capacityVaultAbi.filter((item) => item.type === "event"),
   ...subcontractGovernorAbi.filter((item) => item.type === "event"),
+  ...threadProofCharterEventsAbi,
 ] as const;

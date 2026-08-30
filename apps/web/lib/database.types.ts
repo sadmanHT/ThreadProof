@@ -101,12 +101,19 @@ export type Database = {
         pseudonym: string;
       }>;
       governance_proposal_read_model: Table<{
+        action_hash: string | null;
+        approval_mask: number;
         approvals_received: number;
         approvals_required: number | null;
+        approved_at: string | null;
+        cancelled_at: string | null;
         chain_proposal_id: string;
         execute_after: string | null;
+        executed_at: string | null;
         executed_tx_hash: string | null;
+        expires_at: string | null;
         last_synced_block: number;
+        metadata_hash: string | null;
         policy_version: string | null;
         proposal_type: string;
         proposer_chain_organization_id: string;
