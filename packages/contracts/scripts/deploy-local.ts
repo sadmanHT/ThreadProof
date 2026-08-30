@@ -51,6 +51,14 @@ async function main() {
   );
   await subcontractGovernor.waitForDeployment();
 
+  const ThreadProofCharter = await ethers.getContractFactory("ThreadProofCharter");
+  const charter = await ThreadProofCharter.deploy(await registry.getAddress());
+  await charter.waitForDeployment();
+
+  // Local smoke wiring only. Production role transfer must occur through a reviewed deployment ceremony.
+  await (await registry.grantRole(await registry.SUSPENDER_ROLE(), await charter.getAddress())).wait();
+  await (await registry.grantRole(await registry.REGISTRAR_ROLE(), await charter.getAddress())).wait();
+
   const chainIdHex = (await network.provider.send("eth_chainId")) as string;
   const deployment = {
     network: network.name,
@@ -63,10 +71,17 @@ async function main() {
       MockCapacitySpendVerifier: await mockVerifier.getAddress(),
       CapacityVault: await capacityVault.getAddress(),
       SubcontractGovernor: await subcontractGovernor.getAddress(),
+      ThreadProofCharter: await charter.getAddress(),
     },
     verifier: {
       circuitVersion,
       kind: "mock-dev-only",
+    },
+    governance: {
+      kind: "charter-role-diverse",
+      registryRolesGranted: ["REGISTRAR_ROLE", "SUSPENDER_ROLE"],
+      deployerRolesRetained: true,
+      productionRoleTransferRequired: true,
     },
   };
 
