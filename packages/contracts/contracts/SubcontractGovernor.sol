@@ -208,9 +208,9 @@ contract SubcontractGovernor is AccessControl, Pausable, ThreadProofEIP712 {
 
         IOrderRegistry.OrderState memory parent = _readOrder(authorization.parentOrderId, true);
         IOrderRegistry.OrderState memory child = _readOrder(authorization.childOrderId, false);
-        _validateOrderSnapshots(authorization, parent, child);
         _requireFactory(authorization.parentFactoryOrganizationId);
         _requireFactory(authorization.subcontractorOrganizationId);
+        _validateOrderSnapshots(authorization, parent, child);
         _validateExistingRelation(authorization);
 
         uint8 depth = _resolveDepth(authorization.parentOrderId, authorization.childOrderId);
