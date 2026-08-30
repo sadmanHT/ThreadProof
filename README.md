@@ -14,6 +14,10 @@ ThreadProof does **not** put exact production capacity, exact subcontract alloca
 
 The current subcontract layer also does **not** prove `sum(subcontract allocations) = parent workload`. That confidential allocation-sum invariant requires a separately reviewed ZK allocation circuit before it may be claimed.
 
+## Validation status
+
+The subcontract authorization contract suite covers the canonical happy path plus unknown/cancelled/amended orders, inactive or wrong-role factories, missing/revoked policy credentials, invalid PoFC allocation references, maximum depth, cycles/re-parenting, parent-factory signatures, and replay protection. Local deployment includes `SubcontractGovernor`.
+
 ## Development
 
 Install dependencies with the pinned workspace package manager and use the repository scripts/CI for web, worker, contracts, and circuit validation. Local contract deployment intentionally uses `MockCapacitySpendVerifier`; it is development-only and is not a production ZK verifier.
