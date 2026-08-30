@@ -1,7 +1,5 @@
 export type AiDataClass = "consortium_visible" | "counterparty_confidential";
 
-const forbiddenLabels = new Set(["zk_private", "governance_protected"]);
-
 export function getAiModel() {
   return process.env.THREADPROOF_AI_MODEL?.trim() || "gemini-3.7-flash";
 }
@@ -11,19 +9,20 @@ export function getAiProviderTier() {
 }
 
 export function confidentialAiEnabled() {
-  return process.env.THREADPROOF_AI_ALLOW_CONFIDENTIAL === "true";
+  return process.env.THREADPROOF_AI_ALLOW_CONFIDENTIAL === "true" && getAiProviderTier() !== "free";
 }
 
 export function assertAiDataClassAllowed(dataClass: AiDataClass) {
-  if (forbiddenLabels.has(dataClass)) {
-    throw new Error("ThreadProof never sends ZK-private or governance-protected data to an LLM.");
-  }
-
   if (dataClass === "counterparty_confidential" && !confidentialAiEnabled()) {
     throw new Error(
-      "Confidential AI processing is disabled. Keep THREADPROOF_AI_ALLOW_CONFIDENTIAL=false for Gemini free-tier use; enable it only for synthetic demo data or an approved confidential-data provider tier.",
+      "Real confidential AI processing is disabled. Gemini free-tier mode is limited to sanitized consortium-visible context or explicitly confirmed synthetic/demo documents.",
     );
   }
+}
+
+export function assertOrderDocumentAiAllowed(syntheticDemo: boolean) {
+  if (syntheticDemo) return;
+  assertAiDataClassAllowed("counterparty_confidential");
 }
 
 export const AI_TRUST_BOUNDARY = [
