@@ -7,7 +7,7 @@ import {
   type Hex,
   type Log,
 } from "viem";
-import { credentialEventsAbi, protocolEventsAbi } from "./chain.js";
+import { protocolEventsAbi } from "./chain.js";
 import { getIndexerEnv } from "./env.js";
 import { createServiceClient } from "./supabase.js";
 
@@ -262,7 +262,7 @@ async function mirrorCapacityCertified(
   const [{ data: factory, error: factoryError }, { data: job, error: jobError }, { data: credential, error: credentialError }] = await Promise.all([
     supabase.from("organizations").select("id").eq("chain_organization_id", factoryChainId).maybeSingle(),
     supabase.from("capacity_certification_jobs").select("*").eq("chain_credential_id", credentialId).maybeSingle(),
-    supabase.from("credentials").select("id,subject_organization_id,scope_hash,status").eq("chain_credential_id", credentialId).maybeSingle(),
+    supabase.from("credentials").select("id,subject_organization_id,issuer_organization_id,scope_hash,digest,status").eq("chain_credential_id", credentialId).maybeSingle(),
   ]);
   if (factoryError) throw factoryError;
   if (jobError) throw jobError;
@@ -276,25 +276,28 @@ async function mirrorCapacityCertified(
       policy_hash: policyHash,
       circuit_version: circuitVersion,
       last_chain_block: blockNumber,
-      status: "active",
+      status: "recertification_required",
       updated_at: new Date().toISOString(),
     }).eq("chain_state_key", stateKey);
     if (mirrorError) throw mirrorError;
-    console.warn(`CapacityCertified ${stateKey} has no complete private certification staging context; no new witness opening was created.`);
+    console.warn(`CapacityCertified ${stateKey} has no complete private certification staging context; any existing private opening was quarantined and no new witness opening was created.`);
     return;
   }
 
   if (
     job.factory_organization_id !== factory.id ||
     credential.subject_organization_id !== factory.id ||
+    credential.issuer_organization_id !== job.auditor_organization_id ||
     credential.status !== "active" ||
+    !sameHex(credential.scope_hash, job.credential_scope_hash) ||
+    !sameHex(credential.digest, job.credential_digest) ||
     !sameHex(job.chain_period_id, periodId) ||
     !sameHex(job.chain_process_id, processId) ||
     !sameHex(job.policy_hash, policyHash) ||
     BigInt(job.capacity_commitment) !== BigInt(commitment) ||
     job.circuit_version !== circuitVersion
   ) {
-    await failCertificationJob(supabase, job.id, "capacity_event_mismatch", "CapacityCertified did not match the staged factory, period, process, policy, commitment, credential, or circuit version.");
+    await failCertificationJob(supabase, job.id, "capacity_event_mismatch", "CapacityCertified did not match the staged factory, auditor credential, period, process, policy, commitment, or circuit version.");
     return;
   }
 
