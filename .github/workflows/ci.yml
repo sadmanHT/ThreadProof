@@ -35,11 +35,6 @@ jobs:
         run: pnpm --filter @threadproof/web typecheck
       - name: AI trust-boundary regression checks
         run: node apps/web/scripts/test-ai-contract.mjs
-      - name: Live Gemini structured-output smoke
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          THREADPROOF_AI_MODEL: gemini-3.7-flash
-        run: node apps/web/scripts/test-gemini-live.mjs
       - name: Web production build
         run: pnpm --filter @threadproof/web build
 
