@@ -8,6 +8,13 @@ import {ICredentialRegistry} from "./interfaces/ICredentialRegistry.sol";
 import {IOrderRegistry} from "./interfaces/IOrderRegistry.sol";
 import {IThreadProofRegistry} from "./interfaces/IThreadProofRegistry.sol";
 
+/// @dev Optional metadata interface for verifier contracts that carry their own immutable provenance.
+///      Production ceremony tooling may instead use the explicit four-argument registration function.
+interface ICapacitySpendVerifierProvenance {
+    function circuitArtifactHash() external view returns (bytes32);
+    function verificationKeyHash() external view returns (bytes32);
+}
+
 /// @title CapacityVault
 /// @notice Canonical on-chain state machine for confidential certified production capacity.
 /// @dev Exact capacity never enters contract storage. Only commitments, allocation references and nullifiers are shared.
@@ -61,6 +68,16 @@ contract CapacityVault is AccessControl, Pausable {
         bool exists;
     }
 
+    /// @notice Immutable provenance bound to one circuit version.
+    /// @dev A new circuit, verification key or deployed verifier must use a new circuitVersion.
+    struct VerifierProvenance {
+        address verifier;
+        bytes32 circuitArtifactHash;
+        bytes32 verificationKeyHash;
+        bytes32 verifierCodeHash;
+        uint64 registeredAt;
+    }
+
     ICredentialRegistry public immutable credentialRegistry;
     IOrderRegistry public immutable orderRegistry;
     IThreadProofRegistry public immutable organizationRegistry;
@@ -69,6 +86,7 @@ contract CapacityVault is AccessControl, Pausable {
     mapping(bytes32 allocationId => CapacityAllocation allocation) private _capacityAllocations;
     mapping(uint256 nullifier => bool used) public usedNullifiers;
     mapping(uint32 circuitVersion => ICapacitySpendVerifier verifier) public verifiers;
+    mapping(uint32 circuitVersion => VerifierProvenance provenance) private _verifierProvenance;
 
     error InvalidAddress();
     error InvalidCommitment();
@@ -83,7 +101,13 @@ contract CapacityVault is AccessControl, Pausable {
     error InvalidOrderAuthorization(bytes32 orderId);
     error PolicyMismatch(bytes32 expected, bytes32 supplied);
     error CircuitVersionMismatch(uint32 expected, uint32 supplied);
+    error InvalidCircuitVersion(uint32 circuitVersion);
     error UnknownVerifier(uint32 circuitVersion);
+    error InvalidVerifier(address verifier);
+    error VerifierAlreadyRegistered(uint32 circuitVersion);
+    error VerifierMetadataUnavailable(address verifier);
+    error InvalidVerifierProvenance(bytes32 circuitArtifactHash, bytes32 verificationKeyHash);
+    error VerifierCodeHashMismatch(uint32 circuitVersion, bytes32 expectedCodeHash, bytes32 actualCodeHash);
     error InvalidProof();
     error UnauthorizedFactoryCaller(bytes32 factoryOrganizationId, address caller);
     error InactiveFactory(bytes32 factoryOrganizationId);
@@ -118,6 +142,13 @@ contract CapacityVault is AccessControl, Pausable {
     );
 
     event VerifierRegistered(uint32 indexed circuitVersion, address indexed verifier);
+    event VerifierProvenanceRegistered(
+        uint32 indexed circuitVersion,
+        address indexed verifier,
+        bytes32 indexed circuitArtifactHash,
+        bytes32 verificationKeyHash,
+        bytes32 verifierCodeHash
+    );
 
     constructor(
         address initialAdmin,
@@ -142,10 +173,41 @@ contract CapacityVault is AccessControl, Pausable {
         _grantRole(PAUSER_ROLE, initialAdmin);
     }
 
+    /// @notice Registers a verifier that exposes immutable provenance metadata itself.
+    /// @dev This preserves convenient development/test deployment without permitting untracked verifiers.
     function registerVerifier(uint32 circuitVersion, address verifierAddress) external onlyRole(VERIFIER_ADMIN_ROLE) {
-        if (verifierAddress == address(0) || verifierAddress.code.length == 0) revert InvalidAddress();
-        verifiers[circuitVersion] = ICapacitySpendVerifier(verifierAddress);
-        emit VerifierRegistered(circuitVersion, verifierAddress);
+        if (verifierAddress == address(0) || verifierAddress.code.length == 0) revert InvalidVerifier(verifierAddress);
+
+        bytes32 circuitArtifactHash;
+        bytes32 verificationKeyHash;
+        try ICapacitySpendVerifierProvenance(verifierAddress).circuitArtifactHash() returns (bytes32 value) {
+            circuitArtifactHash = value;
+        } catch {
+            revert VerifierMetadataUnavailable(verifierAddress);
+        }
+        try ICapacitySpendVerifierProvenance(verifierAddress).verificationKeyHash() returns (bytes32 value) {
+            verificationKeyHash = value;
+        } catch {
+            revert VerifierMetadataUnavailable(verifierAddress);
+        }
+
+        _registerVerifier(circuitVersion, verifierAddress, circuitArtifactHash, verificationKeyHash);
+    }
+
+    /// @notice Registers an immutable verifier/circuit/VK tuple for a new circuit version.
+    /// @dev Production ceremony tooling should calculate the artifact hashes independently and use this path.
+    function registerVerifier(
+        uint32 circuitVersion,
+        address verifierAddress,
+        bytes32 circuitArtifactHash,
+        bytes32 verificationKeyHash
+    ) external onlyRole(VERIFIER_ADMIN_ROLE) {
+        _registerVerifier(circuitVersion, verifierAddress, circuitArtifactHash, verificationKeyHash);
+    }
+
+    function getVerifierProvenance(uint32 circuitVersion) external view returns (VerifierProvenance memory) {
+        if (address(verifiers[circuitVersion]) == address(0)) revert UnknownVerifier(circuitVersion);
+        return _verifierProvenance[circuitVersion];
     }
 
     function certifyCapacity(
@@ -159,6 +221,7 @@ contract CapacityVault is AccessControl, Pausable {
     ) external onlyRole(CERTIFIER_ROLE) whenNotPaused {
         _requireFieldElement(initialCommitment);
         if (initialCommitment == 0) revert InvalidCommitment();
+        _verifiedVerifier(circuitVersion);
         if (!organizationRegistry.isActive(factoryOrganizationId)) revert InactiveFactory(factoryOrganizationId);
 
         bytes32 expectedScopeHash = capacityCredentialScopeHash(
@@ -178,7 +241,6 @@ contract CapacityVault is AccessControl, Pausable {
         ) {
             revert InvalidCredentialBinding(capacityCredentialId, expectedScopeHash);
         }
-        if (address(verifiers[circuitVersion]) == address(0)) revert UnknownVerifier(circuitVersion);
 
         bytes32 key = capacityStateKey(factoryOrganizationId, periodId, processId);
         if (_capacityStates[key].active) revert CapacityStateAlreadyExists(key);
@@ -251,8 +313,7 @@ contract CapacityVault is AccessControl, Pausable {
         _requireFieldElement(request.nullifier);
         if (request.newCapacityCommitment == 0) revert InvalidCommitment();
 
-        ICapacitySpendVerifier verifier = verifiers[request.circuitVersion];
-        if (address(verifier) == address(0)) revert UnknownVerifier(request.circuitVersion);
+        ICapacitySpendVerifier verifier = _verifiedVerifier(request.circuitVersion);
 
         uint256[9] memory signals = [
             _toField(request.factoryOrganizationId),
@@ -388,6 +449,51 @@ contract CapacityVault is AccessControl, Pausable {
 
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
+    }
+
+    function _registerVerifier(
+        uint32 circuitVersion,
+        address verifierAddress,
+        bytes32 circuitArtifactHash,
+        bytes32 verificationKeyHash
+    ) internal {
+        if (circuitVersion == 0) revert InvalidCircuitVersion(circuitVersion);
+        if (verifierAddress == address(0) || verifierAddress.code.length == 0) revert InvalidVerifier(verifierAddress);
+        if (address(verifiers[circuitVersion]) != address(0)) revert VerifierAlreadyRegistered(circuitVersion);
+        if (circuitArtifactHash == bytes32(0) || verificationKeyHash == bytes32(0)) {
+            revert InvalidVerifierProvenance(circuitArtifactHash, verificationKeyHash);
+        }
+
+        bytes32 verifierCodeHash = verifierAddress.codehash;
+        verifiers[circuitVersion] = ICapacitySpendVerifier(verifierAddress);
+        _verifierProvenance[circuitVersion] = VerifierProvenance({
+            verifier: verifierAddress,
+            circuitArtifactHash: circuitArtifactHash,
+            verificationKeyHash: verificationKeyHash,
+            verifierCodeHash: verifierCodeHash,
+            registeredAt: uint64(block.timestamp)
+        });
+
+        emit VerifierRegistered(circuitVersion, verifierAddress);
+        emit VerifierProvenanceRegistered(
+            circuitVersion,
+            verifierAddress,
+            circuitArtifactHash,
+            verificationKeyHash,
+            verifierCodeHash
+        );
+    }
+
+    function _verifiedVerifier(uint32 circuitVersion) internal view returns (ICapacitySpendVerifier verifier) {
+        verifier = verifiers[circuitVersion];
+        address verifierAddress = address(verifier);
+        if (verifierAddress == address(0)) revert UnknownVerifier(circuitVersion);
+
+        bytes32 expectedCodeHash = _verifierProvenance[circuitVersion].verifierCodeHash;
+        bytes32 actualCodeHash = verifierAddress.codehash;
+        if (expectedCodeHash == bytes32(0) || actualCodeHash != expectedCodeHash) {
+            revert VerifierCodeHashMismatch(circuitVersion, expectedCodeHash, actualCodeHash);
+        }
     }
 
     function _toField(bytes32 value) internal pure returns (uint256) {

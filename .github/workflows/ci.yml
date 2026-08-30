@@ -124,7 +124,7 @@ jobs:
         run: pnpm --filter @threadproof/circuits test:witness
       - name: Generate and verify development Groth16 proof
         run: pnpm --filter @threadproof/circuits test:groth16
-      - name: Verify generated Groth16 proof through CapacityVault
+      - name: Verify generated Groth16 proof through provenance-bound CapacityVault
         shell: bash
         run: |
           set -euo pipefail
@@ -133,6 +133,9 @@ jobs:
           cp packages/circuits/artifacts/CapacitySpendVerifier.sol \
             packages/contracts/contracts/generated/CapacitySpendVerifier.sol
           THREADPROOF_GENERATED_PROOF_DIR="$GITHUB_WORKSPACE/packages/circuits/artifacts" \
+            node packages/contracts/scripts/generate-verifier-provenance-wrapper.mjs
+          THREADPROOF_GENERATED_PROOF_DIR="$GITHUB_WORKSPACE/packages/circuits/artifacts" \
+          THREADPROOF_GENERATED_VERIFIER_SOL="$GITHUB_WORKSPACE/packages/contracts/contracts/generated/CapacitySpendVerifierWithProvenance.sol" \
             pnpm --filter @threadproof/contracts verify:generated
       - name: Upload reproducibility artifacts
         uses: actions/upload-artifact@v4
@@ -148,6 +151,8 @@ jobs:
             packages/circuits/artifacts/verification_key.json
             packages/circuits/artifacts/proof.json
             packages/circuits/artifacts/public.json
+            packages/circuits/artifacts/verifier_provenance.json
+            packages/contracts/contracts/generated/CapacitySpendVerifierWithProvenance.sol
 
   security:
     runs-on: ubuntu-latest
