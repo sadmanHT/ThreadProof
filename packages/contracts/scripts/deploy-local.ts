@@ -3,15 +3,11 @@ import { ethers, network } from "hardhat";
 async function main() {
   const accounts = (await network.provider.send("eth_accounts")) as string[];
   const deployerAddress = accounts[0];
-  if (!deployerAddress) {
-    throw new Error("No deployer account is configured for this Hardhat network");
-  }
+  if (!deployerAddress) throw new Error("No deployer account is configured for this Hardhat network");
 
   console.log(`Deploying ThreadProof local contracts on ${network.name}`);
   console.log(`Deployer: ${deployerAddress}`);
-  console.warn(
-    "DEV ONLY: this script deploys MockCapacitySpendVerifier. It is not a production ZK verifier."
-  );
+  console.warn("DEV ONLY: this script deploys MockCapacitySpendVerifier. It is not a production ZK verifier.");
 
   const Registry = await ethers.getContractFactory("ThreadProofRegistry");
   const registry = await Registry.deploy(deployerAddress);
@@ -38,6 +34,16 @@ async function main() {
   );
   await capacityVault.waitForDeployment();
 
+  const SubcontractGovernor = await ethers.getContractFactory("SubcontractGovernor");
+  const subcontractGovernor = await SubcontractGovernor.deploy(
+    deployerAddress,
+    await orders.getAddress(),
+    await registry.getAddress(),
+    await credentials.getAddress(),
+    await capacityVault.getAddress()
+  );
+  await subcontractGovernor.waitForDeployment();
+
   const circuitVersion = 1;
   await (await capacityVault.registerVerifier(circuitVersion, await mockVerifier.getAddress())).wait();
 
@@ -52,11 +58,9 @@ async function main() {
       OrderRegistry: await orders.getAddress(),
       MockCapacitySpendVerifier: await mockVerifier.getAddress(),
       CapacityVault: await capacityVault.getAddress(),
+      SubcontractGovernor: await subcontractGovernor.getAddress(),
     },
-    verifier: {
-      circuitVersion,
-      kind: "mock-dev-only",
-    },
+    verifier: { circuitVersion, kind: "mock-dev-only" },
   };
 
   console.log(JSON.stringify(deployment, null, 2));
