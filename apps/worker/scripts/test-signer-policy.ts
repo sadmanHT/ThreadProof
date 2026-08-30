@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { getOrderRelayerEnv, getProofEnv, getProofSubmitterEnv } from "../src/env.js";
 
 const ADDRESS = `0x${"11".repeat(20)}`;
@@ -42,6 +43,7 @@ configure({
 });
 assert.equal(getOrderRelayerEnv().THREADPROOF_SIGNER_MODE, "remote");
 assert.equal(getProofSubmitterEnv().THREADPROOF_SIGNER_MODE, "remote");
+assert.throws(() => getProofEnv(), /proof generator must have transaction signing disabled/i);
 
 configure({
   THREADPROOF_DEPLOYMENT_ENV: "production",
@@ -71,5 +73,22 @@ configure({
   THREADPROOF_RELAYER_ADDRESS: ADDRESS,
 });
 assert.equal(getOrderRelayerEnv().THREADPROOF_SIGNER_MODE, "local-dev");
+assert.throws(() => getProofEnv(), /proof generator must have transaction signing disabled/i);
 
-console.log("Production signer policy checks passed");
+const proofGeneratorSource = readFileSync(new URL("../src/proof-generator.ts", import.meta.url), "utf8");
+for (const forbidden of [
+  "privateKeyToAccount",
+  "THREADPROOF_RELAYER_PRIVATE_KEY",
+  "createWalletClient",
+  "createRelayerWallet",
+  "capacityVaultAbi",
+  ".writeContract(",
+]) {
+  assert.equal(
+    proofGeneratorSource.includes(forbidden),
+    false,
+    `Proof generator must not contain transaction-signing primitive: ${forbidden}`,
+  );
+}
+
+console.log("Production signer and proof-process boundary checks passed");

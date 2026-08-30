@@ -1,17 +1,9 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { buildPoseidon } from "circomlibjs";
-import { groth16, type Groth16Proof } from "snarkjs";
-import {
-  createPublicClient,
-  createWalletClient,
-  defineChain,
-  http,
-  type Hex,
-} from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { groth16 } from "snarkjs";
+import type { Hex } from "viem";
 import { z } from "zod";
-import { capacityVaultAbi } from "./chain.js";
 import {
   bufferToBytea,
   byteaToBuffer,
@@ -25,7 +17,7 @@ import { createServiceClient } from "./supabase.js";
 
 const SNARK_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 const UINT64_MAX = (1n << 64n) - 1n;
-const hex32Pattern = /^0x[0-9a-fA-F]{64}$/;
+const HEX32 = /^0x[0-9a-fA-F]{64}$/;
 
 const orderPayloadSchema = z.object({
   orderWorkload: z.string().regex(/^[0-9]+$/),
@@ -36,7 +28,6 @@ type ServiceClient = ReturnType<typeof createServiceClient>;
 type Row = Record<string, any>;
 
 type JobContext = {
-  job: Row;
   opening: Row;
   version: Row;
   order: Row;
@@ -44,7 +35,7 @@ type JobContext = {
 };
 
 function requireHex32(value: unknown, label: string): Hex {
-  if (typeof value !== "string" || !hex32Pattern.test(value)) {
+  if (typeof value !== "string" || !HEX32.test(value)) {
     throw new Error(`${label} must be a canonical bytes32 hex value`);
   }
   return value as Hex;
@@ -61,7 +52,6 @@ function scalarFromEncrypted(value: string, key: Buffer, label: string) {
 }
 
 function randomFieldElement() {
-  // 30 bytes is always below the BN254 scalar field and gives ample entropy for commitment randomness.
   return BigInt(`0x${randomBytes(30).toString("hex")}`);
 }
 
@@ -76,18 +66,13 @@ async function releaseStaleClaims(supabase: ServiceClient) {
     .update({ status: "queued", worker_claim_token: null, worker_claimed_at: null })
     .eq("status", "generating")
     .lt("worker_claimed_at", cutoff);
-  await supabase
-    .from("proof_jobs")
-    .update({ worker_claim_token: null, worker_claimed_at: null })
-    .eq("status", "generated")
-    .lt("worker_claimed_at", cutoff);
 }
 
-async function claimJob(supabase: ServiceClient, status: "queued" | "generated") {
+async function claimQueuedJob(supabase: ServiceClient) {
   const { data: candidates, error } = await supabase
     .from("proof_jobs")
     .select("*")
-    .eq("status", status)
+    .eq("status", "queued")
     .is("worker_claim_token", null)
     .order("created_at", { ascending: true })
     .limit(8);
@@ -95,14 +80,19 @@ async function claimJob(supabase: ServiceClient, status: "queued" | "generated")
 
   for (const candidate of candidates ?? []) {
     const token = randomUUID();
-    const patch = status === "queued"
-      ? { status: "generating", started_at: new Date().toISOString(), worker_claim_token: token, worker_claimed_at: new Date().toISOString() }
-      : { worker_claim_token: token, worker_claimed_at: new Date().toISOString() };
+    const claimedAt = new Date().toISOString();
     const { data, error: claimError } = await supabase
       .from("proof_jobs")
-      .update(patch)
+      .update({
+        status: "generating",
+        started_at: claimedAt,
+        worker_claim_token: token,
+        worker_claimed_at: claimedAt,
+        error_code: null,
+        error_detail: null,
+      })
       .eq("id", candidate.id)
-      .eq("status", status)
+      .eq("status", "queued")
       .is("worker_claim_token", null)
       .select("*")
       .maybeSingle();
@@ -151,15 +141,18 @@ async function loadContext(supabase: ServiceClient, job: Row): Promise<JobContex
     throw new Error("Order and capacity opening policy hashes differ");
   }
 
-  return { job, opening, version, order, factory };
+  return { opening, version, order, factory };
 }
 
 async function generateProof(supabase: ServiceClient, job: Row) {
   const env = getProofEnv();
+  if (env.THREADPROOF_SIGNER_MODE !== "disabled") {
+    throw new Error("The proof generator must run with transaction signing disabled; use the dedicated proof submitter for chain writes.");
+  }
+
   const key = decodeDataKey(env.THREADPROOF_DATA_KEY_BASE64);
   const secrets = parseFactorySecrets(env.THREADPROOF_FACTORY_SECRETS_JSON);
-  const context = await loadContext(supabase, job);
-  const { opening, version, order, factory } = context;
+  const { opening, version, order, factory } = await loadContext(supabase, job);
 
   const factoryChainId = requireHex32(factory.chain_organization_id, "factory chain organization id");
   const periodChainId = requireHex32(opening.chain_period_id, "capacity period id");
@@ -169,7 +162,9 @@ async function generateProof(supabase: ServiceClient, job: Row) {
 
   const factorySecret = secrets.get(factoryChainId.toLowerCase());
   if (factorySecret == null) throw new Error(`No nullifier secret configured for factory ${factoryChainId}`);
-  if (factorySecret <= 0n || factorySecret >= SNARK_FIELD) throw new Error("Factory nullifier secret is outside the BN254 scalar field");
+  if (factorySecret <= 0n || factorySecret >= SNARK_FIELD) {
+    throw new Error("Factory nullifier secret is outside the BN254 scalar field");
+  }
 
   const previousCapacity = scalarFromEncrypted(opening.encrypted_remaining_capacity, key, "remaining capacity");
   const oldRandomness = scalarFromEncrypted(opening.encrypted_randomness, key, "capacity randomness");
@@ -184,7 +179,9 @@ async function generateProof(supabase: ServiceClient, job: Row) {
   const orderWorkload = BigInt(orderPayload.orderWorkload);
   const orderRandomness = BigInt(orderPayload.orderRandomness);
   if (orderWorkload > UINT64_MAX) throw new Error("Order workload exceeds the circuit uint64 range");
-  if (orderWorkload > previousCapacity) throw new Error("Order is infeasible against the current private capacity opening");
+  if (orderWorkload > previousCapacity) {
+    throw new Error("Order is infeasible against the current private capacity opening");
+  }
 
   const newCapacity = previousCapacity - orderWorkload;
   const newRandomness = randomFieldElement();
@@ -265,7 +262,10 @@ async function generateProof(supabase: ServiceClient, job: Row) {
     nullifier,
   ].map((value) => value.toString());
 
-  if (publicSignals.length !== expectedSignals.length || publicSignals.some((value, index) => value !== expectedSignals[index])) {
+  if (
+    publicSignals.length !== expectedSignals.length ||
+    publicSignals.some((value, index) => value !== expectedSignals[index])
+  ) {
     throw new Error("Prover returned public signals that do not match the requested state transition");
   }
 
@@ -278,7 +278,6 @@ async function generateProof(supabase: ServiceClient, job: Row) {
 
   const nextCapacityCiphertext = encryptEmbedded(newCapacity.toString(), key);
   const nextRandomnessCiphertext = encryptEmbedded(newRandomness.toString(), key);
-
   const { error: privateStateError } = await supabase.from("proof_job_private_state").upsert({
     proof_job_id: job.id,
     next_capacity_ciphertext: bufferToBytea(nextCapacityCiphertext),
@@ -308,219 +307,58 @@ async function generateProof(supabase: ServiceClient, job: Row) {
       worker_claimed_at: null,
     })
     .eq("id", job.id)
+    .eq("status", "generating")
     .eq("worker_claim_token", job.worker_claim_token);
   if (updateError) throw updateError;
 
   console.log(`Generated PoFC proof for job ${job.id}: ${commitmentHex(newCapacityCommitment)}`);
 }
 
-function proofCalldata(proof: Groth16Proof) {
-  if (!proof.pi_a?.[0] || !proof.pi_a?.[1] || !proof.pi_b?.[0]?.[0] || !proof.pi_b?.[1]?.[0] || !proof.pi_c?.[0] || !proof.pi_c?.[1]) {
-    throw new Error("Stored Groth16 proof is malformed");
-  }
-  const a = [BigInt(proof.pi_a[0]), BigInt(proof.pi_a[1])] as [bigint, bigint];
-  const b = [
-    [BigInt(proof.pi_b[0][1]), BigInt(proof.pi_b[0][0])],
-    [BigInt(proof.pi_b[1][1]), BigInt(proof.pi_b[1][0])],
-  ] as [[bigint, bigint], [bigint, bigint]];
-  const c = [BigInt(proof.pi_c[0]), BigInt(proof.pi_c[1])] as [bigint, bigint];
-  return { a, b, c };
-}
-
-async function finalizeConfirmedSpend(
-  supabase: ServiceClient,
-  context: JobContext,
-  txHash: Hex,
-  blockNumber: bigint,
-  publicSignals: string[],
-) {
-  const { data: privateState, error: privateStateError } = await supabase
-    .from("proof_job_private_state")
-    .select("*")
-    .eq("proof_job_id", context.job.id)
-    .single();
-  if (privateStateError) throw privateStateError;
-
-  const [oldCommitment, newCommitment, orderCommitment, nullifier] = publicSignals.slice(5).map(BigInt);
-  if (oldCommitment == null || newCommitment == null || orderCommitment == null || nullifier == null) {
-    throw new Error("Confirmed proof is missing capacity public signals");
-  }
-
-  const confirmedAt = new Date().toISOString();
-  const block = Number(blockNumber);
-  if (!Number.isSafeInteger(block)) throw new Error("Block number exceeds JavaScript safe integer range");
-
-  const { error: openingError } = await supabase
-    .from("private_capacity_openings")
-    .update({
-      capacity_commitment: newCommitment.toString(),
-      encrypted_remaining_capacity: privateState.next_capacity_ciphertext,
-      encrypted_randomness: privateState.next_randomness_ciphertext,
-      last_chain_block: block,
-      status: "active",
-      updated_at: confirmedAt,
-    })
-    .eq("id", context.opening.id)
-    .eq("capacity_commitment", oldCommitment.toString());
-  if (openingError) throw openingError;
-
-  const { error: allocationError } = await supabase.from("capacity_allocations").upsert({
-    capacity_opening_id: context.opening.id,
-    order_version_id: context.version.id,
-    old_commitment: oldCommitment.toString(),
-    new_commitment: newCommitment.toString(),
-    order_commitment: orderCommitment.toString(),
-    nullifier: nullifier.toString(),
-    chain_tx_hash: txHash,
-    chain_block_number: block,
-    confirmed_at: confirmedAt,
-  }, { onConflict: "chain_tx_hash", ignoreDuplicates: true });
-  if (allocationError) throw allocationError;
-
-  const { error: jobError } = await supabase
+async function failClaimedJob(supabase: ServiceClient, job: Row, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  await supabase
     .from("proof_jobs")
     .update({
-      status: "confirmed",
-      chain_tx_hash: txHash,
-      chain_block_number: block,
-      completed_at: confirmedAt,
-      worker_claim_token: null,
-      worker_claimed_at: null,
-    })
-    .eq("id", context.job.id);
-  if (jobError) throw jobError;
-
-  await supabase.from("proof_job_private_state").delete().eq("proof_job_id", context.job.id);
-}
-
-async function submitGeneratedProof(supabase: ServiceClient, job: Row) {
-  const env = getProofEnv();
-  if (!env.THREADPROOF_RELAYER_PRIVATE_KEY) {
-    await supabase.from("proof_jobs").update({ worker_claim_token: null, worker_claimed_at: null }).eq("id", job.id);
-    return;
-  }
-
-  const context = await loadContext(supabase, job);
-  const stored = job.public_inputs as { signals?: unknown; request?: Record<string, unknown> } | null;
-  const publicSignals = Array.isArray(stored?.signals) && stored.signals.every((value) => typeof value === "string")
-    ? stored.signals as string[]
-    : null;
-  if (!publicSignals || publicSignals.length !== 9) throw new Error("Stored proof job does not contain nine public signals");
-  const request = stored?.request ?? {};
-  const factoryOrganizationId = requireHex32(request.factoryOrganizationId, "factory organization id");
-  const periodId = requireHex32(request.periodId, "period id");
-  const processId = requireHex32(request.processId, "process id");
-  const orderId = requireHex32(request.orderId, "order id");
-  const policyHash = requireHex32(request.policyHash, "policy hash");
-  const proof = job.proof as Groth16Proof;
-  const { a, b, c } = proofCalldata(proof);
-
-  const account = privateKeyToAccount(env.THREADPROOF_RELAYER_PRIVATE_KEY as Hex);
-  const publicClient = createPublicClient({ transport: http(env.THREADPROOF_RPC_URL) });
-  const chainId = await publicClient.getChainId();
-  const chain = defineChain({
-    id: chainId,
-    name: "ThreadProof Besu",
-    nativeCurrency: { name: "ThreadProof Gas", symbol: "TPG", decimals: 18 },
-    rpcUrls: { default: { http: [env.THREADPROOF_RPC_URL] } },
-  });
-  const wallet = createWalletClient({ account, chain, transport: http(env.THREADPROOF_RPC_URL) });
-
-  const spendRequest = {
-    factoryOrganizationId,
-    periodId,
-    processId,
-    orderId,
-    policyHash,
-    oldCapacityCommitment: BigInt(publicSignals[5]!),
-    newCapacityCommitment: BigInt(publicSignals[6]!),
-    orderCommitment: BigInt(publicSignals[7]!),
-    nullifier: BigInt(publicSignals[8]!),
-    circuitVersion: Number(context.job.circuit_version),
-  } as const;
-
-  try {
-    const txHash = await wallet.writeContract({
-      address: env.THREADPROOF_CAPACITY_VAULT_ADDRESS as Hex,
-      abi: capacityVaultAbi,
-      functionName: "spendCapacity",
-      args: [spendRequest, a, b, c],
-    });
-    await supabase.from("proof_jobs").update({
-      status: "submitted",
-      chain_tx_hash: txHash,
-      worker_claim_token: null,
-      worker_claimed_at: null,
-    }).eq("id", job.id);
-
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
-    if (receipt.status !== "success") throw new Error(`Capacity spend transaction reverted: ${txHash}`);
-    await finalizeConfirmedSpend(supabase, context, txHash, receipt.blockNumber, publicSignals);
-    console.log(`Confirmed PoFC spend for job ${job.id} in block ${receipt.blockNumber}`);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const stale = /StaleCapacityState|NullifierAlreadyUsed|InvalidOrderAuthorization/.test(message);
-    await supabase.from("proof_jobs").update({
-      status: stale ? "stale" : "failed",
-      error_code: stale ? "CHAIN_STATE_STALE" : "CHAIN_SUBMISSION_FAILED",
+      status: "failed",
+      error_code: "PROOF_GENERATION_FAILED",
       error_detail: message.slice(0, 4000),
       completed_at: new Date().toISOString(),
       worker_claim_token: null,
       worker_claimed_at: null,
-    }).eq("id", job.id);
+    })
+    .eq("id", job.id)
+    .eq("status", "generating")
+    .eq("worker_claim_token", job.worker_claim_token);
+}
+
+async function runOnce(supabase: ServiceClient) {
+  await releaseStaleClaims(supabase);
+  const job = await claimQueuedJob(supabase);
+  if (!job) return false;
+
+  try {
+    await generateProof(supabase, job);
+  } catch (error) {
+    await failClaimedJob(supabase, job, error);
     throw error;
   }
-}
-
-async function failClaimedJob(supabase: ServiceClient, job: Row, error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  await supabase.from("proof_jobs").update({
-    status: "failed",
-    error_code: "PROOF_WORKER_FAILED",
-    error_detail: message.slice(0, 4000),
-    completed_at: new Date().toISOString(),
-    worker_claim_token: null,
-    worker_claimed_at: null,
-  }).eq("id", job.id);
-}
-
-async function runOnce() {
-  const env = getProofEnv();
-  const supabase = createServiceClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
-  await releaseStaleClaims(supabase);
-
-  const queued = await claimJob(supabase, "queued");
-  if (queued) {
-    try {
-      await generateProof(supabase, queued);
-    } catch (error) {
-      await failClaimedJob(supabase, queued, error);
-      throw error;
-    }
-    return true;
-  }
-
-  if (env.THREADPROOF_RELAYER_PRIVATE_KEY) {
-    const generated = await claimJob(supabase, "generated");
-    if (generated) {
-      try {
-        await submitGeneratedProof(supabase, generated);
-      } catch (error) {
-        console.error(error);
-      }
-      return true;
-    }
-  }
-  return false;
+  return true;
 }
 
 async function main() {
+  const env = getProofEnv();
+  if (env.THREADPROOF_SIGNER_MODE !== "disabled") {
+    throw new Error("Proof generation must run with THREADPROOF_SIGNER_MODE=disabled.");
+  }
+
+  const supabase = createServiceClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
   const once = process.env.THREADPROOF_RUN_ONCE === "true";
+  console.log("ThreadProof proof generator started; transaction signing is structurally disabled");
+
   do {
-    const worked = await runOnce();
-    if (once) break;
-    await new Promise((resolve) => setTimeout(resolve, worked ? 250 : 3_000));
-  } while (true);
+    const worked = await runOnce(supabase);
+    if (!worked && !once) await new Promise((resolve) => setTimeout(resolve, 2_000));
+  } while (!once);
 }
 
 main().catch((error) => {

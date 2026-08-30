@@ -75,7 +75,16 @@ const proofSchema = commonSchema.extend({
   THREADPROOF_CAPACITY_VKEY_PATH: z.string().min(1).optional(),
   THREADPROOF_DATA_KEY_BASE64: z.string().min(20),
   THREADPROOF_FACTORY_SECRETS_JSON: z.string().min(2),
-}).superRefine((value, ctx) => validateSignerConfig(value, ctx, false));
+}).superRefine((value, ctx) => {
+  validateSignerConfig(value, ctx, false);
+  if (value.THREADPROOF_SIGNER_MODE !== "disabled") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["THREADPROOF_SIGNER_MODE"],
+      message: "The proof generator must have transaction signing disabled; use the dedicated proof submitter for chain writes.",
+    });
+  }
+});
 
 const proofSubmitterSchema = commonSchema.extend({
   THREADPROOF_CAPACITY_VAULT_ADDRESS: address,
