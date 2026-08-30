@@ -10,7 +10,7 @@ import {IThreadProofRegistry} from "./interfaces/IThreadProofRegistry.sol";
 
 /// @title CapacityVault
 /// @notice Canonical on-chain state machine for confidential certified production capacity.
-/// @dev Exact capacity never enters contract storage. Only commitments and nullifiers are shared.
+/// @dev Exact capacity never enters contract storage. Only commitments, allocation references and nullifiers are shared.
 contract CapacityVault is AccessControl, Pausable {
     bytes32 public constant CERTIFIER_ROLE = keccak256("CERTIFIER_ROLE");
     bytes32 public constant RELAYER_ROLE = keccak256("RELAYER_ROLE");
@@ -44,11 +44,29 @@ contract CapacityVault is AccessControl, Pausable {
         uint32 circuitVersion;
     }
 
+    /// @notice Immutable receipt that a specific order consumed one canonical capacity state.
+    /// @dev It stores commitments/IDs only; exact workload and remaining capacity remain private.
+    struct CapacityAllocation {
+        bytes32 stateKey;
+        bytes32 orderId;
+        bytes32 factoryOrganizationId;
+        bytes32 periodId;
+        bytes32 processId;
+        bytes32 capacityCredentialId;
+        uint256 orderCommitment;
+        bytes32 policyHash;
+        uint256 nullifier;
+        uint32 circuitVersion;
+        uint64 authorizedAt;
+        bool exists;
+    }
+
     ICredentialRegistry public immutable credentialRegistry;
     IOrderRegistry public immutable orderRegistry;
     IThreadProofRegistry public immutable organizationRegistry;
 
     mapping(bytes32 stateKey => CapacityState state) private _capacityStates;
+    mapping(bytes32 allocationId => CapacityAllocation allocation) private _capacityAllocations;
     mapping(uint256 nullifier => bool used) public usedNullifiers;
     mapping(uint32 circuitVersion => ICapacitySpendVerifier verifier) public verifiers;
 
@@ -57,6 +75,7 @@ contract CapacityVault is AccessControl, Pausable {
     error InvalidFieldElement();
     error CapacityStateAlreadyExists(bytes32 stateKey);
     error UnknownCapacityState(bytes32 stateKey);
+    error UnknownCapacityAllocation(bytes32 allocationId);
     error StaleCapacityState(uint256 expected, uint256 supplied);
     error NullifierAlreadyUsed(uint256 nullifier);
     error InvalidCredential(bytes32 credentialId);
@@ -88,6 +107,14 @@ contract CapacityVault is AccessControl, Pausable {
         uint256 newCommitment,
         uint256 orderCommitment,
         uint32 circuitVersion
+    );
+
+    event CapacityAllocationRecorded(
+        bytes32 indexed allocationId,
+        bytes32 indexed orderId,
+        bytes32 indexed factoryOrganizationId,
+        bytes32 stateKey,
+        uint256 nullifier
     );
 
     event VerifierRegistered(uint32 indexed circuitVersion, address indexed verifier);
@@ -244,8 +271,25 @@ contract CapacityVault is AccessControl, Pausable {
         // Canonical compare-and-swap: this update and nullifier consumption happen in the same transaction.
         usedNullifiers[request.nullifier] = true;
         uint256 previousCommitment = state.activeCommitment;
+        bytes32 capacityCredentialId = state.capacityCredentialId;
         state.activeCommitment = request.newCapacityCommitment;
         state.updatedAt = uint64(block.timestamp);
+
+        bytes32 allocationId = capacityAllocationId(key, request.orderId, request.nullifier);
+        _capacityAllocations[allocationId] = CapacityAllocation({
+            stateKey: key,
+            orderId: request.orderId,
+            factoryOrganizationId: request.factoryOrganizationId,
+            periodId: request.periodId,
+            processId: request.processId,
+            capacityCredentialId: capacityCredentialId,
+            orderCommitment: request.orderCommitment,
+            policyHash: request.policyHash,
+            nullifier: request.nullifier,
+            circuitVersion: request.circuitVersion,
+            authorizedAt: uint64(block.timestamp),
+            exists: true
+        });
 
         emit CapacitySpent(
             key,
@@ -255,6 +299,13 @@ contract CapacityVault is AccessControl, Pausable {
             request.newCapacityCommitment,
             request.orderCommitment,
             request.circuitVersion
+        );
+        emit CapacityAllocationRecorded(
+            allocationId,
+            request.orderId,
+            request.factoryOrganizationId,
+            key,
+            request.nullifier
         );
     }
 
@@ -269,12 +320,54 @@ contract CapacityVault is AccessControl, Pausable {
         return state;
     }
 
+    function getCapacityAllocation(bytes32 allocationId) external view returns (CapacityAllocation memory) {
+        CapacityAllocation memory allocation = _capacityAllocations[allocationId];
+        if (!allocation.exists) revert UnknownCapacityAllocation(allocationId);
+        return allocation;
+    }
+
+    /// @notice Returns whether a historical PoFC allocation still authorizes the exact current order context.
+    /// @dev Historical records remain immutable; amendments, cancellation, revocation or suspension fail closed for new use.
+    function isCapacityAllocationAuthorized(
+        bytes32 allocationId,
+        bytes32 orderId,
+        bytes32 factoryOrganizationId,
+        bytes32 periodId,
+        bytes32 processId,
+        uint256 orderCommitment,
+        bytes32 policyHash
+    ) external view returns (bool) {
+        CapacityAllocation storage allocation = _capacityAllocations[allocationId];
+        if (!allocation.exists) return false;
+        if (
+            allocation.orderId != orderId ||
+            allocation.factoryOrganizationId != factoryOrganizationId ||
+            allocation.periodId != periodId ||
+            allocation.processId != processId ||
+            allocation.orderCommitment != orderCommitment ||
+            allocation.policyHash != policyHash ||
+            allocation.stateKey != capacityStateKey(factoryOrganizationId, periodId, processId)
+        ) return false;
+        if (!usedNullifiers[allocation.nullifier]) return false;
+        if (!organizationRegistry.isActive(factoryOrganizationId)) return false;
+        if (!credentialRegistry.isCredentialActive(allocation.capacityCredentialId)) return false;
+        return orderRegistry.isCurrentOrderAuthorization(orderId, factoryOrganizationId, orderCommitment, policyHash);
+    }
+
     function capacityStateKey(
         bytes32 factoryOrganizationId,
         bytes32 periodId,
         bytes32 processId
     ) public pure returns (bytes32) {
         return keccak256(abi.encode(factoryOrganizationId, periodId, processId));
+    }
+
+    function capacityAllocationId(
+        bytes32 stateKey,
+        bytes32 orderId,
+        uint256 nullifier
+    ) public pure returns (bytes32) {
+        return keccak256(abi.encode(stateKey, orderId, nullifier));
     }
 
     /// @notice Deterministic capacity-credential scope enforced at initial certification.
