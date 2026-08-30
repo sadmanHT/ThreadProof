@@ -122,9 +122,9 @@ export async function runOrderIntelligenceAction(formData: FormData) {
     });
 
     const analysis = await analyzeOrderDocument({
-      sourceText: sourceText || undefined,
-      document: fileBytes ? { bytes: fileBytes, mimeType: "application/pdf" } : undefined,
-      baseline,
+      ...(sourceText ? { sourceText } : {}),
+      ...(fileBytes ? { document: { bytes: fileBytes, mimeType: "application/pdf" as const } } : {}),
+      ...(baseline ? { baseline } : {}),
     });
 
     await completeAiRun({ runId, output: analysis.result, providerResponseId: analysis.id });
@@ -148,7 +148,7 @@ export async function runOrderIntelligenceAction(formData: FormData) {
         evidenceRefs: references,
       })));
     } catch {
-      // The primary immutable input/output audit record is already complete; secondary finding rows are best-effort.
+      // The primary input/output audit record is already complete; secondary finding rows are best-effort.
     }
   } catch (error) {
     if (runId) await failAiRun(runId, "ORDER_INTELLIGENCE_FAILED", error instanceof Error ? error.message : "Unknown AI failure");
