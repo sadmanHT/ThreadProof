@@ -41,6 +41,7 @@ contract CredentialRegistry is AccessControl {
     error InactiveSubject(bytes32 subjectOrganizationId);
     error UnauthorizedIssuer(bytes32 credentialId);
     error InvalidStatus();
+    error InvalidStatusTransition(CredentialStatus previousStatus, CredentialStatus newStatus);
 
     event CredentialIssued(
         bytes32 indexed credentialId,
@@ -160,6 +161,11 @@ contract CredentialRegistry is AccessControl {
 
     function _setStatus(CredentialRecord storage record, CredentialStatus newStatus) internal {
         CredentialStatus previous = record.status;
+        // Revocation is terminal. Repeated/same-state writes are rejected so every status event
+        // represents a real lifecycle transition rather than an ambiguous administrative replay.
+        if (previous == CredentialStatus.Revoked || previous == newStatus) {
+            revert InvalidStatusTransition(previous, newStatus);
+        }
         record.status = newStatus;
         emit CredentialStatusChanged(record.credentialId, previous, newStatus);
     }

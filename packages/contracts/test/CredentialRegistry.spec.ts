@@ -163,6 +163,59 @@ describe("CredentialRegistry", function () {
     expect(revoked.status).to.equal(3);
   });
 
+  it("allows a privileged suspender to restore a suspended credential", async function () {
+    const f = await fixture();
+    const credentialId = ethers.keccak256(ethers.toUtf8Bytes("credential-restorable"));
+    await f.credentials.connect(f.auditorSigner).issueCredential(
+      credentialId,
+      f.factoryId,
+      f.credentialType,
+      f.digest,
+      f.scopeHash,
+      f.now - 60n,
+      f.now + 3_600n
+    );
+
+    await expect(f.credentials.setCredentialStatus(credentialId, 2))
+      .to.emit(f.credentials, "CredentialStatusChanged")
+      .withArgs(credentialId, 1, 2);
+    expect(await f.credentials.isCredentialActive(credentialId)).to.equal(false);
+
+    await expect(f.credentials.setCredentialStatus(credentialId, 1))
+      .to.emit(f.credentials, "CredentialStatusChanged")
+      .withArgs(credentialId, 2, 1);
+    expect(await f.credentials.isCredentialActive(credentialId)).to.equal(true);
+  });
+
+  it("makes revocation terminal and rejects ambiguous same-state writes", async function () {
+    const f = await fixture();
+    const credentialId = ethers.keccak256(ethers.toUtf8Bytes("credential-terminal-revocation"));
+    await f.credentials.connect(f.auditorSigner).issueCredential(
+      credentialId,
+      f.factoryId,
+      f.credentialType,
+      f.digest,
+      f.scopeHash,
+      f.now - 60n,
+      f.now + 3_600n
+    );
+
+    await expect(f.credentials.setCredentialStatus(credentialId, 1))
+      .to.be.revertedWithCustomError(f.credentials, "InvalidStatusTransition")
+      .withArgs(1, 1);
+
+    await f.credentials.connect(f.auditorSigner).revokeCredential(credentialId);
+    await expect(f.credentials.setCredentialStatus(credentialId, 1))
+      .to.be.revertedWithCustomError(f.credentials, "InvalidStatusTransition")
+      .withArgs(3, 1);
+    await expect(f.credentials.setCredentialStatus(credentialId, 2))
+      .to.be.revertedWithCustomError(f.credentials, "InvalidStatusTransition")
+      .withArgs(3, 2);
+    await expect(f.credentials.connect(f.auditorSigner).revokeCredential(credentialId))
+      .to.be.revertedWithCustomError(f.credentials, "InvalidStatusTransition")
+      .withArgs(3, 3);
+  });
+
   it("does not let an unrelated organization revoke another issuer's credential", async function () {
     const f = await fixture();
     const credentialId = ethers.keccak256(ethers.toUtf8Bytes("credential-protected"));
