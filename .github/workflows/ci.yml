@@ -33,6 +33,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Web typecheck
         run: pnpm --filter @threadproof/web typecheck
+      - name: AI trust-boundary regression checks
+        run: node apps/web/scripts/test-ai-contract.mjs
       - name: Web production build
         run: pnpm --filter @threadproof/web build
 
