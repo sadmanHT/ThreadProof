@@ -9,11 +9,10 @@ export const dynamic = "force-dynamic";
 export default async function CapacityPage() {
   const viewer = await requireConsortiumViewer();
   const supabase = await createClient();
-  const certificationTable = (supabase as any).from("capacity_certification_jobs");
   const [{ data: openings }, { data: organizations }, { data: certificationJobs }] = await Promise.all([
     supabase.from("private_capacity_openings").select("id,factory_organization_id,capacity_credential_id,period_id,process_id,chain_state_key,policy_hash,circuit_version,status,last_chain_block,updated_at").order("updated_at", { ascending: false }),
     supabase.from("organizations").select("id,display_name,role,status").order("display_name"),
-    certificationTable.select("id,factory_organization_id,auditor_organization_id,period_label,process_label,policy_hash,capacity_commitment,circuit_version,status,credential_tx_hash,certification_tx_hash,created_at,updated_at").order("created_at", { ascending: false }).limit(40),
+    supabase.from("capacity_certification_jobs").select("id,factory_organization_id,auditor_organization_id,period_label,process_label,policy_hash,capacity_commitment,circuit_version,status,credential_tx_hash,certification_tx_hash,created_at,updated_at").order("created_at", { ascending: false }).limit(40),
   ]);
 
   const orgMap = new Map((organizations ?? []).map((org) => [org.id, org.display_name]));
@@ -24,8 +23,8 @@ export default async function CapacityPage() {
     .filter((organization) => organization.role === "factory" && organization.status === "active")
     .map((organization) => ({ id: organization.id, displayName: organization.display_name }));
   const resumableJobs = (certificationJobs ?? [])
-    .filter((job: any) => ["prepared", "credential_confirmed"].includes(job.status))
-    .map((job: any) => ({
+    .filter((job) => ["prepared", "credential_confirmed"].includes(job.status))
+    .map((job) => ({
       id: job.id,
       status: job.status,
       factoryName: orgMap.get(job.factory_organization_id) ?? "Factory",
@@ -45,7 +44,7 @@ export default async function CapacityPage() {
         />
       ) : null}
 
-      {(certificationJobs ?? []).length ? <section className="panel"><div className="panel-heading"><div><span className="kicker">AUDITOR WORKFLOW</span><h2>Certification reconciliation</h2></div></div><div className="record-list">{(certificationJobs ?? []).map((job: any) => <div className="record-row" key={job.id}><div><strong>{orgMap.get(job.factory_organization_id) ?? "Factory"} · {job.period_label} · {titleCase(job.process_label)}</strong><span>Commitment <span className="mono">{shortHash(job.capacity_commitment)}</span> · policy <span className="mono">{shortHash(job.policy_hash)}</span> · updated {formatDate(job.updated_at)}</span></div><StatusBadge value={job.status} /></div>)}</div></section> : null}
+      {(certificationJobs ?? []).length ? <section className="panel"><div className="panel-heading"><div><span className="kicker">AUDITOR WORKFLOW</span><h2>Certification reconciliation</h2></div></div><div className="record-list">{(certificationJobs ?? []).map((job) => <div className="record-row" key={job.id}><div><strong>{orgMap.get(job.factory_organization_id) ?? "Factory"} · {job.period_label} · {titleCase(job.process_label)}</strong><span>Commitment <span className="mono">{shortHash(job.capacity_commitment)}</span> · policy <span className="mono">{shortHash(job.policy_hash)}</span> · updated {formatDate(job.updated_at)}</span></div><StatusBadge value={job.status} /></div>)}</div></section> : null}
 
       <section className="privacy-banner"><span className="privacy-icon">◌</span><div><strong>Exact capacity is intentionally absent from this screen.</strong><p>Remaining capacity and opening randomness stay encrypted and are consumed only by the proof worker. A database job is never evidence that certification succeeded.</p></div></section>
 
