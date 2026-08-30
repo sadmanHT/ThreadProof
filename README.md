@@ -1,29 +1,19 @@
 # ThreadProof
 
-**Confidential Capacity Governance for Responsible Apparel Supply Chains**
+ThreadProof is a confidential capacity-governance system for apparel supply chains. Hyperledger Besu is the canonical shared state; Supabase is used for private operational data and read models and must never override blockchain authorization state.
 
-ThreadProof is a privacy-preserving consortium blockchain network for governing production feasibility, subcontracting, compliance credentials, buyer amendments, and shared accountability across apparel supply chains.
+## Core protocol
 
-Its core protocol, **Proof-of-Feasible-Capacity (PoFC)**, treats independently certified production capacity as confidential, non-transferable state that can be consumed exactly once. Zero-knowledge proofs establish that an order can be accepted without revealing exact capacity, remaining capacity, competing buyers, or commercially sensitive production books.
+- `ThreadProofRegistry` manages consortium organizations and active signing accounts.
+- `CredentialRegistry` records attributable, revocable credential commitments and scopes.
+- `OrderRegistry` records buyer-authorized order versions using EIP-712 signatures.
+- `CapacityVault` treats certified capacity as a confidential, stateful commitment. Successful PoFC spends consume a nullifier, advance the canonical commitment, and record an immutable on-chain `CapacityAllocation` reference containing commitments/IDs only.
+- `SubcontractGovernor` authorizes parent → child production relationships from current buyer-authorized orders, active factory organizations, policy-scoped compliance/process credentials, a canonical PoFC allocation reference, and an EIP-712 approval from the parent factory. Amendments, cancellation, suspension, or credential revocation fail closed when authorization is re-evaluated.
 
-## Product direction
+ThreadProof does **not** put exact production capacity, exact subcontract allocation quantities, prices, full confidential order terms, or protected supplier identity material on chain.
 
-ThreadProof is being built as a real product, not a competition-only simulation. The initial implementation targets:
+The current subcontract layer also does **not** prove `sum(subcontract allocations) = parent workload`. That confidential allocation-sum invariant requires a separately reviewed ZK allocation circuit before it may be claimed.
 
-- Next.js + TypeScript application
-- Supabase Auth/PostgreSQL for authorized private application data
-- Hyperledger Besu permissioned EVM network with QBFT consensus
-- Solidity smart contracts for registry, credentials, orders, capacity, subcontracting, and governance
-- Circom + snarkjs Groth16 zero-knowledge proofs
-- W3C Verifiable Credentials-aligned compliance and capacity credentials
-- auditable multi-party governance through the ThreadProof Charter
+## Development
 
-## Team
-
-**EndGame**  
-Md. Sadman Hasan Talukder  
-Islamic University of Technology
-
-## Status
-
-Active product development. Architecture and protocol interfaces are being stabilized before infrastructure and production deployment.
+Install dependencies with the pinned workspace package manager and use the repository scripts/CI for web, worker, contracts, and circuit validation. Local contract deployment intentionally uses `MockCapacitySpendVerifier`; it is development-only and is not a production ZK verifier.
