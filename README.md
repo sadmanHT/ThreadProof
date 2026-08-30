@@ -14,6 +14,10 @@ ThreadProof does **not** put exact production capacity, exact subcontract alloca
 
 The current subcontract layer also does **not** prove `sum(subcontract allocations) = parent workload`. That confidential allocation-sum invariant requires a separately reviewed ZK allocation circuit before it may be claimed.
 
+## Read models
+
+The worker indexes `CapacityAllocationRecorded`, `SubcontractPolicyRegistered`, and `SubcontractAuthorized` into the generic chain-event read model for auditability. Those indexed rows are projections only: subcontract authorization is created and re-evaluated from Besu contract state, never from Supabase.
+
 ## Validation status
 
 The subcontract authorization contract suite covers the canonical happy path plus unknown/cancelled/amended orders, inactive or wrong-role factories, missing/revoked policy credentials, invalid PoFC allocation references, maximum depth, cycles/re-parenting, parent-factory signatures, and replay protection. Local deployment includes `SubcontractGovernor`.
