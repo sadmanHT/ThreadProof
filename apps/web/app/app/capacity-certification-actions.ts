@@ -4,6 +4,7 @@ import { type Address, type Hex } from "viem";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
+import type { Tables } from "@/lib/database.types";
 import type { PreparedCapacityCertification } from "@/lib/capacity-certification-chain";
 import {
   CAPACITY_CREDENTIAL_TYPE,
@@ -48,26 +49,7 @@ const resumeSchema = z.object({
   account: z.string().regex(addressPattern),
 });
 
-type CertificationJob = {
-  id: string;
-  factory_organization_id: string;
-  auditor_organization_id: string;
-  chain_credential_id: string;
-  chain_period_id: string;
-  chain_process_id: string;
-  period_label: string;
-  process_label: string;
-  policy_hash: string;
-  capacity_commitment: string;
-  credential_scope_hash: string;
-  credential_digest: string;
-  assessment_methodology: string;
-  valid_from: string;
-  valid_until: string;
-  circuit_version: number;
-  status: string;
-  created_by: string;
-};
+type CertificationJob = Tables<"capacity_certification_jobs">;
 
 export type CapacityCertificationResult =
   | { ok: true; prepared: PreparedCapacityCertification; credentialAlreadyOnChain: boolean }
@@ -222,7 +204,7 @@ export async function prepareCapacityCertificationAction(input: unknown): Promis
       circuitVersion: parsed.circuitVersion,
     });
 
-    const certificationTable = (supabase as any).from("capacity_certification_jobs");
+    const certificationTable = supabase.from("capacity_certification_jobs");
     const { data: existing, error: existingError } = await certificationTable
       .select("id,status,created_by")
       .eq("factory_organization_id", factory.id)
@@ -231,7 +213,7 @@ export async function prepareCapacityCertificationAction(input: unknown): Promis
       .not("status", "in", '("failed","stale")');
     if (existingError) throw existingError;
 
-    const blocker = (existing ?? []).find((job: { status: string; created_by: string }) => job.status !== "prepared" || job.created_by !== viewer.userId);
+    const blocker = (existing ?? []).find((job) => job.status !== "prepared" || job.created_by !== viewer.userId);
     if (blocker) {
       return { ok: false, error: "This factory, period, and process already has certification work in progress." };
     }
@@ -285,7 +267,7 @@ export async function prepareCapacityCertificationAction(input: unknown): Promis
 
     return {
       ok: true,
-      prepared: preparedFromJob(inserted as CertificationJob, actualChainId, network.credentialRegistryAddress, network.capacityVaultAddress, factoryChainId),
+      prepared: preparedFromJob(inserted, actualChainId, network.credentialRegistryAddress, network.capacityVaultAddress, factoryChainId),
       credentialAlreadyOnChain: false,
     };
   } catch (error) {
@@ -298,10 +280,8 @@ export async function resumeCapacityCertificationAction(input: unknown): Promise
     const viewer = await requireConsortiumViewer();
     const parsed = resumeSchema.parse(input);
     const supabase = await createClient();
-    const certificationTable = (supabase as any).from("capacity_certification_jobs");
-    const { data: row, error: rowError } = await certificationTable.select("*").eq("id", parsed.jobId).maybeSingle();
+    const { data: job, error: rowError } = await supabase.from("capacity_certification_jobs").select("*").eq("id", parsed.jobId).maybeSingle();
     if (rowError) throw rowError;
-    const job = row as CertificationJob | null;
     if (!job || !["prepared", "credential_confirmed"].includes(job.status)) {
       return { ok: false, error: "This certification job cannot be resumed from its current state." };
     }
