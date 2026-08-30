@@ -5,6 +5,7 @@ export const capacityVaultAbi = parseAbi([
   "function getCapacityState(bytes32 factoryOrganizationId,bytes32 periodId,bytes32 processId) view returns ((uint256 activeCommitment,bytes32 capacityCredentialId,bytes32 policyHash,uint32 circuitVersion,uint64 updatedAt,bool active))",
   "event CapacityCertified(bytes32 indexed stateKey,bytes32 indexed factoryOrganizationId,bytes32 indexed capacityCredentialId,bytes32 periodId,bytes32 processId,uint256 commitment,bytes32 policyHash,uint32 circuitVersion)",
   "event CapacitySpent(bytes32 indexed stateKey,bytes32 indexed orderId,uint256 indexed nullifier,uint256 oldCommitment,uint256 newCommitment,uint256 orderCommitment,uint32 circuitVersion)",
+  "event CapacityAllocationRecorded(bytes32 indexed allocationId,bytes32 indexed orderId,bytes32 indexed factoryOrganizationId,bytes32 stateKey,uint256 nullifier)",
   "event VerifierRegistered(uint32 indexed circuitVersion,address indexed verifier)",
 ]);
 
@@ -14,6 +15,11 @@ export const orderRegistryAbi = parseAbi([
   "function getOrder(bytes32 orderId) view returns ((bytes32 buyerOrganizationId,bytes32 primaryFactoryOrganizationId,uint32 currentVersion,bytes32 currentVersionHash,uint256 currentOrderCommitment,bytes32 currentPolicyHash,uint64 updatedAt,uint8 status))",
   "event OrderVersionRecorded(bytes32 indexed orderId,bytes32 indexed buyerOrganizationId,bytes32 indexed primaryFactoryOrganizationId,uint32 version,bytes32 versionHash,uint256 orderCommitment,bytes32 policyHash,uint256 nonce,address buyerSigner)",
   "event OrderCancelled(bytes32 indexed orderId,bytes32 indexed buyerOrganizationId,uint32 indexed version,uint256 nonce,address buyerSigner)",
+]);
+
+export const subcontractGovernorAbi = parseAbi([
+  "event SubcontractPolicyRegistered(bytes32 indexed policyHash,uint8 maxDepth,bytes32 complianceCredentialType,bytes32 processCredentialType)",
+  "event SubcontractAuthorized(bytes32 indexed childOrderId,bytes32 indexed parentOrderId,bytes32 indexed subcontractorOrganizationId,bytes32 buyerOrganizationId,bytes32 parentFactoryOrganizationId,uint8 depth,uint32 sequence,bytes32 capacityAllocationId,address parentSigner)",
 ]);
 
 export const threadProofRegistryAbi = parseAbi([
@@ -38,4 +44,5 @@ export const protocolEventsAbi = [
   ...credentialEventsAbi,
   ...orderRegistryAbi.filter((item) => item.type === "event"),
   ...capacityVaultAbi.filter((item) => item.type === "event"),
+  ...subcontractGovernorAbi.filter((item) => item.type === "event"),
 ] as const;
