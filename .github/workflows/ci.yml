@@ -30,14 +30,7 @@ jobs:
         with:
           node-version: 22
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
-      - name: Upload resolved lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: pnpm-lock-${{ github.sha }}
-          retention-days: 1
-          if-no-files-found: error
-          path: pnpm-lock.yaml
+        run: pnpm install --frozen-lockfile
       - name: Web typecheck
         run: pnpm --filter @threadproof/web typecheck
       - name: Web production build
@@ -59,7 +52,7 @@ jobs:
         with:
           node-version: 22
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
       - name: Worker typecheck
         run: pnpm --filter @threadproof/worker typecheck
 
@@ -79,7 +72,7 @@ jobs:
         with:
           node-version: 22
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
       - name: Contract tooling typecheck
         run: pnpm --filter @threadproof/contracts typecheck
       - name: Smart-contract compile
@@ -105,7 +98,7 @@ jobs:
         with:
           node-version: 22
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
       - name: Circuit invariant shape guard
         run: pnpm --filter @threadproof/circuits test
       - name: Install pinned Circom 2.2.0 compiler
