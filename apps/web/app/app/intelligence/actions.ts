@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
 import { analyzeOrderDocument } from "@/lib/ai/order-intelligence.server";
 import { answerAuditQuestion } from "@/lib/ai/audit-copilot.server";
-import { assertAiDataClassAllowed, getAiModel } from "@/lib/ai/policy.server";
+import { assertAiDataClassAllowed, assertOrderDocumentAiAllowed, getAiModel } from "@/lib/ai/policy.server";
 import {
   assertAiRateLimit,
   completeAiRun,
@@ -37,8 +37,9 @@ export async function runOrderIntelligenceAction(formData: FormData) {
   const membership = selectedMembership(viewer, organizationId.data);
   if (!membership || !hasOperationalRole(membership)) failRedirect("An active operator/admin/signer membership is required.");
 
+  const syntheticDemo = formData.get("syntheticDemo") === "true";
   try {
-    assertAiDataClassAllowed("counterparty_confidential");
+    assertOrderDocumentAiAllowed(syntheticDemo);
     await assertAiRateLimit(viewer.userId);
   } catch (error) {
     failRedirect(error instanceof Error ? error.message : "AI processing is unavailable.");
@@ -68,6 +69,7 @@ export async function runOrderIntelligenceAction(formData: FormData) {
   } | undefined;
 
   if (purchaseOrderId?.success) {
+    if (syntheticDemo) failRedirect("Do not compare a synthetic/free-tier document against a real stored order. Use a synthetic pasted/PDF input with no stored-order baseline.");
     const { data: order, error } = await supabase
       .from("purchase_orders")
       .select("id,buyer_organization_id,factory_organization_id,external_reference,title,product_category,quantity,unit,requested_delivery_date")
@@ -96,6 +98,7 @@ export async function runOrderIntelligenceAction(formData: FormData) {
     sourceTextHash: sourceText ? sha256(sourceText) : null,
     fileHash: fileBytes ? sha256(fileBytes) : null,
     baselineHash: baseline ? sha256(JSON.stringify(baseline)) : null,
+    syntheticDemo,
   }));
   const promptTemplateHash = sha256("threadproof:gemini:order-intelligence:v1");
   const model = getAiModel();
@@ -114,6 +117,7 @@ export async function runOrderIntelligenceAction(formData: FormData) {
       subjectId: purchaseOrderId?.success ? purchaseOrderId.data : null,
       dataClass: "counterparty_confidential",
       metadata: {
+        synthetic_demo: syntheticDemo,
         source_text_present: Boolean(sourceText),
         file_name: file?.name ?? null,
         file_size: file?.size ?? null,
