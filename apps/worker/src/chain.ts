@@ -11,8 +11,14 @@ export const capacityVaultAbi = parseAbi([
 export const orderRegistryAbi = parseAbi([
   "function submitOrderVersion((bytes32 orderId,bytes32 buyerOrganizationId,bytes32 primaryFactoryOrganizationId,uint32 version,bytes32 previousVersionHash,uint256 orderCommitment,bytes32 policyHash,uint256 nonce,uint64 deadline) authorization,bytes buyerSignature) returns (bytes32 versionHash)",
   "function nonces(bytes32 buyerOrganizationId) view returns (uint256)",
+  "function getOrder(bytes32 orderId) view returns ((bytes32 buyerOrganizationId,bytes32 primaryFactoryOrganizationId,uint32 currentVersion,bytes32 currentVersionHash,uint256 currentOrderCommitment,bytes32 currentPolicyHash,uint64 updatedAt,uint8 status))",
   "event OrderVersionRecorded(bytes32 indexed orderId,bytes32 indexed buyerOrganizationId,bytes32 indexed primaryFactoryOrganizationId,uint32 version,bytes32 versionHash,uint256 orderCommitment,bytes32 policyHash,uint256 nonce,address buyerSigner)",
   "event OrderCancelled(bytes32 indexed orderId,bytes32 indexed buyerOrganizationId,uint32 indexed version,uint256 nonce,address buyerSigner)",
+]);
+
+export const threadProofRegistryAbi = parseAbi([
+  "function organizationOfAccount(address account) view returns (bytes32)",
+  "function isActiveAccount(address account) view returns (bool)",
 ]);
 
 export const registryEventsAbi = parseAbi([

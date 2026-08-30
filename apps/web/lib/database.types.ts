@@ -24,10 +24,10 @@ export type Database = {
         confirmed_at: string | null;
         created_at: string;
         id: string;
-        new_commitment: number;
-        nullifier: number;
-        old_commitment: number;
-        order_commitment: number;
+        new_commitment: string;
+        nullifier: string;
+        old_commitment: string;
+        order_commitment: string;
         order_version_id: string;
       }>;
       chain_events: Table<{
@@ -82,8 +82,38 @@ export type Database = {
         state: string;
         updated_at: string;
       }>;
+      order_authorization_jobs: Table<{
+        buyer_organization_id: string;
+        buyer_signature: string | null;
+        chain_block_number: number | null;
+        chain_order_id: string;
+        chain_tx_hash: string | null;
+        confidential_payload_ciphertext: string;
+        created_at: string;
+        created_by: string;
+        deadline: string;
+        error_code: string | null;
+        error_detail: string | null;
+        factory_organization_id: string;
+        id: string;
+        nonce: string;
+        order_commitment: string;
+        payload_nonce: string;
+        policy_hash: string;
+        previous_version_hash: string;
+        production_period_end: string | null;
+        production_period_start: string | null;
+        purchase_order_id: string;
+        status: string;
+        target_version: number;
+        updated_at: string;
+        worker_claim_token: string | null;
+        worker_claimed_at: string | null;
+      }>;
       order_versions: Table<{
         buyer_signature: string | null;
+        chain_block_number: number | null;
+        chain_tx_hash: string | null;
         confidential_payload_ciphertext: string;
         created_at: string;
         created_by: string;
@@ -96,6 +126,7 @@ export type Database = {
         production_period_start: string | null;
         purchase_order_id: string;
         version: number;
+        version_hash: string | null;
         workload_commitment: string | null;
       }>;
       organization_invitations: Table<{
@@ -141,8 +172,10 @@ export type Database = {
         updated_at: string;
       }>;
       private_capacity_openings: Table<{
-        capacity_commitment: number;
+        capacity_commitment: string;
         capacity_credential_id: string;
+        chain_period_id: string | null;
+        chain_process_id: string | null;
         chain_state_key: string;
         circuit_version: number;
         created_at: string;
@@ -166,8 +199,16 @@ export type Database = {
         job_title: string | null;
         updated_at: string;
       }>;
+      proof_job_private_state: Table<{
+        created_at: string;
+        next_capacity_ciphertext: string;
+        next_randomness_ciphertext: string;
+        proof_job_id: string;
+      }>;
       proof_jobs: Table<{
         capacity_opening_id: string;
+        chain_block_number: number | null;
+        chain_tx_hash: string | null;
         circuit_version: number;
         completed_at: string | null;
         created_at: string;
@@ -180,9 +221,12 @@ export type Database = {
         public_inputs: Json;
         started_at: string | null;
         status: Database["public"]["Enums"]["proof_job_status"];
+        worker_claim_token: string | null;
+        worker_claimed_at: string | null;
       }>;
       purchase_orders: Table<{
         buyer_organization_id: string;
+        chain_order_id: string;
         created_at: string;
         created_by: string;
         current_order_commitment: string | null;
@@ -202,50 +246,19 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
-      accept_organization_invitation: {
-        Args: { invite_token: string };
-        Returns: string;
-      };
+      accept_organization_invitation: { Args: { invite_token: string }; Returns: string };
       create_organization_invitation: {
-        Args: {
-          expires_in_hours?: number;
-          invite_email: string;
-          invite_member_role?: string;
-          target_organization_id: string;
-        };
+        Args: { expires_in_hours?: number; invite_email: string; invite_member_role?: string; target_organization_id: string };
         Returns: { expires_at: string; invitation_id: string; invite_token: string }[];
       };
       create_purchase_order_draft: {
-        Args: {
-          buyer_organization_id: string;
-          external_reference: string;
-          factory_organization_id: string;
-          product_category: string;
-          quantity: number;
-          requested_delivery_date?: string;
-          title: string;
-          unit: string;
-        };
+        Args: { buyer_organization_id: string; external_reference: string; factory_organization_id: string; product_category: string; quantity: number; requested_delivery_date?: string; title: string; unit: string };
         Returns: string;
       };
-      delete_purchase_order_draft: {
-        Args: { target_order_id: string };
-        Returns: undefined;
-      };
-      queue_capacity_proof: {
-        Args: { target_capacity_opening_id: string; target_order_version_id: string };
-        Returns: string;
-      };
+      delete_purchase_order_draft: { Args: { target_order_id: string }; Returns: undefined };
+      queue_capacity_proof: { Args: { target_capacity_opening_id: string; target_order_version_id: string }; Returns: string };
       update_purchase_order_draft: {
-        Args: {
-          new_external_reference: string;
-          new_product_category: string;
-          new_quantity: number;
-          new_requested_delivery_date?: string;
-          new_title: string;
-          new_unit: string;
-          target_order_id: string;
-        };
+        Args: { new_external_reference: string; new_product_category: string; new_quantity: number; new_requested_delivery_date?: string; new_title: string; new_unit: string; target_order_id: string };
         Returns: undefined;
       };
     };
