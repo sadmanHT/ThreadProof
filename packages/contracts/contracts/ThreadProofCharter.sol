@@ -19,6 +19,7 @@ contract ThreadProofCharter {
     bytes32 private constant PRIMARY_ACCOUNT_ROTATION_DOMAIN = keccak256("THREADPROOF_CHARTER_PRIMARY_ACCOUNT_ROTATION_V1");
     bytes32 private constant PROTECTED_IDENTITY_DISCLOSURE_DOMAIN = keccak256("THREADPROOF_CHARTER_PROTECTED_IDENTITY_DISCLOSURE_V1");
     bytes32 private constant POLICY_UPDATE_DOMAIN = keccak256("THREADPROOF_CHARTER_POLICY_UPDATE_V1");
+    bytes32 private constant FACTORY_ONBOARDING_DOMAIN = keccak256("THREADPROOF_CHARTER_FACTORY_ONBOARDING_V1");
 
     enum ProposalType {
         Unknown,
@@ -26,7 +27,8 @@ contract ThreadProofCharter {
         OrganizationRestore,
         PrimaryAccountRotation,
         ProtectedIdentityDisclosure,
-        CharterPolicyUpdate
+        CharterPolicyUpdate,
+        FactoryOnboarding
     }
 
     enum ProposalState {
@@ -137,6 +139,12 @@ contract ThreadProofCharter {
         bytes32 indexed subjectReference,
         bytes32 indexed evidenceHash
     );
+    event FactoryOnboardingAuthorized(
+        bytes32 indexed proposalId,
+        bytes32 indexed organizationId,
+        address indexed primaryAccount,
+        bytes32 metadataHash
+    );
 
     constructor(address registryAddress) {
         if (registryAddress == address(0)) revert InvalidRegistry();
@@ -193,6 +201,17 @@ contract ThreadProofCharter {
                 eligibleMask: ALL_CONSTITUENCIES_MASK,
                 requiredMask: 0,
                 timelockSeconds: 1 days,
+                votingPeriodSeconds: 7 days,
+                exists: true
+            })
+        );
+        _setPolicy(
+            ProposalType.FactoryOnboarding,
+            Policy({
+                threshold: 2,
+                eligibleMask: INDUSTRY_MASK | AUDITOR_MASK,
+                requiredMask: INDUSTRY_MASK | AUDITOR_MASK,
+                timelockSeconds: 0,
                 votingPeriodSeconds: 7 days,
                 exists: true
             })
@@ -353,6 +372,22 @@ contract ThreadProofCharter {
         emit ProposalExecuted(proposalId, proposal.proposalType, msg.sender);
     }
 
+    function executeFactoryOnboarding(
+        bytes32 proposalId,
+        bytes32 organizationId,
+        address primaryAccount,
+        bytes32 metadataHash
+    ) external {
+        if (organizationId == bytes32(0) || primaryAccount == address(0)) revert InvalidExecutionParameters();
+        Proposal storage proposal = _requireExecutable(proposalId);
+        if (proposal.proposalType != ProposalType.FactoryOnboarding) revert InvalidExecutionParameters();
+        bytes32 actual = hashFactoryOnboardingAction(organizationId, primaryAccount, metadataHash);
+        _consumeAction(proposal, actual);
+        registry.registerOrganization(organizationId, primaryAccount, 2, metadataHash);
+        emit FactoryOnboardingAuthorized(proposalId, organizationId, primaryAccount, metadataHash);
+        emit ProposalExecuted(proposalId, proposal.proposalType, msg.sender);
+    }
+
     function executePolicyUpdate(
         bytes32 proposalId,
         ProposalType targetProposalType,
@@ -428,6 +463,14 @@ contract ThreadProofCharter {
         bytes32 evidenceHash
     ) public pure returns (bytes32) {
         return keccak256(abi.encode(PROTECTED_IDENTITY_DISCLOSURE_DOMAIN, subjectReference, evidenceHash));
+    }
+
+    function hashFactoryOnboardingAction(
+        bytes32 organizationId,
+        address primaryAccount,
+        bytes32 metadataHash
+    ) public pure returns (bytes32) {
+        return keccak256(abi.encode(FACTORY_ONBOARDING_DOMAIN, organizationId, primaryAccount, metadataHash));
     }
 
     function hashPolicyUpdateAction(

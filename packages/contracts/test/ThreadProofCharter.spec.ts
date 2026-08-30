@@ -7,10 +7,11 @@ const PROPOSAL = {
   rotation: 3,
   disclosure: 4,
   policyUpdate: 5,
+  factoryOnboarding: 6,
 } as const;
 
 async function deployFixture() {
-  const [admin, buyer, industry, auditor, regulator, labor, targetFactory, replacement, independent] = await ethers.getSigners();
+  const [admin, buyer, industry, auditor, regulator, labor, targetFactory, replacement, independent, applicant] = await ethers.getSigners();
   const Registry = await ethers.getContractFactory("ThreadProofRegistry");
   const registry = await Registry.deploy(admin.address);
   await registry.waitForDeployment();
@@ -23,6 +24,7 @@ async function deployFixture() {
     labor: ethers.keccak256(ethers.toUtf8Bytes("governance-labor")),
     target: ethers.keccak256(ethers.toUtf8Bytes("governance-target-factory")),
     independent: ethers.keccak256(ethers.toUtf8Bytes("governance-independent")),
+    applicant: ethers.keccak256(ethers.toUtf8Bytes("factory-onboarding-applicant")),
   };
 
   await registry.registerOrganization(ids.buyer, buyer.address, 1, ethers.ZeroHash);
@@ -42,7 +44,7 @@ async function deployFixture() {
   await registry.revokeRole(await registry.SUSPENDER_ROLE(), admin.address);
   await registry.revokeRole(await registry.REGISTRAR_ROLE(), admin.address);
 
-  return { admin, buyer, industry, auditor, regulator, labor, targetFactory, replacement, independent, registry, charter, ids };
+  return { admin, buyer, industry, auditor, regulator, labor, targetFactory, replacement, independent, applicant, registry, charter, ids };
 }
 
 async function createProposal(
@@ -152,6 +154,48 @@ describe("ThreadProofCharter", function () {
     await expect(charter.executeProtectedIdentityDisclosure(proposalId, subjectReference, evidenceHash))
       .to.emit(charter, "ProtectedIdentityDisclosureAuthorized")
       .withArgs(proposalId, subjectReference, evidenceHash);
+  });
+
+  it("onboards a factory only after auditor and industry constituency approval", async function () {
+    const { buyer, industry, auditor, regulator, applicant, registry, charter, ids } = await deployFixture();
+    const metadataHash = ethers.keccak256(ethers.toUtf8Bytes("factory-applicant-metadata-v1"));
+    const actionHash = await charter.hashFactoryOnboardingAction(ids.applicant, applicant.address, metadataHash);
+    const proposalId = await createProposal(charter, auditor, PROPOSAL.factoryOnboarding, actionHash, metadataHash);
+
+    await expect(charter.connect(regulator).approveProposal(proposalId))
+      .to.be.revertedWithCustomError(charter, "IneligibleConstituency")
+      .withArgs(4);
+
+    await charter.connect(industry).approveProposal(proposalId);
+    expect(await charter.getProposalState(proposalId)).to.equal(1);
+
+    await expect(charter.connect(auditor).approveProposal(proposalId))
+      .to.emit(charter, "ProposalThresholdReached");
+    expect(await charter.getProposalState(proposalId)).to.equal(3);
+
+    await expect(charter.connect(buyer).executeFactoryOnboarding(proposalId, ids.applicant, applicant.address, metadataHash))
+      .to.emit(charter, "FactoryOnboardingAuthorized")
+      .withArgs(proposalId, ids.applicant, applicant.address, metadataHash);
+
+    expect(await registry.isActive(ids.applicant)).to.equal(true);
+    expect(await registry.organizationOfAccount(applicant.address)).to.equal(ids.applicant);
+    const stored = await registry.getOrganization(ids.applicant);
+    expect(stored.role).to.equal(2);
+    expect(stored.metadataHash).to.equal(metadataHash);
+  });
+
+  it("fails closed if factory onboarding execution does not match the approved account or metadata", async function () {
+    const { industry, auditor, applicant, replacement, charter, ids } = await deployFixture();
+    const metadataHash = ethers.keccak256(ethers.toUtf8Bytes("factory-applicant-metadata-v1"));
+    const actionHash = await charter.hashFactoryOnboardingAction(ids.applicant, applicant.address, metadataHash);
+    const proposalId = await createProposal(charter, industry, PROPOSAL.factoryOnboarding, actionHash, metadataHash);
+    await charter.connect(industry).approveProposal(proposalId);
+    await charter.connect(auditor).approveProposal(proposalId);
+
+    const actualHash = await charter.hashFactoryOnboardingAction(ids.applicant, replacement.address, metadataHash);
+    await expect(charter.executeFactoryOnboarding(proposalId, ids.applicant, replacement.address, metadataHash))
+      .to.be.revertedWithCustomError(charter, "ActionHashMismatch")
+      .withArgs(actionHash, actualHash);
   });
 
   it("requires 4-of-5 plus a timelock to change Charter policy and rejects stale amendments", async function () {

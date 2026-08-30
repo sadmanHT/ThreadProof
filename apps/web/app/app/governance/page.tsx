@@ -4,6 +4,7 @@ import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
 import { formatDate, shortHash, titleCase } from "@/lib/format";
 import { StatusBadge } from "@/components/status-badge";
 import { GovernanceConsole } from "@/components/governance-console";
+import { FactoryOnboardingConsole, type FactoryOnboardingReview } from "@/components/factory-onboarding-console";
 import type { GovernanceTargetOrganization } from "@/lib/governance-chain";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ const GOVERNANCE_ROLES = new Set([
   "labor_representative",
   "independent",
 ]);
+const FACTORY_REVIEW_ROLES = new Set(["factory", "industry", "auditor", "independent"]);
 
 function projectedState(proposal: {
   state: string;
@@ -38,9 +40,15 @@ function projectedState(proposal: {
 export default async function GovernancePage() {
   const viewer = await requireConsortiumViewer();
   const supabase = await createClient();
-  const [{ data: proposals }, { data: organizations }] = await Promise.all([
+  const [{ data: proposals }, { data: organizations }, { data: onboardingRequests }] = await Promise.all([
     supabase.from("governance_proposal_read_model").select("*").order("updated_at", { ascending: false }),
     supabase.from("organizations").select("chain_organization_id,display_name,role,status").order("display_name"),
+    supabase
+      .from("organization_onboarding_requests")
+      .select("id,legal_name,display_name,country_code,notes,primary_account,proposed_chain_organization_id,metadata_hash,action_hash,chain_proposal_id,status")
+      .eq("requested_role", "factory")
+      .eq("status", "pending")
+      .order("created_at", { ascending: true }),
   ]);
 
   const charterAddressRaw = process.env.THREADPROOF_CHARTER_ADDRESS?.trim() ?? "";
@@ -53,6 +61,12 @@ export default async function GovernancePage() {
     GOVERNANCE_ROLES.has(membership.organization.role) &&
     hasOperationalRole(membership),
   );
+  const canReviewFactories = viewer.memberships.some((membership) =>
+    membership.active &&
+    membership.organization.status === "active" &&
+    FACTORY_REVIEW_ROLES.has(membership.organization.role) &&
+    hasOperationalRole(membership),
+  );
   const targetOrganizations: GovernanceTargetOrganization[] = (organizations ?? [])
     .filter((organization) => HEX_32.test(organization.chain_organization_id))
     .map((organization) => ({
@@ -62,12 +76,51 @@ export default async function GovernancePage() {
       status: organization.status,
     }));
   const rows = proposals ?? [];
+  const proposalMap = new Map(rows.map((proposal) => [proposal.chain_proposal_id.toLowerCase(), proposal]));
+  const factoryReviews: FactoryOnboardingReview[] = (onboardingRequests ?? []).flatMap((request) => {
+    if (
+      !request.primary_account ||
+      !request.proposed_chain_organization_id ||
+      !request.metadata_hash ||
+      !request.action_hash ||
+      !ADDRESS.test(request.primary_account) ||
+      !HEX_32.test(request.proposed_chain_organization_id) ||
+      !HEX_32.test(request.metadata_hash) ||
+      !HEX_32.test(request.action_hash) ||
+      (request.chain_proposal_id != null && !HEX_32.test(request.chain_proposal_id))
+    ) return [];
+
+    const proposal = request.chain_proposal_id
+      ? proposalMap.get(request.chain_proposal_id.toLowerCase())
+      : undefined;
+    return [{
+      id: request.id,
+      legalName: request.legal_name,
+      displayName: request.display_name,
+      countryCode: request.country_code,
+      notes: request.notes,
+      primaryAccount: request.primary_account as Address,
+      proposedChainOrganizationId: request.proposed_chain_organization_id as Hex,
+      metadataHash: request.metadata_hash as Hex,
+      actionHash: request.action_hash as Hex,
+      chainProposalId: request.chain_proposal_id as Hex | null,
+      proposalState: proposal ? projectedState(proposal) : null,
+    }];
+  });
 
   return (
     <div className="workspace-page">
       <header className="page-header"><div><span className="kicker">THREADPROOF CHARTER</span><h1>Governance</h1><p>Consensus orders valid transactions; the Charter determines who is authorized to exercise exceptional protocol powers through role-diverse approvals, committed action parameters and timelocks.</p></div></header>
 
-      <section className="privacy-banner"><span className="privacy-icon">◇</span><div><strong>The chain is the governance authority.</strong><p>This screen is an event-derived audit view. A Supabase row cannot create an approval, satisfy a threshold, shorten a timelock or execute a Charter action.</p></div></section>
+      <section className="privacy-banner"><span className="privacy-icon">◇</span><div><strong>The chain is the governance authority.</strong><p>This screen is an event-derived audit view. A Supabase row cannot create an approval, satisfy a threshold, shorten a timelock, admit a factory, or execute a Charter action.</p></div></section>
+
+      {charterConfigured && canReviewFactories ? (
+        <FactoryOnboardingConsole
+          charterAddress={charterAddressRaw as Address}
+          chainId={chainId}
+          requests={factoryReviews}
+        />
+      ) : null}
 
       {charterConfigured && canUseGovernanceConsole ? (
         <GovernanceConsole

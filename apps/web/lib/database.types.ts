@@ -186,16 +186,24 @@ export type Database = {
         user_id: string;
       }>;
       organization_onboarding_requests: Table<{
+        action_hash: string | null;
+        chain_proposal_id: string | null;
+        chain_registration_block_number: number | null;
+        chain_registration_tx_hash: string | null;
         country_code: string | null;
         created_at: string;
         display_name: string;
         id: string;
         legal_name: string;
+        metadata_hash: string | null;
         notes: string | null;
+        primary_account: string | null;
+        proposed_chain_organization_id: string | null;
         requested_by: string;
         requested_role: Database["public"]["Enums"]["organization_role"];
         reviewed_at: string | null;
         status: string;
+        wallet_signature: string | null;
       }>;
       organizations: Table<{
         chain_organization_id: string;
