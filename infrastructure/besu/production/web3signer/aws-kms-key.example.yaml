@@ -1,0 +1,6 @@
+# Metadata only. Do not put AWS access keys, session tokens, or private key material here.
+type: "aws-kms"
+keyType: "SECP256K1"
+authenticationMode: "ENVIRONMENT"
+kmsKeyId: "alias/threadproof-relayer"
+region: "ap-southeast-1"

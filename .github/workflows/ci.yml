@@ -88,6 +88,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Worker typecheck
         run: pnpm --filter @threadproof/worker typecheck
+      - name: Production signer policy checks
+        run: pnpm --filter @threadproof/worker test:signer-policy
 
   contracts:
     runs-on: ubuntu-latest
@@ -198,3 +200,18 @@ jobs:
             echo "Potential secret file is tracked by Git."
             exit 1
           fi
+          if git ls-files 'infrastructure/besu/production/web3signer/keys/**' | grep -q .; then
+            echo "Web3Signer runtime key configuration must not be tracked by Git."
+            exit 1
+          fi
+      - name: Enforce remote production signing boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -E 'privateKeyToAccount|THREADPROOF_RELAYER_PRIVATE_KEY' \
+            apps/worker/src/order-relayer.ts apps/worker/src/proof-submitter.ts; then
+            echo "Production transaction submitters must not load raw relayer private keys."
+            exit 1
+          fi
+      - name: Validate production Besu compose template
+        run: docker compose -f infrastructure/besu/production/docker-compose.yml config >/dev/null

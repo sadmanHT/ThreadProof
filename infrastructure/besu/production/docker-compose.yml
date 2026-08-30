@@ -1,0 +1,57 @@
+services:
+  besu:
+    image: hyperledger/besu:26.7.1
+    restart: unless-stopped
+    command:
+      - --config-file=/etc/besu/config.toml
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - besu-data:/var/lib/besu
+      - ./besu-config.toml:/etc/besu/config.toml:ro
+      - ${THREADPROOF_BESU_GENESIS_PATH:-./genesis.json}:/etc/besu/genesis.json:ro
+      - ${THREADPROOF_BESU_NODE_KEY_PATH:-./secrets/besu-node-key}:/run/secrets/besu-node-key:ro
+      - ${THREADPROOF_BESU_STATIC_NODES_PATH:-./static-nodes.json}:/etc/besu/static-nodes.json:ro
+    ports:
+      - 127.0.0.1:8545:8545
+      - 127.0.0.1:8546:8546
+      - 30303:30303/tcp
+      - 30303:30303/udp
+    networks:
+      - chain
+
+  web3signer:
+    image: consensys/web3signer:26.4.2-distroless
+    restart: unless-stopped
+    depends_on:
+      - besu
+    command:
+      - --http-listen-host=0.0.0.0
+      - --http-listen-port=9000
+      - --http-host-allowlist=localhost,127.0.0.1,web3signer
+      - --key-store-path=/var/lib/web3signer/keys
+      - eth1
+      - --chain-id=2026
+      - --downstream-http-host=besu
+      - --downstream-http-port=8545
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ${THREADPROOF_WEB3SIGNER_KEY_CONFIG_DIR:-./web3signer/keys}:/var/lib/web3signer/keys:ro
+    ports:
+      - 127.0.0.1:9000:9000
+    networks:
+      - chain
+
+volumes:
+  besu-data:
+
+networks:
+  chain:
+    driver: bridge

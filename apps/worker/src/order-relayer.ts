@@ -1,15 +1,13 @@
 import { randomUUID } from "node:crypto";
 import {
   createPublicClient,
-  createWalletClient,
-  defineChain,
   http,
   recoverTypedDataAddress,
   type Hex,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
 import { orderRegistryAbi, threadProofRegistryAbi } from "./chain.js";
 import { getOrderRelayerEnv } from "./env.js";
+import { createRelayerWallet, RelayerSignerUnavailableError } from "./signer.js";
 import { createServiceClient } from "./supabase.js";
 
 const ZERO_HASH = `0x${"0".repeat(64)}` as Hex;
@@ -93,6 +91,22 @@ async function markStale(supabase: ServiceClient, job: Row, token: string, messa
   await supabase
     .from("order_authorization_jobs")
     .update({ status: "stale", worker_claim_token: null, worker_claimed_at: null, updated_at: new Date().toISOString(), error_code: "ORDER_AUTH_STALE", error_detail: message })
+    .eq("id", job.id)
+    .eq("status", "submitting")
+    .eq("worker_claim_token", token);
+}
+
+async function releaseForSignerRetry(supabase: ServiceClient, job: Row, token: string, error: RelayerSignerUnavailableError) {
+  await supabase
+    .from("order_authorization_jobs")
+    .update({
+      status: "signed",
+      worker_claim_token: null,
+      worker_claimed_at: null,
+      updated_at: new Date().toISOString(),
+      error_code: "SIGNER_UNAVAILABLE",
+      error_detail: error.message,
+    })
     .eq("id", job.id)
     .eq("status", "submitting")
     .eq("worker_claim_token", token);
@@ -197,15 +211,7 @@ async function relay(supabase: ServiceClient, job: Row) {
     throw new StaleAuthorizationError("Version 1 authorization must use the zero previous-version hash");
   }
 
-  const account = privateKeyToAccount(env.THREADPROOF_RELAYER_PRIVATE_KEY as Hex);
-  const chain = defineChain({
-    id: chainId,
-    name: "ThreadProof Besu",
-    nativeCurrency: { name: "ThreadProof Gas", symbol: "TPG", decimals: 18 },
-    rpcUrls: { default: { http: [env.THREADPROOF_RPC_URL] } },
-  });
-  const walletClient = createWalletClient({ account, chain, transport: http(env.THREADPROOF_RPC_URL) });
-
+  const { account, wallet } = await createRelayerWallet(env, chainId);
   const { request } = await publicClient.simulateContract({
     address: env.THREADPROOF_ORDER_REGISTRY_ADDRESS as `0x${string}`,
     abi: orderRegistryAbi,
@@ -213,11 +219,10 @@ async function relay(supabase: ServiceClient, job: Row) {
     args: [authorization, signature],
     account,
   });
-  const txHash = await walletClient.writeContract(request);
+  const txHash = await wallet.writeContract(request);
   const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
   if (receipt.status !== "success") throw new Error(`OrderRegistry transaction ${txHash} reverted`);
 
-  // Do not overwrite a faster indexer that already moved this job to confirmed.
   await supabase
     .from("order_authorization_jobs")
     .update({
@@ -242,6 +247,11 @@ async function processJob(supabase: ServiceClient, job: Row) {
   } catch (error) {
     if (error instanceof StaleAuthorizationError) {
       await markStale(supabase, job, token, error.message);
+      return;
+    }
+    if (error instanceof RelayerSignerUnavailableError) {
+      await releaseForSignerRetry(supabase, job, token, error);
+      await new Promise((resolve) => setTimeout(resolve, 5_000));
       return;
     }
 
@@ -271,7 +281,7 @@ async function processJob(supabase: ServiceClient, job: Row) {
 async function main() {
   const env = getOrderRelayerEnv();
   const supabase = createServiceClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
-  console.log("ThreadProof order relayer started");
+  console.log(`ThreadProof order relayer started with ${env.THREADPROOF_SIGNER_MODE} signing`);
   while (true) {
     await releaseAbandonedClaims(supabase);
     const job = await claimSignedJob(supabase);
