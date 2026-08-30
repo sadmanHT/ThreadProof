@@ -121,6 +121,16 @@ jobs:
         run: pnpm --filter @threadproof/circuits test:witness
       - name: Generate and verify development Groth16 proof
         run: pnpm --filter @threadproof/circuits test:groth16
+      - name: Verify generated Groth16 proof through CapacityVault
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf packages/contracts/contracts/generated
+          mkdir -p packages/contracts/contracts/generated
+          cp packages/circuits/artifacts/CapacitySpendVerifier.sol \
+            packages/contracts/contracts/generated/CapacitySpendVerifier.sol
+          THREADPROOF_GENERATED_PROOF_DIR="$GITHUB_WORKSPACE/packages/circuits/artifacts" \
+            pnpm --filter @threadproof/contracts verify:generated
       - name: Upload reproducibility artifacts
         uses: actions/upload-artifact@v4
         with:

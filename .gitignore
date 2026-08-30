@@ -16,6 +16,7 @@ packages/circuits/artifacts/
 packages/circuits/ptau/
 packages/circuits/keys/
 packages/circuits/witnesses/
+packages/contracts/contracts/generated/
 
 # secrets and local environment
 .env
