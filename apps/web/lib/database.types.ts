@@ -289,6 +289,18 @@ export type Database = {
         unit: string | null;
         updated_at: string;
       }>;
+      verifier_provenance_read_model: Table<{
+        chain_id: number;
+        circuit_artifact_hash: string;
+        circuit_version: number;
+        contract_address: string;
+        observed_at: string;
+        registered_block: number;
+        registration_tx_hash: string;
+        verification_key_hash: string;
+        verifier_address: string;
+        verifier_code_hash: string;
+      }>;
     };
     Views: { [_ in never]: never };
     Functions: {
@@ -305,8 +317,7 @@ export type Database = {
       queue_capacity_proof: { Args: { target_capacity_opening_id: string; target_order_version_id: string }; Returns: string };
       update_purchase_order_draft: {
         Args: { new_external_reference: string; new_product_category: string; new_quantity: number; new_requested_delivery_date?: string; new_title: string; new_unit: string; target_order_id: string };
-        Returns: undefined;
-      };
+        Returns: undefined };
     };
     Enums: {
       capacity_state_status: "active" | "pending_spend" | "superseded" | "recertification_required";
