@@ -96,6 +96,7 @@ export default async function IntelligencePage({ searchParams }: Props) {
   const confidentialEnabled = confidentialAiEnabled();
   const model = getAiModel();
   const providerTier = getAiProviderTier();
+  const geminiConfigured = Boolean(process.env.GEMINI_API_KEY?.trim());
   const supabase = await createClient();
   const aiSupabase = supabase as any;
 
@@ -117,9 +118,10 @@ export default async function IntelligencePage({ searchParams }: Props) {
 
   return (
     <div className="workspace-page">
-      <header className="page-header"><div><span className="kicker">THREADPROOF INTELLIGENCE</span><h1>AI that cannot override the protocol</h1><p>Gemini extracts and explains. Besu, signatures, credentials, PoFC and governance remain authoritative.</p></div><div className="chain-pill online"><span />Gemini · {model}</div></header>
+      <header className="page-header"><div><span className="kicker">THREADPROOF INTELLIGENCE</span><h1>AI that cannot override the protocol</h1><p>Gemini extracts and explains. Besu, signatures, credentials, PoFC and governance remain authoritative.</p></div><div className={`chain-pill ${geminiConfigured ? "online" : "offline"}`}><span />{geminiConfigured ? `Gemini configured · ${model}` : "Gemini key not configured"}</div></header>
       {message ? <div className="alert alert-success">{message}</div> : null}
       {error ? <div className="alert alert-error">{error}</div> : null}
+      {!geminiConfigured ? <div className="alert alert-error">Set <span className="mono">GEMINI_API_KEY</span> in the server/deployment secret environment to enable ThreadProof Intelligence. Never expose the key through a <span className="mono">NEXT_PUBLIC_</span> variable.</div> : null}
 
       <section className="protocol-banner"><div><span className="kicker">PRIVACY MODE</span><h2>{providerTier === "free" ? "Free-tier guard enabled" : titleCase(providerTier)}</h2></div><p>{confidentialEnabled ? "Approved counterparty-confidential processing is enabled for this deployment." : "Real counterparty-confidential documents are blocked in free-tier mode. Synthetic competition/demo documents are allowed only after explicit confirmation. Audit Copilot uses sanitized consortium-visible read-model fields; ZK-private and governance-protected data are never sent to Gemini."}</p></section>
 
@@ -131,9 +133,9 @@ export default async function IntelligencePage({ searchParams }: Props) {
             <label>Compare against an existing visible order <span className="optional">available only in approved confidential mode</span><select name="purchaseOrderId" defaultValue=""><option value="">No comparison baseline</option>{(orders ?? []).map((order) => <option key={order.id} value={order.id}>{order.external_reference}{order.title ? ` · ${order.title}` : ""} · {titleCase(order.status)}</option>)}</select></label>
             <label>Paste PO/amendment text <span className="optional">optional if PDF attached</span><textarea name="sourceText" rows={9} placeholder="Paste purchase-order or amendment text. Instructions embedded in documents are treated as untrusted content." /></label>
             <label>PDF document <span className="optional">max 4.5 MB</span><input name="document" type="file" accept="application/pdf,.pdf" /></label>
-            {!confidentialEnabled ? <label><span>Free-tier data confirmation</span><span className="form-help"><input name="syntheticDemo" type="checkbox" value="true" required /> I confirm that this input is synthetic/demo data and contains no real confidential commercial information.</span></label> : null}
+            {!confidentialEnabled ? <label><span>Free-tier data confirmation</span><span className="form-help"><input name="syntheticDemo" type="checkbox" value="true" required style={{ width: "auto" }} /> I confirm that this input is synthetic/demo data and contains no real confidential commercial information.</span></label> : null}
             <div className="callout"><strong>Human review is mandatory</strong><span>Extracted quantity, dates, SMV and amendments are suggestions. The application recomputes workload; it never accepts an AI feasibility judgment.</span></div>
-            <button className="button primary">Analyze document with Gemini</button>
+            <button className="button primary" disabled={!geminiConfigured}>Analyze document with Gemini</button>
           </form>
         </article>
 
@@ -143,7 +145,7 @@ export default async function IntelligencePage({ searchParams }: Props) {
             <label>Organization<select name="organizationId" required>{viewer.memberships.map((membership) => <option key={membership.organization_id} value={membership.organization_id}>{membership.organization.display_name} · {titleCase(membership.organization.role)}</option>)}</select></label>
             <label>Ask about visible protocol state<textarea name="question" required rows={8} maxLength={2000} placeholder="Why was the latest capacity transaction rejected? Which credentials appear revoked? What should I verify directly on-chain before approving this workflow?" /></label>
             <div className="callout"><strong>Sanitized context only</strong><span>The copilot receives recent chain events, credential metadata/status, canonical-order references, proof-job status metadata and governance read models. It never receives private capacity openings, ZK witnesses, encrypted supplier identities or full confidential order payloads.</span></div>
-            <button className="button primary">Ask Audit Copilot</button>
+            <button className="button primary" disabled={!geminiConfigured}>Ask Audit Copilot</button>
           </form>
         </article>
       </section>
