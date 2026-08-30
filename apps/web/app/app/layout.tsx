@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 const nav = [
   ["/app", "Overview"],
   ["/app/orders", "Orders"],
+  ["/app/intelligence", "Intelligence"],
   ["/app/credentials", "Credentials"],
   ["/app/capacity", "Capacity"],
   ["/app/proofs", "Proofs"],
