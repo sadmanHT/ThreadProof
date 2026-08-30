@@ -137,7 +137,7 @@ export default async function IntelligencePage({ searchParams }: Props) {
         </article>
 
         <article className="panel">
-          <div className="panel-heading"><div><span className="kicker">READ-ONLY RAG</span><h2>Protocol Audit Copilot</h2></div><span className="badge success">Free-tier safe context</span></div>
+          <div className="panel-heading"><div><span className="kicker">READ-ONLY CONTEXT</span><h2>Protocol Audit Copilot</h2></div><span className="badge success">Free-tier safe context</span></div>
           <form className="stack-form" action={runAuditCopilotAction}>
             <label>Organization<select name="organizationId" required>{viewer.memberships.map((membership) => <option key={membership.organization_id} value={membership.organization_id}>{membership.organization.display_name} · {titleCase(membership.organization.role)}</option>)}</select></label>
             <label>Ask about visible protocol state<textarea name="question" required rows={8} maxLength={2000} placeholder="Why was the latest capacity transaction rejected? Which credentials appear revoked? What should I verify directly on-chain before approving this workflow?" /></label>
