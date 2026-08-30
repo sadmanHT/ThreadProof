@@ -52,7 +52,7 @@ describe("CapacityVault verifier provenance", function () {
     const circuitHash = ethers.keccak256(ethers.toUtf8Bytes("independently-hashed-r1cs"));
     const verificationKeyHash = ethers.keccak256(ethers.toUtf8Bytes("independently-hashed-vk"));
 
-    await f.vault["registerVerifier(uint32,address,bytes32,bytes32)"](
+    await f.vault.registerVerifierWithProvenance(
       7,
       await f.verifier.getAddress(),
       circuitHash,
@@ -73,7 +73,7 @@ describe("CapacityVault verifier provenance", function () {
       .withArgs(0);
 
     await expect(
-      f.vault["registerVerifier(uint32,address,bytes32,bytes32)"](
+      f.vault.registerVerifierWithProvenance(
         2,
         verifierAddress,
         ethers.ZeroHash,

@@ -9,7 +9,7 @@ import {IOrderRegistry} from "./interfaces/IOrderRegistry.sol";
 import {IThreadProofRegistry} from "./interfaces/IThreadProofRegistry.sol";
 
 /// @dev Optional metadata interface for verifier contracts that carry their own immutable provenance.
-///      Production ceremony tooling may instead use the explicit four-argument registration function.
+///      Production ceremony tooling may instead use the explicit provenance registration function.
 interface ICapacitySpendVerifierProvenance {
     function circuitArtifactHash() external view returns (bytes32);
     function verificationKeyHash() external view returns (bytes32);
@@ -196,7 +196,7 @@ contract CapacityVault is AccessControl, Pausable {
 
     /// @notice Registers an immutable verifier/circuit/VK tuple for a new circuit version.
     /// @dev Production ceremony tooling should calculate the artifact hashes independently and use this path.
-    function registerVerifier(
+    function registerVerifierWithProvenance(
         uint32 circuitVersion,
         address verifierAddress,
         bytes32 circuitArtifactHash,
