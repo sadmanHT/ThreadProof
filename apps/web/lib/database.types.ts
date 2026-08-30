@@ -30,6 +30,37 @@ export type Database = {
         order_commitment: string;
         order_version_id: string;
       }>;
+      capacity_certification_jobs: Table<{
+        assessment_methodology: string;
+        auditor_organization_id: string;
+        capacity_commitment: string;
+        certification_block_number: number | null;
+        certification_tx_hash: string | null;
+        chain_credential_id: string;
+        chain_period_id: string;
+        chain_process_id: string;
+        circuit_version: number;
+        created_at: string;
+        created_by: string;
+        credential_block_number: number | null;
+        credential_digest: string;
+        credential_scope_hash: string;
+        credential_tx_hash: string | null;
+        encrypted_capacity: string;
+        encrypted_randomness: string;
+        encryption_key_version: number;
+        error_code: string | null;
+        error_detail: string | null;
+        factory_organization_id: string;
+        id: string;
+        period_label: string;
+        policy_hash: string;
+        process_label: string;
+        status: string;
+        updated_at: string;
+        valid_from: string;
+        valid_until: string;
+      }>;
       chain_events: Table<{
         block_hash: string;
         block_number: number;
