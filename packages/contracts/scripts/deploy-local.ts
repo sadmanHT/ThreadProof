@@ -52,12 +52,45 @@ async function main() {
   await subcontractGovernor.waitForDeployment();
 
   const ThreadProofCharter = await ethers.getContractFactory("ThreadProofCharter");
-  const charter = await ThreadProofCharter.deploy(await registry.getAddress());
+  const charter = await ThreadProofCharter.deploy(
+    await registry.getAddress(),
+    await credentials.getAddress(),
+    await capacityVault.getAddress(),
+    await subcontractGovernor.getAddress()
+  );
   await charter.waitForDeployment();
+  const charterAddress = await charter.getAddress();
 
-  // Local smoke wiring only. Production role transfer must occur through a reviewed deployment ceremony.
-  await (await registry.grantRole(await registry.SUSPENDER_ROLE(), await charter.getAddress())).wait();
-  await (await registry.grantRole(await registry.REGISTRAR_ROLE(), await charter.getAddress())).wait();
+  // Local smoke uses the same bootstrap-role retirement shape expected from a reviewed
+  // production deployment ceremony. The deployer must not remain an exceptional-power path.
+  const defaultAdminRole = ethers.ZeroHash;
+
+  await (await registry.grantRole(defaultAdminRole, charterAddress)).wait();
+  await (await registry.grantRole(await registry.SUSPENDER_ROLE(), charterAddress)).wait();
+  await (await registry.grantRole(await registry.REGISTRAR_ROLE(), charterAddress)).wait();
+  await (await registry.revokeRole(await registry.SUSPENDER_ROLE(), deployerAddress)).wait();
+  await (await registry.revokeRole(await registry.REGISTRAR_ROLE(), deployerAddress)).wait();
+  await (await registry.revokeRole(defaultAdminRole, deployerAddress)).wait();
+
+  await (await credentials.grantRole(defaultAdminRole, charterAddress)).wait();
+  await (await credentials.grantRole(await credentials.SUSPENDER_ROLE(), charterAddress)).wait();
+  await (await credentials.revokeRole(await credentials.SUSPENDER_ROLE(), deployerAddress)).wait();
+  await (await credentials.revokeRole(defaultAdminRole, deployerAddress)).wait();
+
+  await (await capacityVault.grantRole(defaultAdminRole, charterAddress)).wait();
+  await (await capacityVault.grantRole(await capacityVault.VERIFIER_ADMIN_ROLE(), charterAddress)).wait();
+  await (await capacityVault.grantRole(await capacityVault.PAUSER_ROLE(), charterAddress)).wait();
+  await (await capacityVault.revokeRole(await capacityVault.CERTIFIER_ROLE(), deployerAddress)).wait();
+  await (await capacityVault.revokeRole(await capacityVault.VERIFIER_ADMIN_ROLE(), deployerAddress)).wait();
+  await (await capacityVault.revokeRole(await capacityVault.PAUSER_ROLE(), deployerAddress)).wait();
+  await (await capacityVault.revokeRole(defaultAdminRole, deployerAddress)).wait();
+
+  await (await subcontractGovernor.grantRole(defaultAdminRole, charterAddress)).wait();
+  await (await subcontractGovernor.grantRole(await subcontractGovernor.POLICY_ADMIN_ROLE(), charterAddress)).wait();
+  await (await subcontractGovernor.grantRole(await subcontractGovernor.PAUSER_ROLE(), charterAddress)).wait();
+  await (await subcontractGovernor.revokeRole(await subcontractGovernor.POLICY_ADMIN_ROLE(), deployerAddress)).wait();
+  await (await subcontractGovernor.revokeRole(await subcontractGovernor.PAUSER_ROLE(), deployerAddress)).wait();
+  await (await subcontractGovernor.revokeRole(defaultAdminRole, deployerAddress)).wait();
 
   const chainIdHex = (await network.provider.send("eth_chainId")) as string;
   const deployment = {
@@ -71,7 +104,7 @@ async function main() {
       MockCapacitySpendVerifier: await mockVerifier.getAddress(),
       CapacityVault: await capacityVault.getAddress(),
       SubcontractGovernor: await subcontractGovernor.getAddress(),
-      ThreadProofCharter: await charter.getAddress(),
+      ThreadProofCharter: charterAddress,
     },
     verifier: {
       circuitVersion,
@@ -79,9 +112,10 @@ async function main() {
     },
     governance: {
       kind: "charter-role-diverse",
-      registryRolesGranted: ["REGISTRAR_ROLE", "SUSPENDER_ROLE"],
-      deployerRolesRetained: true,
-      productionRoleTransferRequired: true,
+      bootstrapAdminRetired: true,
+      charterBoundTargets: ["ThreadProofRegistry", "CredentialRegistry", "CapacityVault", "SubcontractGovernor"],
+      operationalRolesRequireCharterDelegation: ["ISSUER_ROLE", "CERTIFIER_ROLE", "RELAYER_ROLE"],
+      exceptionalRolesHeldByCharter: ["REGISTRAR_ROLE", "SUSPENDER_ROLE", "VERIFIER_ADMIN_ROLE", "POLICY_ADMIN_ROLE", "PAUSER_ROLE"],
     },
   };
 
