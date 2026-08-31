@@ -1,0 +1,269 @@
+/* Deep operational workflows layered after the neutral console surfaces. */
+
+.proof-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.proof-overview-grid article {
+  min-width: 0;
+  padding: 18px 19px;
+  border: 1px solid rgba(0,0,0,.07);
+  border-radius: 17px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(0,0,0,.025);
+}
+.proof-overview-grid article.attention { border-color: #edd7d7; background: #fffafa; }
+.proof-overview-grid span,
+.proof-job-meta span,
+.governance-overview-grid span {
+  display: block;
+  color: #8a8a8f;
+  font-size: .65rem;
+  font-weight: 680;
+  letter-spacing: .02em;
+}
+.proof-overview-grid strong,
+.governance-overview-grid strong {
+  display: block;
+  margin-top: 7px;
+  color: #242426;
+  font-size: 1.12rem;
+  line-height: 1.25;
+}
+.proof-overview-grid small,
+.governance-overview-grid small {
+  display: block;
+  margin-top: 5px;
+  color: #8a8a8f;
+  font-size: .67rem;
+  line-height: 1.42;
+}
+
+.proof-lifecycle-panel { overflow: hidden; }
+.proof-lifecycle {
+  display: grid;
+  grid-template-columns: repeat(5,minmax(0,1fr));
+  gap: 0;
+  margin-top: 4px;
+  border: 1px solid #e8e8ea;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #fafafa;
+}
+.proof-lifecycle > div {
+  position: relative;
+  min-width: 0;
+  padding: 20px 18px;
+  border-right: 1px solid #e8e8ea;
+}
+.proof-lifecycle > div:last-child { border-right: 0; }
+.proof-lifecycle > div > span {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #ededf0;
+  color: #65656a;
+  font-size: .64rem;
+  font-weight: 780;
+}
+.proof-lifecycle strong { display: block; margin-top: 16px; color: #2e2e31; font-size: .8rem; }
+.proof-lifecycle small { display: block; margin-top: 7px; color: #838388; font-size: .67rem; line-height: 1.5; }
+.proof-lifecycle i {
+  position: absolute;
+  top: 25px;
+  right: -10px;
+  z-index: 2;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #e1e1e4;
+  border-radius: 50%;
+  background: #fff;
+  color: #9a9a9f;
+  font-style: normal;
+  font-size: .65rem;
+}
+.proof-queue-panel .panel-heading { align-items: flex-start; }
+.proof-history-panel { overflow: hidden; }
+.proof-job-list { display: grid; gap: 12px; }
+.proof-job-card {
+  padding: 20px;
+  border: 1px solid #e9e9eb;
+  border-radius: 18px;
+  background: #fafafa;
+}
+.proof-job-card.exception { border-color: #ecdada; background: #fffafa; }
+.proof-job-main { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; }
+.proof-job-main h3 { margin: 7px 0 5px; color: #29292c; font-size: 1.02rem; letter-spacing: -.025em; }
+.proof-job-main p { margin: 0; color: #838388; font-size: .7rem; }
+.proof-progress {
+  display: grid;
+  grid-template-columns: repeat(5,minmax(0,1fr));
+  gap: 8px;
+  margin: 20px 0;
+}
+.proof-progress span {
+  position: relative;
+  min-width: 0;
+  padding-top: 12px;
+  color: #9a9a9f;
+  font-size: .62rem;
+  text-transform: capitalize;
+  text-align: center;
+}
+.proof-progress span::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: calc(-50% - 4px);
+  right: calc(50% + 4px);
+  height: 2px;
+  background: #e2e2e5;
+}
+.proof-progress span:first-child::before { display: none; }
+.proof-progress i {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 2;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: #d6d6da;
+}
+.proof-progress span.done,
+.proof-progress span.current { color: #3f3f43; font-weight: 700; }
+.proof-progress span.done i { background: #187a55; }
+.proof-progress span.current i { background: #0071e3; box-shadow: 0 0 0 4px rgba(0,113,227,.10); }
+.proof-progress span.done::before,
+.proof-progress span.current::before { background: #b8d9ca; }
+.proof-job-meta {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 1fr 1fr;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid #e8e8ea;
+}
+.proof-job-meta > div { min-width: 0; }
+.proof-job-meta strong {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #454549;
+  font-size: .69rem;
+  font-weight: 650;
+}
+.proof-exception {
+  display: grid;
+  gap: 4px;
+  margin-top: 15px;
+  padding: 13px 14px;
+  border: 1px solid #eedada;
+  border-radius: 12px;
+  background: #fff;
+}
+.proof-exception strong { color: #8d3838; font-size: .72rem; }
+.proof-exception span { color: #7d6262; font-size: .68rem; line-height: 1.45; }
+
+/* Governance overview and proposal-depth surfaces. */
+.governance-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+.governance-overview-grid article {
+  min-width: 0;
+  padding: 18px 19px;
+  border: 1px solid rgba(0,0,0,.07);
+  border-radius: 17px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(0,0,0,.025);
+}
+.governance-overview-grid article.ready { border-color: #d7e9e0; background: #fbfffd; }
+.governance-proposal-card { position: relative; }
+.governance-proposal-card .proposal-open-link {
+  display: inline-flex;
+  margin-top: 16px;
+  color: #0071e3;
+  font-size: .72rem;
+  font-weight: 720;
+  text-decoration: none;
+}
+.proposal-detail-hero {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 24px;
+  align-items: start;
+  margin-bottom: 18px;
+  padding: 28px;
+  border: 1px solid rgba(0,0,0,.075);
+  border-radius: 24px;
+  background: linear-gradient(135deg,#fff,#f7f7f9);
+  box-shadow: 0 14px 38px rgba(0,0,0,.035);
+}
+.proposal-detail-hero h1 { margin: 7px 0 8px; font-size: clamp(2rem,4vw,3.7rem); line-height: .98; letter-spacing: -.052em; }
+.proposal-detail-hero p { margin: 0; color: #77777c; font-size: .78rem; line-height: 1.5; }
+.proposal-progress-panel { overflow: hidden; }
+.proposal-progress {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  gap: 0;
+  border: 1px solid #e8e8ea;
+  border-radius: 17px;
+  overflow: hidden;
+  background: #fafafa;
+}
+.proposal-progress > div { min-width: 0; padding: 18px; border-right: 1px solid #e8e8ea; }
+.proposal-progress > div:last-child { border-right: 0; }
+.proposal-progress > div.active { background: #f2f8ff; }
+.proposal-progress > div.complete { background: #f5fbf8; }
+.proposal-progress span { color: #8a8a8f; font-size: .63rem; font-weight: 700; }
+.proposal-progress strong { display: block; margin-top: 7px; font-size: .8rem; }
+.proposal-progress small { display: block; margin-top: 5px; color: #86868b; font-size: .65rem; line-height: 1.45; }
+.proposal-audit-list { display: grid; gap: 8px; }
+.proposal-audit-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0,1fr) 130px;
+  gap: 14px;
+  align-items: center;
+  padding: 13px 0;
+  border-bottom: 1px solid #eeeeef;
+}
+.proposal-audit-row:last-child { border-bottom: 0; }
+.proposal-audit-row strong { font-size: .74rem; }
+.proposal-audit-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #77777c; font-size: .68rem; }
+.proposal-audit-row small { color: #8a8a8f; font-size: .65rem; text-align: right; }
+
+@media (max-width: 1120px) {
+  .proof-overview-grid,
+  .governance-overview-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .proof-lifecycle { grid-template-columns: 1fr; }
+  .proof-lifecycle > div { border-right: 0; border-bottom: 1px solid #e8e8ea; }
+  .proof-lifecycle > div:last-child { border-bottom: 0; }
+  .proof-lifecycle i { top: auto; right: 20px; bottom: -10px; transform: rotate(90deg); }
+  .proof-job-meta { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 680px) {
+  .proof-overview-grid,
+  .governance-overview-grid { grid-template-columns: 1fr; }
+  .proof-progress { grid-template-columns: 1fr; gap: 0; }
+  .proof-progress span { min-height: 34px; padding: 0 0 0 24px; text-align: left; display: flex; align-items: center; }
+  .proof-progress span::before { top: -17px; bottom: 17px; left: 3px; right: auto; width: 2px; height: auto; }
+  .proof-progress i { top: 50%; left: 0; margin: -4px 0 0; }
+  .proof-job-meta { grid-template-columns: 1fr; }
+  .proposal-detail-hero { grid-template-columns: 1fr; }
+  .proposal-progress { grid-template-columns: 1fr; }
+  .proposal-progress > div { border-right: 0; border-bottom: 1px solid #e8e8ea; }
+  .proposal-progress > div:last-child { border-bottom: 0; }
+  .proposal-audit-row { grid-template-columns: 1fr; gap: 4px; }
+  .proposal-audit-row small { text-align: left; }
+}
