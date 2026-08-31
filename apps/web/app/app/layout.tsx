@@ -12,10 +12,12 @@ export default async function ProductLayout({ children }: { children: React.Reac
     organizationRole: titleCase(primary.organization.role),
     memberRole: titleCase(primary.member_role),
   } : {};
+  const roleKeys = [...new Set(viewer.memberships.map((membership) => membership.organization.role))];
 
   return (
     <AppShell
       {...organizationProps}
+      roleKeys={roleKeys}
       userName={viewer.profile?.display_name || viewer.email}
       email={viewer.email}
     >
