@@ -32,6 +32,11 @@ export const threadProofCharterEventsAbi = parseAbi([
   "event CharterPolicyUpdated(uint8 indexed proposalType,uint64 indexed newPolicyVersion,uint8 threshold,uint8 eligibleMask,uint8 requiredMask,uint64 timelockSeconds,uint64 votingPeriodSeconds)",
   "event ProtectedIdentityDisclosureAuthorized(bytes32 indexed proposalId,bytes32 indexed subjectReference,bytes32 indexed evidenceHash)",
   "event FactoryOnboardingAuthorized(bytes32 indexed proposalId,bytes32 indexed organizationId,address indexed primaryAccount,bytes32 metadataHash)",
+  "event ProtocolRoleUpdated(bytes32 indexed proposalId,address indexed target,bytes32 indexed role,address account,bool granted)",
+  "event VerifierRegistrationAuthorized(bytes32 indexed proposalId,uint32 indexed circuitVersion,address indexed verifier,bytes32 circuitArtifactHash,bytes32 verificationKeyHash)",
+  "event SubcontractPolicyRegistrationAuthorized(bytes32 indexed proposalId,bytes32 indexed policyHash,uint8 maxDepth,bytes32 complianceCredentialType,bytes32 processCredentialType)",
+  "event EmergencyControlExecuted(bytes32 indexed proposalId,uint8 indexed target,bool paused)",
+  "event CredentialGovernanceStatusChanged(bytes32 indexed proposalId,bytes32 indexed credentialId,uint8 newStatus)",
 ]);
 
 export const threadProofRegistryAbi = parseAbi([
