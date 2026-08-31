@@ -114,6 +114,7 @@ const indexerSchema = commonSchema.extend({
   THREADPROOF_CAPACITY_VAULT_ADDRESS: address,
   THREADPROOF_SUBCONTRACT_GOVERNOR_ADDRESS: address,
   THREADPROOF_CHARTER_ADDRESS: address,
+  THREADPROOF_CONFIRMATIONS: z.coerce.bigint().positive().max(256n).default(1n),
   THREADPROOF_INDEXER_START_BLOCK: z.coerce.bigint().nonnegative().default(0n),
   THREADPROOF_INDEXER_BLOCK_BATCH: z.coerce.bigint().positive().max(10_000n).default(1_000n),
 }).superRefine((value, ctx) => validateDeploymentConfig(value, ctx));

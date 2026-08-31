@@ -9,9 +9,17 @@ import {
 } from "viem";
 import { protocolEventsAbi } from "./chain.js";
 import { getIndexerEnv } from "./env.js";
+import {
+  IndexerCanonicalityError,
+  assertCursorBlockHash,
+  nextIndexerRange,
+  safeIndexerHead,
+  type IndexerCursor,
+} from "./indexer-cursor.js";
 import { createServiceClient } from "./supabase.js";
 
 const CAPACITY_CREDENTIAL_TYPE = keccak256(toBytes("CAPACITY_CREDENTIAL"));
+const HEX32 = /^0x[0-9a-fA-F]{64}$/;
 
 type ServiceClient = ReturnType<typeof createServiceClient>;
 type Decoded = { eventName: string; args: Record<string, unknown> };
@@ -370,30 +378,102 @@ async function applyMirror(
   }
 }
 
-async function currentIndexedBlock(supabase: ServiceClient, chainId: number) {
+async function loadIndexerCursor(supabase: ServiceClient, chainId: number): Promise<IndexerCursor | null> {
   const { data, error } = await supabase
-    .from("chain_events")
-    .select("block_number")
+    .from("chain_indexer_cursors")
+    .select("chain_id,last_block_number,last_block_hash,status")
     .eq("chain_id", chainId)
-    .order("block_number", { ascending: false })
-    .limit(1)
     .maybeSingle();
   if (error) throw error;
-  return data?.block_number == null ? null : BigInt(data.block_number);
+  if (!data) return null;
+  if (!HEX32.test(String(data.last_block_hash))) throw new Error("Stored indexer cursor block hash is malformed.");
+  if (data.status !== "healthy" && data.status !== "reorg_detected") throw new Error("Stored indexer cursor status is invalid.");
+  return {
+    chainId: Number(data.chain_id),
+    lastBlockNumber: BigInt(data.last_block_number),
+    lastBlockHash: data.last_block_hash as Hex,
+    status: data.status,
+  };
+}
+
+async function quarantineIndexerCursor(
+  supabase: ServiceClient,
+  cursor: IndexerCursor | null,
+  detail: string,
+) {
+  if (!cursor) return;
+  const { error } = await supabase
+    .from("chain_indexer_cursors")
+    .update({
+      status: "reorg_detected",
+      error_code: "CHAIN_REORG_DETECTED",
+      error_detail: detail.slice(0, 4000),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("chain_id", cursor.chainId)
+    .eq("last_block_number", cursor.lastBlockNumber.toString())
+    .eq("last_block_hash", cursor.lastBlockHash);
+  if (error) throw error;
+}
+
+async function advanceIndexerCursor(
+  supabase: ServiceClient,
+  chainId: number,
+  blockNumber: bigint,
+  blockHash: Hex,
+) {
+  const { error } = await supabase.from("chain_indexer_cursors").upsert({
+    chain_id: chainId,
+    last_block_number: blockNumber.toString(),
+    last_block_hash: blockHash,
+    status: "healthy",
+    error_code: null,
+    error_detail: null,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "chain_id" });
+  if (error) throw error;
 }
 
 async function indexOnce() {
   const env = getIndexerEnv();
   const supabase = createServiceClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
-  const client = createPublicClient({ transport: http(env.THREADPROOF_RPC_URL) });
+  const client = createPublicClient({ transport: http(env.THREADPROOF_RPC_URL, { timeout: 8_000, retryCount: 2, retryDelay: 250 }) });
   const chainId = await client.getChainId();
+  if (env.THREADPROOF_CHAIN_ID !== undefined && chainId !== env.THREADPROOF_CHAIN_ID) {
+    throw new Error(`Canonical RPC chain ID ${chainId} does not match configured chain ID ${env.THREADPROOF_CHAIN_ID}.`);
+  }
+
+  const cursor = await loadIndexerCursor(supabase, chainId);
+  if (cursor) {
+    let cursorBlock;
+    try {
+      cursorBlock = await client.getBlock({ blockNumber: cursor.lastBlockNumber });
+    } catch (error) {
+      throw new Error(`Could not verify canonical indexer cursor block ${cursor.lastBlockNumber}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    try {
+      assertCursorBlockHash(cursor, cursorBlock.hash);
+    } catch (error) {
+      if (error instanceof IndexerCanonicalityError) {
+        await quarantineIndexerCursor(supabase, cursor, error.message);
+      }
+      throw error;
+    }
+  }
+
   const head = await client.getBlockNumber();
-  const last = await currentIndexedBlock(supabase, chainId);
-  const fromBlock = last == null ? env.THREADPROOF_INDEXER_START_BLOCK : last;
-  if (fromBlock > head) return false;
-  const toBlock = fromBlock + env.THREADPROOF_INDEXER_BLOCK_BATCH - 1n > head
-    ? head
-    : fromBlock + env.THREADPROOF_INDEXER_BLOCK_BATCH - 1n;
+  const safeHead = safeIndexerHead(head, env.THREADPROOF_CONFIRMATIONS);
+  const range = nextIndexerRange({
+    cursor,
+    startBlock: env.THREADPROOF_INDEXER_START_BLOCK,
+    safeHead,
+    batchSize: env.THREADPROOF_INDEXER_BLOCK_BATCH,
+  });
+  if (!range) return false;
+
+  const { fromBlock, toBlock } = range;
+  const targetBefore = await client.getBlock({ blockNumber: toBlock });
+  if (!targetBefore.hash) throw new Error(`Canonical RPC returned block ${toBlock} without a hash.`);
 
   const addresses = [
     env.THREADPROOF_REGISTRY_ADDRESS,
@@ -404,10 +484,27 @@ async function indexOnce() {
     env.THREADPROOF_CHARTER_ADDRESS,
   ] as Hex[];
   const logs = await client.getLogs({ address: addresses, fromBlock, toBlock });
+  const verifiedLogBlocks = new Map<bigint, Hex>();
 
   for (const log of logs) {
     const decoded = decode(log);
     if (!decoded || !log.transactionHash || !log.blockHash || log.blockNumber == null || log.logIndex == null) continue;
+
+    let canonicalLogHash = verifiedLogBlocks.get(log.blockNumber);
+    if (!canonicalLogHash) {
+      const canonicalBlock = await client.getBlock({ blockNumber: log.blockNumber });
+      if (!canonicalBlock.hash) throw new Error(`Canonical RPC returned event block ${log.blockNumber} without a hash.`);
+      canonicalLogHash = canonicalBlock.hash;
+      verifiedLogBlocks.set(log.blockNumber, canonicalLogHash);
+    }
+    if (canonicalLogHash.toLowerCase() !== log.blockHash.toLowerCase()) {
+      const error = new IndexerCanonicalityError(
+        `Protocol log block ${log.blockNumber} hash ${log.blockHash} no longer matches canonical RPC hash ${canonicalLogHash}.`,
+      );
+      await quarantineIndexerCursor(supabase, cursor, error.message);
+      throw error;
+    }
+
     const blockNumber = Number(log.blockNumber);
     if (!Number.isSafeInteger(blockNumber)) throw new Error("Block number exceeds JavaScript safe integer range");
 
@@ -428,8 +525,20 @@ async function indexOnce() {
     await applyMirror(supabase, decoded, log.transactionHash, blockNumber);
   }
 
-  console.log(`Indexed ThreadProof blocks ${fromBlock}-${toBlock}: ${logs.length} protocol logs`);
-  return toBlock < head;
+  const targetAfter = await client.getBlock({ blockNumber: toBlock });
+  if (!targetAfter.hash || targetAfter.hash.toLowerCase() !== targetBefore.hash.toLowerCase()) {
+    const error = new IndexerCanonicalityError(
+      `Indexer batch-end block ${toBlock} changed while the batch was being projected.`,
+    );
+    await quarantineIndexerCursor(supabase, cursor, error.message);
+    throw error;
+  }
+
+  await advanceIndexerCursor(supabase, chainId, toBlock, targetAfter.hash);
+  console.log(
+    `Indexed confirmed ThreadProof blocks ${fromBlock}-${toBlock}: ${logs.length} protocol logs; cursor=${toBlock}@${targetAfter.hash}`,
+  );
+  return safeHead != null && toBlock < safeHead;
 }
 
 async function main() {
