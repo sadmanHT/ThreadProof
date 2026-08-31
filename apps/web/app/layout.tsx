@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./workflow.css";
+import "./premium.css";
 
 export const metadata: Metadata = {
   title: { default: "ThreadProof", template: "%s · ThreadProof" },
