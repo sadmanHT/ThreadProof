@@ -1,0 +1,94 @@
+.organization-context-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 0 0 24px;
+  padding: 18px 20px;
+  border: 1px solid rgba(29, 29, 31, 0.08);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 12px 36px rgba(29, 29, 31, 0.05);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.organization-context-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.organization-context-copy strong {
+  color: #1d1d1f;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+.organization-context-copy small,
+.organization-context-single {
+  color: #86868b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.organization-context-form {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.organization-context-form label {
+  display: grid;
+  gap: 6px;
+  color: #6e6e73;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.organization-context-form select {
+  min-width: 220px;
+  min-height: 38px;
+  padding: 0 34px 0 12px;
+  border: 1px solid rgba(29, 29, 31, 0.12);
+  border-radius: 12px;
+  background: rgba(245, 245, 247, 0.88);
+  color: #1d1d1f;
+  font: inherit;
+  font-size: 13px;
+}
+
+.button.compact {
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+@media (max-width: 760px) {
+  .organization-context-bar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 18px;
+    padding: 16px;
+    border-radius: 17px;
+  }
+
+  .organization-context-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .organization-context-form select {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .organization-context-bar,
+  .organization-context-form select {
+    scroll-behavior: auto;
+  }
+}
