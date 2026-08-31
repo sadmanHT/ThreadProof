@@ -7,15 +7,19 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 type IconName = "overview" | "orders" | "intelligence" | "credentials" | "capacity" | "proofs" | "governance" | "chain" | "team" | "settings" | "menu" | "close" | "arrow" | "shield";
 type NavItem = { href: string; label: string; icon: IconName; section: "workspace" | "organization"; roles?: readonly string[] };
 
+const governanceRoles = ["buyer", "factory", "auditor", "regulator", "industry", "labor_representative", "independent"] as const;
 const nav: readonly NavItem[] = [
   { href: "/app", label: "Overview", icon: "overview", section: "workspace" },
   { href: "/app/orders", label: "Orders", icon: "orders", section: "workspace", roles: ["buyer", "factory"] },
-  { href: "/app/intelligence", label: "Intelligence", icon: "intelligence", section: "workspace" },
-  { href: "/app/credentials", label: "Credentials", icon: "credentials", section: "workspace" },
   { href: "/app/capacity", label: "Capacity", icon: "capacity", section: "workspace", roles: ["factory", "auditor"] },
   { href: "/app/proofs", label: "Proofs", icon: "proofs", section: "workspace", roles: ["buyer", "factory", "auditor"] },
-  { href: "/app/governance", label: "Governance", icon: "governance", section: "workspace", roles: ["buyer", "factory", "auditor", "regulator", "governance"] },
+  { href: "/app/credentials", label: "Credentials", icon: "credentials", section: "workspace" },
+  { href: "/app/subcontracts", label: "Subcontracts", icon: "chain", section: "workspace", roles: ["buyer", "factory"] },
+  { href: "/app/organizations", label: "Organizations", icon: "team", section: "workspace" },
+  { href: "/app/governance", label: "Governance", icon: "governance", section: "workspace", roles: governanceRoles },
+  { href: "/app/audit", label: "Audit trail", icon: "orders", section: "workspace" },
   { href: "/app/chain", label: "Network", icon: "chain", section: "workspace" },
+  { href: "/app/intelligence", label: "Intelligence", icon: "intelligence", section: "workspace" },
   { href: "/app/team", label: "Team", icon: "team", section: "organization" },
   { href: "/app/settings", label: "Settings", icon: "settings", section: "organization" },
 ];
@@ -79,17 +83,10 @@ export function AppShell({ children, organizationName, organizationRole, memberR
     <div className="app-frame">
       <button className={`sidebar-backdrop ${mobileOpen ? "visible" : ""}`} aria-label="Close navigation" onClick={() => setMobileOpen(false)} />
       <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
-        <div className="sidebar-head">
-          <Link href="/app" className="sidebar-brand"><span className="brand-mark"><Icon name="shield" size={19} /></span><span><strong>ThreadProof</strong><small>Consortium protocol</small></span></Link>
-          <button className="sidebar-close" type="button" aria-label="Close navigation" onClick={() => setMobileOpen(false)}><Icon name="close" /></button>
-        </div>
+        <div className="sidebar-head"><Link href="/app" className="sidebar-brand"><span className="brand-mark"><Icon name="shield" size={19} /></span><span><strong>ThreadProof</strong><small>Consortium protocol</small></span></Link><button className="sidebar-close" type="button" aria-label="Close navigation" onClick={() => setMobileOpen(false)}><Icon name="close" /></button></div>
         <div className="sidebar-section-label">Workspace</div><nav className="sidebar-nav" aria-label="Product navigation">{renderNav("workspace")}</nav>
         <div className="sidebar-section-label sidebar-secondary-label">Organization</div><nav className="sidebar-nav" aria-label="Organization navigation">{renderNav("organization")}</nav>
-        <div className="sidebar-footer">
-          {organizationName ? <div className="org-card"><span className="avatar org-avatar">{initials(organizationName)}</span><div><strong>{organizationName}</strong><small>{[organizationRole, memberRole].filter(Boolean).join(" · ")}</small></div></div> : null}
-          <div className="user-card"><span className="avatar">{initials(userName || email)}</span><div><strong>{userName || email}</strong><small>{email}</small></div></div>
-          <form action="/auth/signout" method="post"><button className="sidebar-signout" type="submit"><span>Sign out</span><Icon name="arrow" size={15} /></button></form>
-        </div>
+        <div className="sidebar-footer">{organizationName ? <div className="org-card"><span className="avatar org-avatar">{initials(organizationName)}</span><div><strong>{organizationName}</strong><small>{[organizationRole, memberRole].filter(Boolean).join(" · ")}</small></div></div> : null}<div className="user-card"><span className="avatar">{initials(userName || email)}</span><div><strong>{userName || email}</strong><small>{email}</small></div></div><form action="/auth/signout" method="post"><button className="sidebar-signout" type="submit"><span>Sign out</span><Icon name="arrow" size={15} /></button></form></div>
       </aside>
       <div className="app-content"><header className="mobile-appbar"><button className="mobile-menu" type="button" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Icon name="menu" /></button><div><small>ThreadProof</small><strong>{currentPage}</strong></div><span className="avatar compact-avatar">{initials(userName || email)}</span></header><main className="app-main">{children}</main></div>
     </div>
