@@ -7,11 +7,15 @@ export const dynamic = "force-dynamic";
 export default async function ProductLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireConsortiumViewer();
   const primary = viewer.memberships[0];
+  const organizationProps = primary ? {
+    organizationName: primary.organization.display_name,
+    organizationRole: titleCase(primary.organization.role),
+    memberRole: titleCase(primary.member_role),
+  } : {};
+
   return (
     <AppShell
-      organizationName={primary?.organization.display_name}
-      organizationRole={primary ? titleCase(primary.organization.role) : undefined}
-      memberRole={primary ? titleCase(primary.member_role) : undefined}
+      {...organizationProps}
       userName={viewer.profile?.display_name || viewer.email}
       email={viewer.email}
     >
