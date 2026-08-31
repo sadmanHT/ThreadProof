@@ -25,6 +25,8 @@ const commonSchema = z.object({
   THREADPROOF_SIGNER_URL: z.string().url().optional(),
   THREADPROOF_RELAYER_ADDRESS: address.optional(),
   THREADPROOF_RELAYER_PRIVATE_KEY: privateKey.optional(),
+  THREADPROOF_WORKER_LEASE_SECONDS: z.coerce.number().int().min(900).max(21_600).default(3_600),
+  THREADPROOF_WORKER_HEARTBEAT_SECONDS: z.coerce.number().int().min(5).max(60).default(30),
 });
 
 type SignerConfig = z.infer<typeof commonSchema>;
@@ -35,6 +37,13 @@ function validateDeploymentConfig(value: SignerConfig, ctx: z.RefinementCtx) {
       code: "custom",
       path: ["THREADPROOF_CHAIN_ID"],
       message: "Staging and production workers must pin THREADPROOF_CHAIN_ID explicitly.",
+    });
+  }
+  if (value.THREADPROOF_WORKER_HEARTBEAT_SECONDS * 3 > value.THREADPROOF_WORKER_LEASE_SECONDS) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["THREADPROOF_WORKER_HEARTBEAT_SECONDS"],
+      message: "Worker heartbeat must run at least three times within the configured lease duration.",
     });
   }
 }

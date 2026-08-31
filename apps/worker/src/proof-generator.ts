@@ -17,6 +17,12 @@ import {
   encryptEmbedded,
 } from "./crypto.js";
 import { getProofEnv, parseFactorySecrets } from "./env.js";
+import {
+  type ClaimLease,
+  WorkerClaimLostError,
+  staleClaimCutoffIso,
+  startClaimLease,
+} from "./job-lease.js";
 import { createServiceClient } from "./supabase.js";
 
 const SNARK_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
@@ -64,13 +70,14 @@ function commitmentHex(value: bigint) {
   return `0x${value.toString(16)}`;
 }
 
-async function releaseStaleClaims(supabase: ServiceClient) {
-  const cutoff = new Date(Date.now() - 15 * 60_000).toISOString();
-  await supabase
+async function releaseStaleClaims(supabase: ServiceClient, leaseSeconds: number) {
+  const cutoff = staleClaimCutoffIso(leaseSeconds);
+  const { error } = await supabase
     .from("proof_jobs")
     .update({ status: "queued", worker_claim_token: null, worker_claimed_at: null })
     .eq("status", "generating")
     .lt("worker_claimed_at", cutoff);
+  if (error) throw error;
 }
 
 async function claimQueuedJob(supabase: ServiceClient) {
@@ -105,6 +112,19 @@ async function claimQueuedJob(supabase: ServiceClient) {
     if (data) return data as Row;
   }
   return null;
+}
+
+async function renewProofClaim(supabase: ServiceClient, job: Row) {
+  const { data, error } = await supabase
+    .from("proof_jobs")
+    .update({ worker_claimed_at: new Date().toISOString() })
+    .eq("id", job.id)
+    .eq("status", "generating")
+    .eq("worker_claim_token", job.worker_claim_token)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  return data != null;
 }
 
 async function loadContext(supabase: ServiceClient, job: Row): Promise<JobContext> {
@@ -156,7 +176,7 @@ async function loadContext(supabase: ServiceClient, job: Row): Promise<JobContex
   return { opening, credential, version, order, factory };
 }
 
-async function generateProof(supabase: ServiceClient, job: Row) {
+async function generateProof(supabase: ServiceClient, job: Row, lease: ClaimLease) {
   const env = getProofEnv();
   if (env.THREADPROOF_SIGNER_MODE !== "disabled") {
     throw new Error("The proof generator must run with transaction signing disabled; use the dedicated proof submitter for chain writes.");
@@ -193,6 +213,7 @@ async function generateProof(supabase: ServiceClient, job: Row) {
       circuitVersion: jobCircuitVersion,
     },
   });
+  await lease.renewNow();
 
   const factorySecret = secrets.get(factoryChainId.toLowerCase());
   if (factorySecret == null) throw new Error(`No nullifier secret configured for factory ${factoryChainId}`);
@@ -277,11 +298,15 @@ async function generateProof(supabase: ServiceClient, job: Row) {
     factoryNullifierSecret: factorySecret.toString(),
   };
 
+  await lease.renewNow();
   const { proof, publicSignals } = await groth16.fullProve(
     circuitInput,
     env.THREADPROOF_CAPACITY_WASM_PATH,
     env.THREADPROOF_CAPACITY_ZKEY_PATH,
   );
+  // fullProve can be CPU-heavy enough to delay the JS timer; synchronously re-assert
+  // ownership before any generated secret material is persisted.
+  await lease.renewNow();
 
   const expectedSignals = [
     factoryField,
@@ -308,41 +333,34 @@ async function generateProof(supabase: ServiceClient, job: Row) {
       throw new Error("Generated proof failed local verification");
     }
   }
+  await lease.renewNow();
 
   const nextCapacityCiphertext = encryptEmbedded(newCapacity.toString(), key);
   const nextRandomnessCiphertext = encryptEmbedded(newRandomness.toString(), key);
-  const { error: privateStateError } = await supabase.from("proof_job_private_state").upsert({
-    proof_job_id: job.id,
+  const publicInputs = {
+    signals: publicSignals,
+    request: {
+      factoryOrganizationId: factoryChainId,
+      periodId: periodChainId,
+      processId: processChainId,
+      orderId: orderChainId,
+      policyHash,
+      circuitVersion: job.circuit_version,
+    },
+  };
+
+  const { data: finalized, error: finalizeError } = await supabase.rpc("finalize_proof_generation", {
+    target_job_id: job.id,
+    target_worker_claim_token: job.worker_claim_token,
+    generated_proof: proof,
+    generated_public_inputs: publicInputs,
     next_capacity_ciphertext: bufferToBytea(nextCapacityCiphertext),
     next_randomness_ciphertext: bufferToBytea(nextRandomnessCiphertext),
   });
-  if (privateStateError) throw privateStateError;
-
-  const { error: updateError } = await supabase
-    .from("proof_jobs")
-    .update({
-      status: "generated",
-      proof,
-      public_inputs: {
-        signals: publicSignals,
-        request: {
-          factoryOrganizationId: factoryChainId,
-          periodId: periodChainId,
-          processId: processChainId,
-          orderId: orderChainId,
-          policyHash,
-          circuitVersion: job.circuit_version,
-        },
-      },
-      error_code: null,
-      error_detail: null,
-      worker_claim_token: null,
-      worker_claimed_at: null,
-    })
-    .eq("id", job.id)
-    .eq("status", "generating")
-    .eq("worker_claim_token", job.worker_claim_token);
-  if (updateError) throw updateError;
+  if (finalizeError) throw finalizeError;
+  if (finalized !== true) {
+    throw new WorkerClaimLostError(`Proof job ${job.id} claim was lost before atomic finalization.`);
+  }
 
   console.log(`Generated PoFC proof for job ${job.id}: ${commitmentHex(newCapacityCommitment)}`);
 }
@@ -384,14 +402,29 @@ async function failClaimedJob(supabase: ServiceClient, job: Row, error: unknown)
     .eq("worker_claim_token", job.worker_claim_token);
 }
 
-async function runOnce(supabase: ServiceClient) {
-  await releaseStaleClaims(supabase);
+async function runOnce(
+  supabase: ServiceClient,
+  leaseSeconds: number,
+  heartbeatSeconds: number,
+) {
+  await releaseStaleClaims(supabase, leaseSeconds);
   const job = await claimQueuedJob(supabase);
   if (!job) return false;
 
+  const lease = startClaimLease({
+    heartbeatSeconds,
+    label: `proof job ${job.id}`,
+    renew: () => renewProofClaim(supabase, job),
+  });
+
   try {
-    await generateProof(supabase, job);
+    await lease.renewNow();
+    await generateProof(supabase, job, lease);
   } catch (error) {
+    if (error instanceof WorkerClaimLostError) {
+      console.warn(`Discarded proof work after losing job ${job.id} ownership: ${error.message}`);
+      return true;
+    }
     if (error instanceof StaleCanonicalCapacityError) {
       await markStaleClaimedJob(supabase, job, error);
       console.warn(`Proof job ${job.id} became stale before proving: ${error.message}`);
@@ -399,6 +432,8 @@ async function runOnce(supabase: ServiceClient) {
     }
     await failClaimedJob(supabase, job, error);
     throw error;
+  } finally {
+    lease.stop();
   }
   return true;
 }
@@ -414,7 +449,11 @@ async function main() {
   console.log("ThreadProof proof generator started; transaction signing is structurally disabled");
 
   do {
-    const worked = await runOnce(supabase);
+    const worked = await runOnce(
+      supabase,
+      env.THREADPROOF_WORKER_LEASE_SECONDS,
+      env.THREADPROOF_WORKER_HEARTBEAT_SECONDS,
+    );
     if (!worked && !once) await new Promise((resolve) => setTimeout(resolve, 2_000));
   } while (!once);
 }

@@ -66,10 +66,22 @@ const envBase: Record<string, string> = {
 for (const [key, value] of Object.entries(envBase)) process.env[key] = value;
 delete process.env.THREADPROOF_CHAIN_ID;
 delete process.env.THREADPROOF_RELAYER_PRIVATE_KEY;
+delete process.env.THREADPROOF_WORKER_LEASE_SECONDS;
+delete process.env.THREADPROOF_WORKER_HEARTBEAT_SECONDS;
 assert.throws(() => getOrderRelayerEnv(), /must pin THREADPROOF_CHAIN_ID/i);
 
 process.env.THREADPROOF_CHAIN_ID = "2026";
 process.env.THREADPROOF_REGISTRY_ADDRESS = "0x0000000000000000000000000000000000000000";
 assert.throws(() => getOrderRelayerEnv(), /Zero addresses are not valid/i);
+
+process.env.THREADPROOF_REGISTRY_ADDRESS = registry;
+process.env.THREADPROOF_WORKER_LEASE_SECONDS = "900";
+process.env.THREADPROOF_WORKER_HEARTBEAT_SECONDS = "400";
+assert.throws(() => getOrderRelayerEnv(), /at least three times/i);
+
+process.env.THREADPROOF_WORKER_HEARTBEAT_SECONDS = "30";
+const ready = getOrderRelayerEnv();
+assert.equal(ready.THREADPROOF_WORKER_LEASE_SECONDS, 900);
+assert.equal(ready.THREADPROOF_WORKER_HEARTBEAT_SECONDS, 30);
 
 console.log("ThreadProof chain runtime readiness checks passed");
