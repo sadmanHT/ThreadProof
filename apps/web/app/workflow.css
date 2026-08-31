@@ -1,0 +1,19 @@
+.alert-warning {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-color: #eedcae;
+}
+
+.danger-panel {
+  border-color: #efcaca;
+  background: linear-gradient(180deg, #fff 0%, #fffafa 100%);
+}
+
+.danger-panel .panel-heading {
+  border-bottom-color: #f1dada;
+}
+
+.danger-panel .callout {
+  background: var(--danger-soft);
+  border-left-color: var(--danger);
+}
