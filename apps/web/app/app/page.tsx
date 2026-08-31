@@ -17,6 +17,13 @@ type PipelineItem = {
   updatedAt: string;
 };
 
+const quickLinks = [
+  ["/app/orders", "Order operations", "Create, authorize and track canonical order versions"],
+  ["/app/intelligence", "Intelligence", "Extract and explain without overriding protocol truth"],
+  ["/app/governance", "Governance", "Review consortium proposals and execution state"],
+  ["/app/chain", "Chain activity", "Inspect the canonical event mirror"],
+] as const;
+
 export default async function DashboardPage() {
   const viewer = await requireConsortiumViewer();
   const supabase = await createClient();
@@ -52,8 +59,18 @@ export default async function DashboardPage() {
   ].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)).slice(0, 6);
 
   return (
-    <div className="workspace-page">
-      <header className="page-header"><div><span className="kicker">LIVE WORKSPACE</span><h1>Protocol operations</h1><p>Only data authorized by your consortium memberships is visible. Critical writes remain chain-gated.</p></div><div className={`chain-pill ${chain.online ? "online" : "offline"}`}><span />{chain.configured ? (chain.online ? `Chain online · block ${chain.blockNumber}` : "Chain unavailable") : "Chain RPC not configured"}</div></header>
+    <div className="workspace-page dashboard-page">
+      <header className="page-header dashboard-header">
+        <div><span className="kicker">LIVE WORKSPACE</span><h1>Protocol operations</h1><p>Your permission-scoped command center for orders, proofs, credentials and governance. Critical writes remain chain-gated at every step.</p></div>
+        <div className={`chain-pill ${chain.online ? "online" : "offline"}`}><span />{chain.configured ? (chain.online ? `Chain online · block ${chain.blockNumber}` : "Chain unavailable") : "Chain RPC not configured"}</div>
+      </header>
+
+      <section className="command-strip" aria-label="Quick actions">
+        <div className="command-strip-copy"><span className="kicker">OPERATE</span><strong>Move from workflow to canonical state.</strong><small>Every action preserves the application ↔ protocol trust boundary.</small></div>
+        <div className="quick-link-grid">
+          {quickLinks.map(([href, title, description]) => <Link href={href} className="quick-link" key={href}><div><strong>{title}</strong><span>{description}</span></div><b aria-hidden="true">→</b></Link>)}
+        </div>
+      </section>
 
       <section className="stat-grid">
         <article className="stat-card"><span>Visible orders</span><strong>{ordersCount.count ?? 0}</strong><small>Buyer/factory scoped</small></article>
@@ -63,21 +80,21 @@ export default async function DashboardPage() {
       </section>
 
       <section className="dashboard-grid">
-        <article className="panel">
-          <div className="panel-heading"><div><span className="kicker">RECENT WORK</span><h2>Orders</h2></div><Link href="/app/orders">View all</Link></div>
+        <article className="panel activity-panel">
+          <div className="panel-heading"><div><span className="kicker">RECENT WORK</span><h2>Orders</h2></div><Link href="/app/orders">View all →</Link></div>
           {(recentOrders.data ?? []).length ? <div className="record-list">{(recentOrders.data ?? []).map((order) => <Link className="record-row" href={`/app/orders/${order.id}`} key={order.id}><div><strong>{order.title || order.external_reference}</strong><span>{order.external_reference} · updated {formatDate(order.updated_at)}</span></div><StatusBadge value={order.status} /></Link>)}</div> : <div className="empty-state"><strong>No visible orders yet</strong><span>Buyer operators can create private draft orders once counterparties are onboarded.</span></div>}
         </article>
-        <article className="panel">
-          <div className="panel-heading"><div><span className="kicker">TRANSACTION PIPELINE</span><h2>Actions in flight</h2></div><Link href="/app/orders">Open orders</Link></div>
+        <article className="panel activity-panel">
+          <div className="panel-heading"><div><span className="kicker">TRANSACTION PIPELINE</span><h2>Actions in flight</h2></div><Link href="/app/orders">Open orders →</Link></div>
           {pipeline.length ? <div className="record-list">{pipeline.map((item) => <Link className="record-row" href={`/app/orders/${item.orderId}`} key={item.key}><div><strong>{item.label}</strong><span>{item.detail} · updated {formatDate(item.updatedAt)}</span></div><StatusBadge value={item.status} /></Link>)}</div> : <div className="empty-state"><strong>No buyer transactions in flight</strong><span>Prepared, signed, relaying and submitted order actions appear here until canonical chain events reconcile them.</span></div>}
         </article>
-        <article className="panel full-dashboard-panel">
-          <div className="panel-heading"><div><span className="kicker">CANONICAL MIRROR</span><h2>Chain events</h2></div><Link href="/app/chain">Inspect</Link></div>
-          {(recentEvents.data ?? []).length ? <div className="record-list">{(recentEvents.data ?? []).map((event) => <div className="record-row" key={event.id}><div><strong>{titleCase(event.event_name)}</strong><span>Block {event.block_number} · {shortHash(event.transaction_hash)}</span></div></div>)}</div> : <div className="empty-state"><strong>No indexed events</strong><span>The indexer read model is empty. Direct chain validation remains required for critical writes.</span></div>}
+        <article className="panel full-dashboard-panel activity-panel">
+          <div className="panel-heading"><div><span className="kicker">CANONICAL MIRROR</span><h2>Recent chain events</h2></div><Link href="/app/chain">Inspect chain →</Link></div>
+          {(recentEvents.data ?? []).length ? <div className="chain-event-grid">{(recentEvents.data ?? []).map((event) => <div className="chain-event-card" key={event.id}><span className="event-dot" /><div><strong>{titleCase(event.event_name)}</strong><span>Block {event.block_number}</span></div><code>{shortHash(event.transaction_hash)}</code></div>)}</div> : <div className="empty-state"><strong>No indexed events</strong><span>The indexer read model is empty. Direct chain validation remains required for critical writes.</span></div>}
         </article>
       </section>
 
-      <section className="protocol-banner"><div><span className="kicker">YOUR ACCESS</span><h2>{roles || "Consortium member"}</h2></div><p>Application roles control workflow visibility. On-chain organization accounts control protocol signatures and canonical authorization.</p></section>
+      <section className="protocol-banner"><div><span className="kicker">YOUR ACCESS</span><h2>{roles || "Consortium member"}</h2></div><p>Application roles determine what workflows you can see and coordinate. On-chain organization accounts determine what can become canonical protocol state.</p></section>
     </div>
   );
 }
