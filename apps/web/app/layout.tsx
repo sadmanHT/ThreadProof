@@ -5,6 +5,9 @@ import "./premium.css";
 import "./console-premium.css";
 import "./console-depth.css";
 import "./workflow-depth.css";
+import "./role-workspace.css";
+import "./evidence-depth.css";
+import "./organization-context.css";
 
 export const metadata: Metadata = {
   title: { default: "ThreadProof", template: "%s · ThreadProof" },

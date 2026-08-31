@@ -1,18 +1,26 @@
 import { requireConsortiumViewer } from "@/lib/viewer";
 import { titleCase } from "@/lib/format";
 import { AppShell } from "@/components/app-shell";
+import { OrganizationContextBar } from "@/components/organization-context-bar";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProductLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireConsortiumViewer();
-  const primary = viewer.memberships[0];
-  const organizationProps = primary ? {
-    organizationName: primary.organization.display_name,
-    organizationRole: titleCase(primary.organization.role),
-    memberRole: titleCase(primary.member_role),
+  const active = viewer.activeMembership;
+  const organizationProps = active ? {
+    organizationName: active.organization.display_name,
+    organizationRole: titleCase(active.organization.role),
+    memberRole: titleCase(active.member_role),
   } : {};
-  const roleKeys = [...new Set(viewer.memberships.map((membership) => membership.organization.role))];
+  const activeOrganizationProps = active ? { activeOrganizationId: active.organization_id } : {};
+  const roleKeys = active ? [active.organization.role] : [];
+  const organizationOptions = viewer.memberships.map((membership) => ({
+    id: membership.organization_id,
+    name: membership.organization.display_name,
+    role: titleCase(membership.organization.role),
+    memberRole: titleCase(membership.member_role),
+  }));
 
   return (
     <AppShell
@@ -21,6 +29,10 @@ export default async function ProductLayout({ children }: { children: React.Reac
       userName={viewer.profile?.display_name || viewer.email}
       email={viewer.email}
     >
+      <OrganizationContextBar
+        {...activeOrganizationProps}
+        organizations={organizationOptions}
+      />
       {children}
     </AppShell>
   );

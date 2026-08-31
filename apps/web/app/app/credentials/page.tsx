@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Address, Hex } from "viem";
 import { createClient } from "@/lib/supabase/server";
 import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
@@ -61,9 +62,9 @@ export default async function CredentialsPage() {
 
       <section className="panel table-panel">{(credentials ?? []).length ? <div className="data-table credential-table"><div className="table-row table-head"><span>Credential</span><span>Subject</span><span>Issuer</span><span>Status</span><span>Validity</span></div>{(credentials ?? []).map((credential) => {
         const effectiveStatus = credential.status === "active" && Date.parse(credential.valid_until) < now ? "expired" : credential.status;
-        return <div className="table-row" key={credential.id}><span><strong>{titleCase(credential.credential_type)}</strong><small className="mono">{shortHash(credential.chain_credential_id)}</small></span><span>{orgMap.get(credential.subject_organization_id)?.display_name ?? "Unknown"}</span><span>{orgMap.get(credential.issuer_organization_id)?.display_name ?? "Unknown"}</span><span><StatusBadge value={effectiveStatus} /></span><span><strong>{formatDate(credential.valid_until)}</strong><small>from {formatDate(credential.valid_from)}</small></span></div>;
+        return <Link className="table-row table-row-link" href={`/app/credentials/${credential.id}`} key={credential.id}><span><strong>{titleCase(credential.credential_type)}</strong><small className="mono">{shortHash(credential.chain_credential_id)}</small></span><span>{orgMap.get(credential.subject_organization_id)?.display_name ?? "Unknown"}</span><span>{orgMap.get(credential.issuer_organization_id)?.display_name ?? "Unknown"}</span><span><StatusBadge value={effectiveStatus} /></span><span><strong>{formatDate(credential.valid_until)}</strong><small>from {formatDate(credential.valid_from)}</small></span></Link>;
       })}</div> : <div className="empty-state large"><strong>No credentials indexed yet</strong><span>Credential records appear here only after authorized issuers anchor them to CredentialRegistry and the indexer observes the event.</span></div>}</section>
-      <p className="footnote">ThreadProof can prove who issued a credential and whether its digital authorization remains usable. It does not cryptographically prove that the auditor’s original physical-world assessment was correct.</p>
+      <p className="footnote">Open a credential to inspect its digest, scope, parties, validity, issuance transaction and any capacity state visible to your current RLS session. ThreadProof proves digital authorization, not the truth of the original physical-world assessment.</p>
     </div>
   );
 }

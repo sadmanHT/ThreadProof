@@ -76,6 +76,7 @@ export default async function ProofsPage({ searchParams }: Props) {
           <div className="proof-progress" aria-label={`Proof status ${job.status}`}>{lifecycle.map((stage, index) => <span className={currentStage >= 0 && index < currentStage ? "done" : currentStage === index ? "current" : ""} key={stage}><i />{stage}</span>)}</div>
           <div className="proof-job-meta"><div><span>Capacity state</span><strong className="mono">{opening ? shortHash(opening.chain_state_key) : shortHash(job.capacity_opening_id)}</strong></div><div><span>Created</span><strong>{formatDate(job.created_at)}</strong></div><div><span>Started</span><strong>{formatDate(job.started_at)}</strong></div><div><span>Completed</span><strong>{formatDate(job.completed_at)}</strong></div></div>
           {exception ? <div className="proof-exception"><strong>{job.error_code || (job.status === "stale" ? "State became stale" : "Proof job failed")}</strong><span>{job.error_detail || "No canonical capacity transition was accepted for this job."}</span></div> : null}
+          <a className="proof-evidence-link" href={`/app/proofs/${job.id}`}>Open proof evidence →</a>
         </article>;
       })}</div> : <div className="empty-state large"><strong>No proof jobs yet</strong><span>Factories can queue a proof only when an indexed signed order version and a private active capacity opening are both available.</span></div>}
     </section>

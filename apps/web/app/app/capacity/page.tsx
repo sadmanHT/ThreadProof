@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
 import { formatDate, shortHash, titleCase } from "@/lib/format";
@@ -49,7 +50,7 @@ export default async function CapacityPage() {
       <section className="privacy-banner"><span className="privacy-icon">◌</span><div><strong>Exact capacity is intentionally absent from this screen.</strong><p>Remaining capacity and opening randomness stay encrypted and are consumed only by the proof worker. A database job is never evidence that certification succeeded.</p></div></section>
 
       <section className="card-grid">
-        {(openings ?? []).map((opening) => <article className="entity-card" key={opening.id}><div className="entity-card-top"><div><span className="kicker">{orgMap.get(opening.factory_organization_id) ?? "Factory"}</span><h2>{opening.period_id} · {titleCase(opening.process_id)}</h2></div><StatusBadge value={opening.status} /></div><dl className="definition-grid"><div><dt>State key</dt><dd className="mono">{shortHash(opening.chain_state_key)}</dd></div><div><dt>Policy</dt><dd className="mono">{shortHash(opening.policy_hash)}</dd></div><div><dt>Circuit</dt><dd>v{opening.circuit_version}</dd></div><div><dt>Last chain block</dt><dd>{opening.last_chain_block ?? "Not indexed"}</dd></div><div><dt>Mirror updated</dt><dd>{formatDate(opening.updated_at)}</dd></div></dl></article>)}
+        {(openings ?? []).map((opening) => <Link className="entity-card entity-card-link" href={`/app/capacity/${opening.id}`} key={opening.id}><div className="entity-card-top"><div><span className="kicker">{orgMap.get(opening.factory_organization_id) ?? "Factory"}</span><h2>{opening.period_id} · {titleCase(opening.process_id)}</h2></div><StatusBadge value={opening.status} /></div><dl className="definition-grid"><div><dt>State key</dt><dd className="mono">{shortHash(opening.chain_state_key)}</dd></div><div><dt>Policy</dt><dd className="mono">{shortHash(opening.policy_hash)}</dd></div><div><dt>Circuit</dt><dd>v{opening.circuit_version}</dd></div><div><dt>Last chain block</dt><dd>{opening.last_chain_block ?? "Not indexed"}</dd></div><div><dt>Mirror updated</dt><dd>{formatDate(opening.updated_at)}</dd></div></dl><span className="proposal-open-link">Open capacity evidence →</span></Link>)}
         {!(openings ?? []).length ? <div className="empty-state large full-span"><strong>No active private capacity openings visible</strong><span>Factory members see their own indexed openings here after a matching CapacityCertified event is reconciled.</span></div> : null}
       </section>
     </div>

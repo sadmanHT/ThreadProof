@@ -42,6 +42,12 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # Hosted role-workspace tests are opt-in. The password must be supplied as an
+      # Actions secret; when absent, only the public authentication-boundary suite runs.
+      NEXT_PUBLIC_SUPABASE_URL: https://mgxthhwzsvlxpsombydb.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LdvioX_0DM6Dwlfwebfc0Q_XiM7VLfs
+      THREADPROOF_E2E_DEMO_PASSWORD: ${{ secrets.THREADPROOF_E2E_DEMO_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
