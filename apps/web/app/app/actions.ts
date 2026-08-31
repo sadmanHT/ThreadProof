@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { requireConsortiumViewer } from "@/lib/viewer";
+import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
 
 const orderSchema = z.object({
   buyerOrganizationId: z.string().uuid(),
@@ -32,9 +32,17 @@ function orderInput(formData: FormData) {
 }
 
 export async function createOrderAction(formData: FormData) {
-  await requireConsortiumViewer();
+  const viewer = await requireConsortiumViewer();
+  const active = viewer.activeMembership;
+  if (!active || active.organization.role !== "buyer" || !hasOperationalRole(active)) {
+    redirect("/app/orders?error=Switch+to+an+active+buyer+operator+organization+to+create+orders.");
+  }
+
   const parsed = orderSchema.safeParse(orderInput(formData));
   if (!parsed.success) redirect("/app/orders/new?error=Check+the+order+details+and+try+again.");
+  if (parsed.data.buyerOrganizationId !== active.organization_id) {
+    redirect("/app/orders/new?error=The+buyer+must+match+your+active+organization+context.");
+  }
 
   const supabase = await createClient();
   const { data: id, error } = await supabase.rpc("create_purchase_order_draft", {
@@ -53,7 +61,12 @@ export async function createOrderAction(formData: FormData) {
 }
 
 export async function updateOrderAction(formData: FormData) {
-  await requireConsortiumViewer();
+  const viewer = await requireConsortiumViewer();
+  const active = viewer.activeMembership;
+  if (!active || active.organization.role !== "buyer" || !hasOperationalRole(active)) {
+    redirect("/app/orders?error=Switch+to+the+buyer+operator+organization+for+this+draft.");
+  }
+
   const orderId = z.string().uuid().safeParse(formData.get("orderId"));
   const parsed = orderSchema.omit({ buyerOrganizationId: true, factoryOrganizationId: true }).safeParse({
     externalReference: formData.get("externalReference"),
@@ -66,6 +79,11 @@ export async function updateOrderAction(formData: FormData) {
   if (!orderId.success || !parsed.success) redirect("/app/orders?error=Invalid+draft+update.");
 
   const supabase = await createClient();
+  const { data: order } = await supabase.from("purchase_orders").select("buyer_organization_id").eq("id", orderId.data).maybeSingle();
+  if (!order || order.buyer_organization_id !== active.organization_id) {
+    redirect("/app/orders?error=This+draft+is+outside+your+active+buyer+organization+context.");
+  }
+
   const { error } = await supabase.rpc("update_purchase_order_draft", {
     target_order_id: orderId.data,
     new_external_reference: parsed.data.externalReference,
@@ -82,10 +100,20 @@ export async function updateOrderAction(formData: FormData) {
 }
 
 export async function deleteOrderAction(formData: FormData) {
-  await requireConsortiumViewer();
+  const viewer = await requireConsortiumViewer();
+  const active = viewer.activeMembership;
+  if (!active || active.organization.role !== "buyer" || !hasOperationalRole(active)) {
+    redirect("/app/orders?error=Switch+to+the+buyer+operator+organization+for+this+draft.");
+  }
+
   const parsed = z.string().uuid().safeParse(formData.get("orderId"));
   if (!parsed.success) redirect("/app/orders?error=Invalid+order.");
   const supabase = await createClient();
+  const { data: order } = await supabase.from("purchase_orders").select("buyer_organization_id").eq("id", parsed.data).maybeSingle();
+  if (!order || order.buyer_organization_id !== active.organization_id) {
+    redirect("/app/orders?error=This+draft+is+outside+your+active+buyer+organization+context.");
+  }
+
   const { error } = await supabase.rpc("delete_purchase_order_draft", { target_order_id: parsed.data });
   if (error) redirect(`/app/orders/${parsed.data}?error=${encodeURIComponent(error.message)}`);
   revalidatePath("/app/orders");
@@ -93,13 +121,30 @@ export async function deleteOrderAction(formData: FormData) {
 }
 
 export async function queueProofAction(formData: FormData) {
-  await requireConsortiumViewer();
+  const viewer = await requireConsortiumViewer();
+  const active = viewer.activeMembership;
+  if (!active || active.organization.role !== "factory" || !hasOperationalRole(active)) {
+    redirect("/app/proofs?error=Switch+to+an+active+factory+operator+organization+to+queue+proofs.");
+  }
+
   const parsed = z.object({ orderVersionId: z.string().uuid(), capacityOpeningId: z.string().uuid() }).safeParse({
     orderVersionId: formData.get("orderVersionId"),
     capacityOpeningId: formData.get("capacityOpeningId"),
   });
   if (!parsed.success) redirect("/app/proofs?error=Select+an+order+version+and+capacity+state.");
   const supabase = await createClient();
+  const [{ data: opening }, { data: version }] = await Promise.all([
+    supabase.from("private_capacity_openings").select("factory_organization_id").eq("id", parsed.data.capacityOpeningId).maybeSingle(),
+    supabase.from("order_versions").select("purchase_order_id").eq("id", parsed.data.orderVersionId).maybeSingle(),
+  ]);
+  if (!opening || opening.factory_organization_id !== active.organization_id || !version) {
+    redirect("/app/proofs?error=The+selected+proof+inputs+are+outside+your+active+factory+context.");
+  }
+  const { data: order } = await supabase.from("purchase_orders").select("factory_organization_id").eq("id", version.purchase_order_id).maybeSingle();
+  if (!order || order.factory_organization_id !== active.organization_id) {
+    redirect("/app/proofs?error=The+order+version+is+not+assigned+to+your+active+factory+organization.");
+  }
+
   const { error } = await supabase.rpc("queue_capacity_proof", {
     target_order_version_id: parsed.data.orderVersionId,
     target_capacity_opening_id: parsed.data.capacityOpeningId,
@@ -112,7 +157,8 @@ export async function queueProofAction(formData: FormData) {
 export type InviteState = { ok: boolean; message: string; inviteUrl?: string };
 
 export async function createInvitationAction(_previous: InviteState, formData: FormData): Promise<InviteState> {
-  await requireConsortiumViewer();
+  const viewer = await requireConsortiumViewer();
+  const active = viewer.activeMembership;
   const parsed = z.object({
     organizationId: z.string().uuid(),
     email: z.string().trim().email(),
@@ -123,6 +169,9 @@ export async function createInvitationAction(_previous: InviteState, formData: F
     memberRole: formData.get("memberRole"),
   });
   if (!parsed.success) return { ok: false, message: "Enter a valid email and member role." };
+  if (!active || active.member_role !== "admin" || parsed.data.organizationId !== active.organization_id) {
+    return { ok: false, message: "Switch to the organization you administer before creating an invitation." };
+  }
 
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("create_organization_invitation", {
