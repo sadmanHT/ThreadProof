@@ -28,7 +28,7 @@ const steps: readonly Step[] = [
 
 export function DemoScenario() {
   const [index, setIndex] = useState(0);
-  const step = steps[index] ?? steps[0];
+  const step: Step = steps[index] ?? steps[0]!;
   const progress = useMemo(() => `${String(index + 1).padStart(2, "0")} / ${String(steps.length).padStart(2, "0")}`, [index]);
 
   return <div className="demo-workspace">
