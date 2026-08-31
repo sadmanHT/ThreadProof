@@ -54,6 +54,9 @@ export async function getViewer(): Promise<Viewer | null> {
   const activeMembership = memberships.find((membership) => membership.organization_id === requestedOrganizationId)
     ?? memberships[0]
     ?? null;
+  const orderedMemberships = activeMembership
+    ? [activeMembership, ...memberships.filter((membership) => membership.organization_id !== activeMembership.organization_id)]
+    : memberships;
   const roles = new Set(memberships.map((membership) => membership.organization.role));
   const email = typeof claims?.email === "string" ? claims.email : profile?.email ?? "";
 
@@ -61,7 +64,7 @@ export async function getViewer(): Promise<Viewer | null> {
     userId,
     email,
     profile: profile ?? null,
-    memberships,
+    memberships: orderedMemberships,
     activeMembership,
     roles,
     isConsortiumMember: memberships.length > 0,
