@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import type { Address, Hex } from "viem";
 import { ChainRuntimeReadinessError, verifyChainRuntime } from "../src/chain-runtime.js";
+import { getOrderRelayerEnv } from "../src/env.js";
 
 const registry = "0x1111111111111111111111111111111111111111" as Address;
 const vault = "0x2222222222222222222222222222222222222222" as Address;
@@ -50,5 +51,25 @@ await rejectsWith(/has no deployed bytecode/, () =>
 await rejectsWith(/Canonical RPC is unreachable/, () =>
   verifyChainRuntime(fakeClient({ chainError: new Error("connection refused") }), 2026, []),
 );
+
+const envBase: Record<string, string> = {
+  SUPABASE_URL: "https://example.supabase.co",
+  SUPABASE_SERVICE_ROLE_KEY: "service-role-placeholder-1234567890",
+  THREADPROOF_RPC_URL: "https://rpc.internal.example",
+  THREADPROOF_REGISTRY_ADDRESS: registry,
+  THREADPROOF_ORDER_REGISTRY_ADDRESS: vault,
+  THREADPROOF_DEPLOYMENT_ENV: "production",
+  THREADPROOF_SIGNER_MODE: "remote",
+  THREADPROOF_SIGNER_URL: "https://signer.internal.example",
+  THREADPROOF_RELAYER_ADDRESS: registry,
+};
+for (const [key, value] of Object.entries(envBase)) process.env[key] = value;
+delete process.env.THREADPROOF_CHAIN_ID;
+delete process.env.THREADPROOF_RELAYER_PRIVATE_KEY;
+assert.throws(() => getOrderRelayerEnv(), /must pin THREADPROOF_CHAIN_ID/i);
+
+process.env.THREADPROOF_CHAIN_ID = "2026";
+process.env.THREADPROOF_REGISTRY_ADDRESS = "0x0000000000000000000000000000000000000000";
+assert.throws(() => getOrderRelayerEnv(), /Zero addresses are not valid/i);
 
 console.log("ThreadProof chain runtime readiness checks passed");
