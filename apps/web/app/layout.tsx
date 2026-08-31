@@ -3,6 +3,7 @@ import "./globals.css";
 import "./workflow.css";
 import "./premium.css";
 import "./console-premium.css";
+import "./console-depth.css";
 
 export const metadata: Metadata = {
   title: { default: "ThreadProof", template: "%s · ThreadProof" },
