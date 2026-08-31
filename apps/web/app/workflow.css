@@ -28,3 +28,13 @@
   justify-items: start;
   gap: 5px;
 }
+
+.full-dashboard-panel {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 760px) {
+  .full-dashboard-panel {
+    grid-column: auto;
+  }
+}
