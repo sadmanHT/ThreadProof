@@ -12,6 +12,12 @@ for (const path of productionSubmitters) {
   }
 }
 
+const ciWorkflow = await readFile(".github/workflows/ci.yml", "utf8");
+const hostedPassword = ciWorkflow.match(/^\s*THREADPROOF_E2E_DEMO_PASSWORD:\s*(.+)$/m)?.[1]?.trim();
+if (hostedPassword && !/^\$\{\{\s*secrets\.[A-Z0-9_]+\s*\}\}$/.test(hostedPassword)) {
+  throw new Error("Hosted authenticated E2E passwords must be supplied through GitHub Actions secrets, never workflow literals");
+}
+
 const envSource = await readFile("apps/worker/src/env.ts", "utf8");
 for (const required of [
   "Production workers must never receive a raw relayer private key",
@@ -95,4 +101,4 @@ for (const path of infraFiles) {
   }
 }
 
-console.log("Production signing, spend recovery, and Besu boundary checks passed");
+console.log("Production signing, spend recovery, Besu, and hosted E2E boundary checks passed");
