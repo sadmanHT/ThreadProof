@@ -1,0 +1,56 @@
+/* Premium neutral console token layer. Loaded after the legacy console stylesheet. */
+:root {
+  --ink: #1d1d1f;
+  --ink-2: #3a3a3c;
+  --muted: #6e6e73;
+  --muted-2: #86868b;
+  --line: #e5e5e7;
+  --line-strong: #d1d1d6;
+  --surface: #f5f5f7;
+  --surface-2: #ededf0;
+  --surface-3: #e6e6e9;
+  --brand: #1d1d1f;
+  --brand-deep: #09090b;
+  --brand-2: #0071e3;
+  --accent: #0071e3;
+  --accent-2: #2997ff;
+  --accent-soft: #eef6ff;
+  --success: #187a55;
+  --success-soft: #edf8f2;
+  --shadow-xs: 0 1px 2px rgba(0,0,0,.035);
+  --shadow-sm: 0 10px 30px rgba(0,0,0,.045);
+  --shadow: 0 22px 60px rgba(0,0,0,.07);
+  --shadow-lg: 0 34px 100px rgba(0,0,0,.095);
+}
+
+.app-frame { background: #f5f5f7; }
+.sidebar { background: rgba(255,255,255,.94); border-right-color: rgba(0,0,0,.075); }
+.brand-mark { background: #1d1d1f; box-shadow: none; }
+.sidebar-brand strong { color: #1d1d1f; }
+.sidebar-nav a { color: #646468; }
+.sidebar-nav a:hover { color: #1d1d1f; background: #f5f5f7; }
+.sidebar-nav a.active { color: #1d1d1f; background: #f0f0f2; box-shadow: inset 2px 0 #0071e3; }
+.nav-active-dot { background: #0071e3; }
+.org-card, .user-card { border-color: rgba(0,0,0,.07); background: rgba(250,250,250,.9); }
+.avatar { background: #f0f0f2; color: #444448; }
+.org-avatar { background: #1d1d1f; color: white; }
+.sidebar-signout { color: #6e6e73; }
+.sidebar-signout:hover { background: #f5f5f7; color: #1d1d1f; }
+.mobile-appbar { background: rgba(255,255,255,.82); border-bottom-color: rgba(0,0,0,.08); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); }
+.workspace-page { max-width: 1420px; }
+.page-header h1 { letter-spacing: -.048em; color: #1d1d1f; }
+.panel, .stat-card, .entity-card { border-color: rgba(0,0,0,.075); box-shadow: 0 10px 32px rgba(0,0,0,.035); }
+.panel:hover, .entity-card:hover { border-color: rgba(0,0,0,.11); }
+.button.primary { background: #1d1d1f; box-shadow: none; }
+.button.primary:hover { background: #000; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+.button.secondary { color: #1d1d1f; border-color: #d1d1d6; }
+.button.secondary:hover { border-color: #a8a8ad; }
+.button.ghost, .text-button { color: #0071e3; }
+.kicker { color: #6e6e73; letter-spacing: .13em; }
+.chain-pill.online { color: #187a55; background: #edf8f2; border-color: #d4ecdf; }
+.data-table .table-row:not(.table-head):hover, .record-row:hover { background: #fafafa; }
+input:focus, select:focus, textarea:focus { border-color: #0071e3; box-shadow: 0 0 0 3px rgba(0,113,227,.10); }
+
+@media (max-width: 980px) {
+  .sidebar { background: rgba(255,255,255,.98); backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px); }
+}
