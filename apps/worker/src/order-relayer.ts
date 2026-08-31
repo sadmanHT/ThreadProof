@@ -7,6 +7,12 @@ import {
 } from "viem";
 import { orderRegistryAbi, threadProofRegistryAbi } from "./chain.js";
 import { getOrderRelayerEnv } from "./env.js";
+import {
+  type ClaimLease,
+  WorkerClaimLostError,
+  staleClaimCutoffIso,
+  startClaimLease,
+} from "./job-lease.js";
 import { createRelayerWallet, RelayerSignerUnavailableError } from "./signer.js";
 import { createServiceClient } from "./supabase.js";
 
@@ -43,6 +49,12 @@ type Row = Record<string, any>;
 type JobTable = "order_authorization_jobs" | "order_cancellation_jobs";
 
 class StaleAuthorizationError extends Error {}
+class BroadcastPersistenceError extends Error {
+  constructor(readonly txHash: Hex, message: string) {
+    super(message);
+    this.name = "BroadcastPersistenceError";
+  }
+}
 
 function hex32(value: unknown, label: string): Hex {
   if (typeof value !== "string" || !HEX32.test(value)) throw new Error(`${label} is not bytes32 hex`);
@@ -63,33 +75,39 @@ function orderRegistryDomain(chainId: number, verifyingContract: `0x${string}`) 
   } as const;
 }
 
-async function releaseAbandonedClaims(supabase: ServiceClient) {
-  const cutoff = new Date(Date.now() - 15 * 60_000).toISOString();
+async function releaseAbandonedClaims(supabase: ServiceClient, leaseSeconds: number) {
+  const cutoff = staleClaimCutoffIso(leaseSeconds);
   const now = new Date().toISOString();
 
-  await supabase
+  const { error: authReleaseError } = await supabase
     .from("order_authorization_jobs")
     .update({ status: "signed", worker_claim_token: null, worker_claimed_at: null, updated_at: now })
     .eq("status", "submitting")
     .is("chain_tx_hash", null)
     .lt("worker_claimed_at", cutoff);
-  await supabase
+  if (authReleaseError) throw authReleaseError;
+
+  const { error: cancelReleaseError } = await supabase
     .from("order_cancellation_jobs")
     .update({ status: "signed", worker_claim_token: null, worker_claimed_at: null, updated_at: now })
     .eq("status", "submitting")
     .is("chain_tx_hash", null)
     .lt("worker_claimed_at", cutoff);
+  if (cancelReleaseError) throw cancelReleaseError;
 
-  await supabase
+  const { error: authDeadlineError } = await supabase
     .from("order_authorization_jobs")
     .update({ status: "stale", worker_claim_token: null, worker_claimed_at: null, updated_at: now, error_code: "DEADLINE_EXPIRED", error_detail: "Buyer authorization deadline expired before relay." })
     .in("status", ["prepared", "signed"])
     .lt("deadline", now);
-  await supabase
+  if (authDeadlineError) throw authDeadlineError;
+
+  const { error: cancelDeadlineError } = await supabase
     .from("order_cancellation_jobs")
     .update({ status: "stale", worker_claim_token: null, worker_claimed_at: null, updated_at: now, error_code: "DEADLINE_EXPIRED", error_detail: "Buyer cancellation deadline expired before relay." })
     .in("status", ["prepared", "signed"])
     .lt("deadline", now);
+  if (cancelDeadlineError) throw cancelDeadlineError;
 }
 
 async function claimSignedAuthorizationJob(supabase: ServiceClient) {
@@ -148,6 +166,20 @@ async function claimSignedCancellationJob(supabase: ServiceClient) {
   return null;
 }
 
+async function renewOrderClaim(supabase: ServiceClient, table: JobTable, job: Row, token: string) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from(table)
+    .update({ worker_claimed_at: now, updated_at: now })
+    .eq("id", job.id)
+    .eq("status", "submitting")
+    .eq("worker_claim_token", token)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  return data != null;
+}
+
 async function markStale(
   supabase: ServiceClient,
   table: JobTable,
@@ -186,6 +218,73 @@ async function releaseForSignerRetry(
     .eq("worker_claim_token", token);
 }
 
+async function persistBroadcast(
+  supabase: ServiceClient,
+  table: JobTable,
+  job: Row,
+  token: string,
+  txHash: Hex,
+) {
+  const { data, error } = await supabase
+    .from(table)
+    .update({
+      status: "submitted",
+      chain_tx_hash: txHash,
+      worker_claim_token: null,
+      worker_claimed_at: null,
+      updated_at: new Date().toISOString(),
+      error_code: null,
+      error_detail: null,
+    })
+    .eq("id", job.id)
+    .eq("status", "submitting")
+    .eq("worker_claim_token", token)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    throw new BroadcastPersistenceError(txHash, `Broadcast ${txHash} could not be persisted: ${error.message}`);
+  }
+  if (!data) {
+    throw new WorkerClaimLostError(`${table} job ${job.id} claim was lost after broadcasting ${txHash}.`);
+  }
+}
+
+async function observeBroadcastReceipt(
+  supabase: ServiceClient,
+  table: JobTable,
+  jobId: string,
+  txHash: Hex,
+  publicClient: ReturnType<typeof createPublicClient>,
+  label: string,
+) {
+  try {
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
+    if (receipt.status !== "success") {
+      await supabase.from(table).update({
+        status: "failed",
+        chain_block_number: Number(receipt.blockNumber),
+        updated_at: new Date().toISOString(),
+        error_code: "CHAIN_TRANSACTION_REVERTED",
+        error_detail: `${label} transaction reverted: ${txHash}`,
+      }).eq("id", jobId).eq("status", "submitted").eq("chain_tx_hash", txHash);
+      return;
+    }
+
+    await supabase.from(table).update({
+      chain_block_number: Number(receipt.blockNumber),
+      updated_at: new Date().toISOString(),
+      error_code: null,
+      error_detail: null,
+    }).eq("id", jobId).eq("status", "submitted").eq("chain_tx_hash", txHash);
+  } catch (error) {
+    await supabase.from(table).update({
+      updated_at: new Date().toISOString(),
+      error_code: "CHAIN_CONFIRMATION_PENDING",
+      error_detail: errorDetail(error),
+    }).eq("id", jobId).eq("status", "submitted").eq("chain_tx_hash", txHash);
+  }
+}
+
 async function publicClientForRelayer() {
   const env = getOrderRelayerEnv();
   const publicClient = createPublicClient({ transport: http(env.THREADPROOF_RPC_URL, { timeout: 8_000 }) });
@@ -196,7 +295,7 @@ async function publicClientForRelayer() {
   return { env, publicClient, chainId };
 }
 
-async function relayAuthorization(supabase: ServiceClient, job: Row) {
+async function relayAuthorization(supabase: ServiceClient, job: Row, lease: ClaimLease) {
   const token = String(job.worker_claim_token);
   const orderId = hex32(job.chain_order_id, "chain order id");
   const previousVersionHash = hex32(job.previous_version_hash, "previous version hash");
@@ -284,6 +383,7 @@ async function relayAuthorization(supabase: ServiceClient, job: Row) {
     throw new StaleAuthorizationError("Version 1 authorization must use the zero previous-version hash");
   }
 
+  await lease.renewNow();
   const { account, wallet } = await createRelayerWallet(env, chainId);
   const { request } = await publicClient.simulateContract({
     address: env.THREADPROOF_ORDER_REGISTRY_ADDRESS as `0x${string}`,
@@ -292,28 +392,17 @@ async function relayAuthorization(supabase: ServiceClient, job: Row) {
     args: [authorization, signature],
     account,
   });
+  await lease.renewNow();
   const txHash = await wallet.writeContract(request);
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
-  if (receipt.status !== "success") throw new Error(`OrderRegistry transaction ${txHash} reverted`);
 
-  await supabase
-    .from("order_authorization_jobs")
-    .update({
-      status: "submitted",
-      chain_tx_hash: txHash,
-      chain_block_number: Number(receipt.blockNumber),
-      worker_claim_token: null,
-      worker_claimed_at: null,
-      updated_at: new Date().toISOString(),
-      error_code: null,
-      error_detail: null,
-    })
-    .eq("id", job.id)
-    .eq("status", "submitting")
-    .eq("worker_claim_token", token);
+  // The broadcast hash is the crash-recovery boundary. Persist it before waiting for a
+  // receipt so a dead relayer never makes an already-sent transaction look unsent.
+  lease.stop();
+  await persistBroadcast(supabase, "order_authorization_jobs", job, token, txHash);
+  await observeBroadcastReceipt(supabase, "order_authorization_jobs", job.id, txHash, publicClient, "OrderRegistry");
 }
 
-async function relayCancellation(supabase: ServiceClient, job: Row) {
+async function relayCancellation(supabase: ServiceClient, job: Row, lease: ClaimLease) {
   const token = String(job.worker_claim_token);
   const orderId = hex32(job.chain_order_id, "chain order id");
   if (!SIGNATURE.test(String(job.buyer_signature))) throw new Error("Buyer cancellation signature is missing or malformed");
@@ -386,6 +475,7 @@ async function relayCancellation(supabase: ServiceClient, job: Row) {
     throw new StaleAuthorizationError("OrderRegistry state no longer matches the signed cancellation context");
   }
 
+  await lease.renewNow();
   const { account, wallet } = await createRelayerWallet(env, chainId);
   const { request } = await publicClient.simulateContract({
     address: env.THREADPROOF_ORDER_REGISTRY_ADDRESS as `0x${string}`,
@@ -394,32 +484,33 @@ async function relayCancellation(supabase: ServiceClient, job: Row) {
     args: [authorization, signature],
     account,
   });
+  await lease.renewNow();
   const txHash = await wallet.writeContract(request);
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
-  if (receipt.status !== "success") throw new Error(`OrderRegistry cancellation ${txHash} reverted`);
 
-  await supabase
-    .from("order_cancellation_jobs")
-    .update({
-      status: "submitted",
-      chain_tx_hash: txHash,
-      chain_block_number: Number(receipt.blockNumber),
-      worker_claim_token: null,
-      worker_claimed_at: null,
-      updated_at: new Date().toISOString(),
-      error_code: null,
-      error_detail: null,
-    })
-    .eq("id", job.id)
-    .eq("status", "submitting")
-    .eq("worker_claim_token", token);
+  lease.stop();
+  await persistBroadcast(supabase, "order_cancellation_jobs", job, token, txHash);
+  await observeBroadcastReceipt(supabase, "order_cancellation_jobs", job.id, txHash, publicClient, "OrderRegistry cancellation");
 }
 
-async function processAuthorizationJob(supabase: ServiceClient, job: Row) {
+async function processAuthorizationJob(supabase: ServiceClient, job: Row, heartbeatSeconds: number) {
   const token = String(job.worker_claim_token);
+  const lease = startClaimLease({
+    heartbeatSeconds,
+    label: `order authorization job ${job.id}`,
+    renew: () => renewOrderClaim(supabase, "order_authorization_jobs", job, token),
+  });
   try {
-    await relayAuthorization(supabase, job);
+    await lease.renewNow();
+    await relayAuthorization(supabase, job, lease);
   } catch (error) {
+    if (error instanceof WorkerClaimLostError) {
+      console.warn(`Stopped order authorization job ${job.id} after claim loss: ${error.message}`);
+      return;
+    }
+    if (error instanceof BroadcastPersistenceError) {
+      console.error(`Order authorization ${job.id} broadcast ${error.txHash} but persistence failed; canonical event indexing may still recover it: ${error.message}`);
+      return;
+    }
     if (error instanceof StaleAuthorizationError) {
       await markStale(supabase, "order_authorization_jobs", job, token, "ORDER_AUTH_STALE", error.message);
       return;
@@ -435,7 +526,7 @@ async function processAuthorizationJob(supabase: ServiceClient, job: Row) {
       .select("status")
       .eq("id", job.id)
       .maybeSingle();
-    if (latest?.status === "confirmed") return;
+    if (latest?.status === "confirmed" || latest?.status === "submitted") return;
 
     await supabase
       .from("order_authorization_jobs")
@@ -450,14 +541,30 @@ async function processAuthorizationJob(supabase: ServiceClient, job: Row) {
       .eq("id", job.id)
       .eq("status", "submitting")
       .eq("worker_claim_token", token);
+  } finally {
+    lease.stop();
   }
 }
 
-async function processCancellationJob(supabase: ServiceClient, job: Row) {
+async function processCancellationJob(supabase: ServiceClient, job: Row, heartbeatSeconds: number) {
   const token = String(job.worker_claim_token);
+  const lease = startClaimLease({
+    heartbeatSeconds,
+    label: `order cancellation job ${job.id}`,
+    renew: () => renewOrderClaim(supabase, "order_cancellation_jobs", job, token),
+  });
   try {
-    await relayCancellation(supabase, job);
+    await lease.renewNow();
+    await relayCancellation(supabase, job, lease);
   } catch (error) {
+    if (error instanceof WorkerClaimLostError) {
+      console.warn(`Stopped order cancellation job ${job.id} after claim loss: ${error.message}`);
+      return;
+    }
+    if (error instanceof BroadcastPersistenceError) {
+      console.error(`Order cancellation ${job.id} broadcast ${error.txHash} but persistence failed; canonical event indexing may still recover it: ${error.message}`);
+      return;
+    }
     if (error instanceof StaleAuthorizationError) {
       await markStale(supabase, "order_cancellation_jobs", job, token, "ORDER_CANCEL_STALE", error.message);
       return;
@@ -473,7 +580,7 @@ async function processCancellationJob(supabase: ServiceClient, job: Row) {
       .select("status")
       .eq("id", job.id)
       .maybeSingle();
-    if (latest?.status === "confirmed") return;
+    if (latest?.status === "confirmed" || latest?.status === "submitted") return;
 
     await supabase
       .from("order_cancellation_jobs")
@@ -488,6 +595,8 @@ async function processCancellationJob(supabase: ServiceClient, job: Row) {
       .eq("id", job.id)
       .eq("status", "submitting")
       .eq("worker_claim_token", token);
+  } finally {
+    lease.stop();
   }
 }
 
@@ -496,17 +605,17 @@ async function main() {
   const supabase = createServiceClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
   console.log(`ThreadProof order relayer started with ${env.THREADPROOF_SIGNER_MODE} signing`);
   while (true) {
-    await releaseAbandonedClaims(supabase);
+    await releaseAbandonedClaims(supabase, env.THREADPROOF_WORKER_LEASE_SECONDS);
 
     const cancellationJob = await claimSignedCancellationJob(supabase);
     if (cancellationJob) {
-      await processCancellationJob(supabase, cancellationJob);
+      await processCancellationJob(supabase, cancellationJob, env.THREADPROOF_WORKER_HEARTBEAT_SECONDS);
       continue;
     }
 
     const authorizationJob = await claimSignedAuthorizationJob(supabase);
     if (authorizationJob) {
-      await processAuthorizationJob(supabase, authorizationJob);
+      await processAuthorizationJob(supabase, authorizationJob, env.THREADPROOF_WORKER_HEARTBEAT_SECONDS);
       continue;
     }
 
