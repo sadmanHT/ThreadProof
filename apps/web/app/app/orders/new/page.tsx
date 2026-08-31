@@ -8,8 +8,10 @@ export const dynamic = "force-dynamic";
 
 export default async function NewOrderPage({ searchParams }: Props) {
   const viewer = await requireConsortiumViewer();
-  const buyers = viewer.memberships.filter((membership) => membership.organization.role === "buyer" && hasOperationalRole(membership));
-  if (!buyers.length) redirect("/app/orders?error=Buyer+operator+membership+is+required+to+create+orders.");
+  const active = viewer.activeMembership;
+  if (!active || active.organization.role !== "buyer" || !hasOperationalRole(active)) {
+    redirect("/app/orders?error=Switch+to+an+active+buyer+operator+organization+to+create+orders.");
+  }
 
   const supabase = await createClient();
   const { data: factories } = await supabase.from("organizations").select("id,display_name,country_code,status").eq("role", "factory").eq("status", "active").order("display_name");
@@ -19,7 +21,7 @@ export default async function NewOrderPage({ searchParams }: Props) {
   return <div className="workspace-page wizard-page">
     {error ? <div className="alert alert-error">{error}</div> : null}
     <OrderCreateWizard
-      buyers={buyers.map((membership) => ({ id: membership.organization_id, displayName: membership.organization.display_name }))}
+      buyers={[{ id: active.organization_id, displayName: active.organization.display_name }]}
       factories={(factories ?? []).map((factory) => ({ id: factory.id, displayName: factory.display_name, ...(factory.country_code ? { detail: factory.country_code } : {}) }))}
     />
   </div>;
