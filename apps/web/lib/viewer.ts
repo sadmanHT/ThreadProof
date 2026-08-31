@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/database.types";
@@ -6,6 +7,8 @@ type Organization = Database["public"]["Tables"]["organizations"]["Row"];
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 type MembershipRow = Database["public"]["Tables"]["organization_members"]["Row"];
 
+export const ACTIVE_ORGANIZATION_COOKIE = "threadproof-active-organization";
+
 export type ViewerMembership = MembershipRow & { organization: Organization };
 
 export type Viewer = {
@@ -13,6 +16,7 @@ export type Viewer = {
   email: string;
   profile: Profile | null;
   memberships: ViewerMembership[];
+  activeMembership: ViewerMembership | null;
   roles: Set<Database["public"]["Enums"]["organization_role"]>;
   isConsortiumMember: boolean;
 };
@@ -45,6 +49,11 @@ export async function getViewer(): Promise<Viewer | null> {
     return organization ? [{ ...membership, organization }] : [];
   });
 
+  const cookieStore = await cookies();
+  const requestedOrganizationId = cookieStore.get(ACTIVE_ORGANIZATION_COOKIE)?.value;
+  const activeMembership = memberships.find((membership) => membership.organization_id === requestedOrganizationId)
+    ?? memberships[0]
+    ?? null;
   const roles = new Set(memberships.map((membership) => membership.organization.role));
   const email = typeof claims?.email === "string" ? claims.email : profile?.email ?? "";
 
@@ -53,6 +62,7 @@ export async function getViewer(): Promise<Viewer | null> {
     email,
     profile: profile ?? null,
     memberships,
+    activeMembership,
     roles,
     isConsortiumMember: memberships.length > 0,
   };
