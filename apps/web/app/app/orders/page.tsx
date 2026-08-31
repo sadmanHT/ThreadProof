@@ -8,15 +8,29 @@ export const dynamic = "force-dynamic";
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 const PIPELINE_STATES = ["prepared", "signed", "submitting", "submitted"];
+const EMPTY_UUID = "00000000-0000-0000-0000-000000000000";
 
 export default async function OrdersPage({ searchParams }: Props) {
   const viewer = await requireConsortiumViewer();
+  const active = viewer.activeMembership;
+  const activeOrganizationId = active?.organization_id ?? EMPTY_UUID;
+  const activeRole = active?.organization.role;
   const supabase = await createClient();
+
+  const ordersBase = supabase.from("purchase_orders").select("*").order("updated_at", { ascending: false });
+  const ordersQuery = activeRole === "buyer"
+    ? ordersBase.eq("buyer_organization_id", activeOrganizationId)
+    : activeRole === "factory"
+      ? ordersBase.eq("factory_organization_id", activeOrganizationId)
+      : ordersBase.eq("id", EMPTY_UUID);
+  const authorizationBase = supabase.from("order_authorization_jobs").select("purchase_order_id,target_version,status,updated_at").in("status", PIPELINE_STATES).order("updated_at", { ascending: false });
+  const cancellationBase = supabase.from("order_cancellation_jobs").select("purchase_order_id,expected_version,status,updated_at").in("status", [...PIPELINE_STATES, "confirmed"]).order("updated_at", { ascending: false });
+
   const [{ data: orders }, { data: organizations }, { data: authorizationJobs }, { data: cancellationJobs }] = await Promise.all([
-    supabase.from("purchase_orders").select("*").order("updated_at", { ascending: false }),
+    ordersQuery,
     supabase.from("organizations").select("id,display_name,role,status"),
-    supabase.from("order_authorization_jobs").select("purchase_order_id,target_version,status,updated_at").in("status", PIPELINE_STATES).order("updated_at", { ascending: false }),
-    supabase.from("order_cancellation_jobs").select("purchase_order_id,expected_version,status,updated_at").in("status", [...PIPELINE_STATES, "confirmed"]).order("updated_at", { ascending: false }),
+    activeRole === "buyer" ? authorizationBase.eq("buyer_organization_id", activeOrganizationId) : authorizationBase.eq("buyer_organization_id", EMPTY_UUID),
+    activeRole === "buyer" ? cancellationBase.eq("buyer_organization_id", activeOrganizationId) : cancellationBase.eq("buyer_organization_id", EMPTY_UUID),
   ]);
   const orderRows = orders ?? [];
   const orgMap = new Map((organizations ?? []).map((organization) => [organization.id, organization]));
@@ -24,7 +38,7 @@ export default async function OrdersPage({ searchParams }: Props) {
   for (const job of authorizationJobs ?? []) if (!authorizationByOrder.has(job.purchase_order_id)) authorizationByOrder.set(job.purchase_order_id, job);
   const cancellationByOrder = new Map<string, NonNullable<typeof cancellationJobs>[number]>();
   for (const job of cancellationJobs ?? []) if (!cancellationByOrder.has(job.purchase_order_id)) cancellationByOrder.set(job.purchase_order_id, job);
-  const canCreate = viewer.memberships.some((membership) => membership.organization.role === "buyer" && hasOperationalRole(membership));
+  const canCreate = !!active && active.organization.role === "buyer" && hasOperationalRole(active);
   const params = await searchParams;
   const message = typeof params.message === "string" ? params.message : null;
   const error = typeof params.error === "string" ? params.error : null;
@@ -35,14 +49,14 @@ export default async function OrdersPage({ searchParams }: Props) {
 
   return (
     <div className="workspace-page">
-      <header className="page-header"><div><span className="kicker">ORDER REGISTRY WORKFLOW</span><h1>Orders</h1><p>Private commercial coordination on one side; immutable buyer authorization on the other. The pipeline makes that boundary visible at every stage.</p></div>{canCreate ? <Link className="button primary" href="/app/orders/new">New draft order</Link> : null}</header>
+      <header className="page-header"><div><span className="kicker">ORDER REGISTRY WORKFLOW</span><h1>Orders</h1><p>Private commercial coordination on one side; immutable buyer authorization on the other. This view is scoped to {active?.organization.display_name ?? "your active organization"} while RLS remains the underlying access boundary.</p></div>{canCreate ? <Link className="button primary" href="/app/orders/new">New draft order</Link> : null}</header>
       {message ? <div className="alert alert-success">{message}</div> : null}{error ? <div className="alert alert-error">{error}</div> : null}
 
       <section className="order-summary-grid" aria-label="Order workflow summary">
-        <article className="order-summary-card"><span>Visible orders</span><strong>{orderRows.length}</strong><small>Permission-scoped workspace</small></article>
+        <article className="order-summary-card"><span>Context orders</span><strong>{orderRows.length}</strong><small>{activeRole === "buyer" ? "buyer-owned portfolio" : activeRole === "factory" ? "factory-assigned portfolio" : "no operational order role"}</small></article>
         <article className="order-summary-card"><span>Draft only</span><strong>{draftCount}</strong><small>No canonical version yet</small></article>
         <article className="order-summary-card"><span>Anchored active</span><strong>{anchoredCount}</strong><small>Current OrderRegistry version</small></article>
-        <article className="order-summary-card"><span>Actions in flight</span><strong>{inFlightCount}</strong><small>{cancelledCount} cancelled historically</small></article>
+        <article className="order-summary-card"><span>Buyer actions in flight</span><strong>{inFlightCount}</strong><small>{cancelledCount} cancelled historically</small></article>
       </section>
 
       <section className="panel table-panel">
@@ -54,10 +68,10 @@ export default async function OrdersPage({ searchParams }: Props) {
             : authorization
               ? { label: `Version ${authorization.target_version}`, status: authorization.status }
               : null;
-          return <Link href={`/app/orders/${order.id}`} className="table-row" key={order.id}><span><strong>{order.title || order.external_reference}</strong><small>{order.external_reference}</small></span><span><strong>{orgMap.get(order.buyer_organization_id)?.display_name ?? "Buyer"}</strong><small>→ {order.factory_organization_id ? orgMap.get(order.factory_organization_id)?.display_name ?? "Factory" : "Factory not set"}</small></span><span>{formatQuantity(order.quantity, order.unit)}</span><span><StatusBadge value={order.status} /></span><span>{pipeline ? <span className="pipeline-cell"><small>{pipeline.label}</small><StatusBadge value={pipeline.status} /></span> : <small className="muted">No action in flight</small>}</span><span>{formatDate(order.updated_at)}</span></Link>;
-        })}</div> : <div className="empty-state large"><strong>No orders are visible to this account</strong><span>RLS exposes orders only to the buyer and primary factory organizations.</span>{canCreate ? <Link className="button secondary" href="/app/orders/new">Create first draft</Link> : null}</div>}
+          return <Link href={`/app/orders/${order.id}`} className="table-row" key={order.id}><span><strong>{order.title || order.external_reference}</strong><small>{order.external_reference}</small></span><span><strong>{orgMap.get(order.buyer_organization_id)?.display_name ?? "Buyer"}</strong><small>→ {order.factory_organization_id ? orgMap.get(order.factory_organization_id)?.display_name ?? "Factory" : "Factory not set"}</small></span><span>{formatQuantity(order.quantity, order.unit)}</span><span><StatusBadge value={order.status} /></span><span>{pipeline ? <span className="pipeline-cell"><small>{pipeline.label}</small><StatusBadge value={pipeline.status} /></span> : <small className="muted">{activeRole === "buyer" ? "No buyer action in flight" : "Buyer pipeline hidden in factory context"}</small>}</span><span>{formatDate(order.updated_at)}</span></Link>;
+        })}</div> : <div className="empty-state large"><strong>No orders in this organization context</strong><span>Switch organizations to view another membership. RLS still determines which buyer/factory relationships this account may read at all.</span>{canCreate ? <Link className="button secondary" href="/app/orders/new">Create first draft</Link> : null}</div>}
       </section>
-      <p className="order-trust-note">Canonical status changes only from indexed OrderRegistry events. Pipeline status represents application staging, wallet signing and relayer progress—it never grants production authority.</p>
+      <p className="order-trust-note">Canonical status changes only from indexed OrderRegistry events. Active-organization scope is an application context boundary; it never replaces RLS, signatures or on-chain authority.</p>
     </div>
   );
 }
