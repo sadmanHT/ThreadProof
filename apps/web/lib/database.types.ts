@@ -19,6 +19,7 @@ export type Database = {
     Tables: {
       capacity_allocations: Table<{
         capacity_opening_id: string;
+        chain_allocation_id: string | null;
         chain_block_number: number | null;
         chain_tx_hash: string | null;
         confirmed_at: string | null;
