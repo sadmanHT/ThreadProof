@@ -12,23 +12,30 @@ type Props = { params: Promise<{ id: string }>; searchParams: Promise<Record<str
 
 const ACTIVE_AUTHORIZATION_STATES = new Set(["prepared", "signed", "submitting", "submitted"]);
 const BLOCKING_CANCELLATION_STATES = new Set(["prepared", "signed", "submitting", "submitted", "confirmed"]);
+const EMPTY_UUID = "00000000-0000-0000-0000-000000000000";
 
 export default async function OrderDetailPage({ params, searchParams }: Props) {
   const viewer = await requireConsortiumViewer();
+  const active = viewer.activeMembership;
   const { id } = await params;
   const supabase = await createClient();
   const { data: order } = await supabase.from("purchase_orders").select("*").eq("id", id).maybeSingle();
   if (!order) notFound();
 
+  const buyerContext = !!active && active.organization.role === "buyer" && active.organization_id === order.buyer_organization_id;
+  const factoryContext = !!active && active.organization.role === "factory" && active.organization_id === order.factory_organization_id;
+  if (!buyerContext && !factoryContext) notFound();
+
+  const authorizationBase = supabase.from("order_authorization_jobs").select("id,target_version,status,deadline,chain_tx_hash,error_code,error_detail,created_at").eq("purchase_order_id", id).order("created_at", { ascending: false }).limit(12);
+  const cancellationBase = supabase.from("order_cancellation_jobs").select("id,expected_version,status,deadline,chain_tx_hash,chain_block_number,error_code,error_detail,created_at").eq("purchase_order_id", id).order("created_at", { ascending: false }).limit(12);
   const [{ data: versions }, { data: orgs }, { data: authorizationJobs }, { data: cancellationJobs }] = await Promise.all([
     supabase.from("order_versions").select("id,version,previous_version_hash,version_hash,order_commitment,workload_commitment,policy_hash,production_period_start,production_period_end,buyer_signature,chain_tx_hash,chain_block_number,created_at").eq("purchase_order_id", id).order("version", { ascending: false }),
     supabase.from("organizations").select("id,display_name,role,chain_organization_id,status").in("id", [order.buyer_organization_id, ...(order.factory_organization_id ? [order.factory_organization_id] : [])]),
-    supabase.from("order_authorization_jobs").select("id,target_version,status,deadline,chain_tx_hash,error_code,error_detail,created_at").eq("purchase_order_id", id).order("created_at", { ascending: false }).limit(12),
-    supabase.from("order_cancellation_jobs").select("id,expected_version,status,deadline,chain_tx_hash,chain_block_number,error_code,error_detail,created_at").eq("purchase_order_id", id).order("created_at", { ascending: false }).limit(12),
+    buyerContext ? authorizationBase : authorizationBase.eq("id", EMPTY_UUID),
+    buyerContext ? cancellationBase : cancellationBase.eq("id", EMPTY_UUID),
   ]);
   const orgMap = new Map((orgs ?? []).map((org) => [org.id, org]));
-  const buyerMembership = viewer.memberships.find((membership) => membership.organization_id === order.buyer_organization_id);
-  const canOperate = !!buyerMembership && hasOperationalRole(buyerMembership);
+  const canOperate = buyerContext && !!active && hasOperationalRole(active);
   const activeAuthorization = (authorizationJobs ?? []).find((job) => ACTIVE_AUTHORIZATION_STATES.has(job.status));
   const blockingCancellation = (cancellationJobs ?? []).find((job) => BLOCKING_CANCELLATION_STATES.has(job.status));
   const canonicalCancelled = order.status === "cancelled" || blockingCancellation?.status === "confirmed";
@@ -42,7 +49,7 @@ export default async function OrderDetailPage({ params, searchParams }: Props) {
   return (
     <div className="workspace-page">
       <header className="page-header">
-        <div><span className="kicker">ORDER · {order.external_reference}</span><h1>{order.title || order.external_reference}</h1><p>{orgMap.get(order.buyer_organization_id)?.display_name ?? "Buyer"} → {order.factory_organization_id ? orgMap.get(order.factory_organization_id)?.display_name ?? "Factory" : "Factory not set"}</p></div>
+        <div><span className="kicker">ORDER · {order.external_reference}</span><h1>{order.title || order.external_reference}</h1><p>{orgMap.get(order.buyer_organization_id)?.display_name ?? "Buyer"} → {order.factory_organization_id ? orgMap.get(order.factory_organization_id)?.display_name ?? "Factory" : "Factory not set"} · active context {active?.organization.display_name}</p></div>
         <StatusBadge value={order.status} />
       </header>
       {message ? <div className="alert alert-success">{message}</div> : null}{error ? <div className="alert alert-error">{error}</div> : null}
@@ -50,7 +57,7 @@ export default async function OrderDetailPage({ params, searchParams }: Props) {
       {blockingCancellation?.status === "confirmed" && order.status !== "cancelled" ? <div className="alert alert-warning">OrderCancelled is confirmed on-chain and the application status projection is reconciling. New order versions are permanently blocked.</div> : null}
 
       <section className="order-stage-rail" aria-label="Order authorization journey">
-        <div className={`order-stage ${order.current_version > 0 ? "done" : "active"}`}><span>01 · Workspace</span><strong>{order.current_version > 0 ? "Commercial record prepared" : "Private draft"}</strong><small>Counterparty-scoped operational data</small></div>
+        <div className={`order-stage ${order.current_version > 0 ? "done" : "active"}`}><span>01 · Workspace</span><strong>{order.current_version > 0 ? "Commercial record prepared" : "Private draft"}</strong><small>Active-organization scoped operational data</small></div>
         <div className={`order-stage ${order.current_version > 0 ? "done" : activeAuthorization ? "active" : ""}`}><span>02 · Buyer authority</span><strong>{order.current_version > 0 ? "Signature accepted" : activeAuthorization ? `Version ${activeAuthorization.target_version} · ${activeAuthorization.status}` : "Awaiting authorization"}</strong><small>EIP-712 wallet authorization</small></div>
         <div className={`order-stage ${canonicalCancelled ? "closed" : order.current_version > 0 ? "active" : ""}`}><span>03 · OrderRegistry</span><strong>{canonicalCancelled ? "Canonical order cancelled" : order.current_version > 0 ? `Version ${order.current_version} canonical` : "No canonical version"}</strong><small>Besu decides current order state</small></div>
         <div className={`order-stage ${canonicalCancelled ? "closed" : order.current_version > 0 ? "active" : ""}`}><span>04 · Production binding</span><strong>{canonicalCancelled ? "Authorization closed" : order.current_version > 0 ? "Proof-eligible context" : "Unavailable"}</strong><small>Capacity proofs must bind to the current version</small></div>
@@ -73,9 +80,9 @@ export default async function OrderDetailPage({ params, searchParams }: Props) {
       {canAuthorize ? <OrderAuthorizationForm orderId={order.id} nextVersion={order.current_version + 1} /> : null}
       {canCancel ? <OrderCancellationForm orderId={order.id} currentVersion={order.current_version} /> : null}
 
-      <section className="panel"><div className="panel-heading"><div><span className="kicker">SIGNATURE PIPELINE</span><h2>Buyer authorization jobs</h2></div></div>{(authorizationJobs ?? []).length ? <div className="record-list">{(authorizationJobs ?? []).map((job) => <div className="record-row" key={job.id}><div><strong>Version {job.target_version}</strong><span>{formatDate(job.created_at)} · deadline {formatDate(job.deadline)}{job.error_detail ? ` · ${job.error_detail}` : ""}</span></div><div className="record-meta"><StatusBadge value={job.status} />{job.chain_tx_hash ? <span className="mono">{shortHash(job.chain_tx_hash)}</span> : null}</div></div>)}</div> : <div className="empty-state"><strong>No authorization jobs yet</strong><span>Preparing a version creates an encrypted commitment package; only a valid buyer wallet signature can move it into the relayer queue.</span></div>}</section>
+      {buyerContext ? <section className="panel"><div className="panel-heading"><div><span className="kicker">SIGNATURE PIPELINE</span><h2>Buyer authorization jobs</h2></div></div>{(authorizationJobs ?? []).length ? <div className="record-list">{(authorizationJobs ?? []).map((job) => <div className="record-row" key={job.id}><div><strong>Version {job.target_version}</strong><span>{formatDate(job.created_at)} · deadline {formatDate(job.deadline)}{job.error_detail ? ` · ${job.error_detail}` : ""}</span></div><div className="record-meta"><StatusBadge value={job.status} />{job.chain_tx_hash ? <span className="mono">{shortHash(job.chain_tx_hash)}</span> : null}</div></div>)}</div> : <div className="empty-state"><strong>No authorization jobs yet</strong><span>Preparing a version creates an encrypted commitment package; only a valid buyer wallet signature can move it into the relayer queue.</span></div>}</section> : null}
 
-      {(order.current_version > 0 || (cancellationJobs ?? []).length > 0) ? <section className="panel"><div className="panel-heading"><div><span className="kicker">CANCELLATION PIPELINE</span><h2>Buyer cancellation jobs</h2></div></div>{(cancellationJobs ?? []).length ? <div className="record-list">{(cancellationJobs ?? []).map((job) => <div className="record-row" key={job.id}><div><strong>Cancel version {job.expected_version}</strong><span>{formatDate(job.created_at)} · deadline {formatDate(job.deadline)}{job.chain_block_number ? ` · block ${job.chain_block_number}` : ""}{job.error_detail ? ` · ${job.error_detail}` : ""}</span></div><div className="record-meta"><StatusBadge value={job.status} />{job.chain_tx_hash ? <span className="mono">{shortHash(job.chain_tx_hash)}</span> : null}</div></div>)}</div> : <div className="empty-state"><strong>No cancellation jobs</strong><span>A cancellation appears here only after a buyer operator prepares the canonical version- and nonce-bound EIP-712 request.</span></div>}</section> : null}
+      {buyerContext && (order.current_version > 0 || (cancellationJobs ?? []).length > 0) ? <section className="panel"><div className="panel-heading"><div><span className="kicker">CANCELLATION PIPELINE</span><h2>Buyer cancellation jobs</h2></div></div>{(cancellationJobs ?? []).length ? <div className="record-list">{(cancellationJobs ?? []).map((job) => <div className="record-row" key={job.id}><div><strong>Cancel version {job.expected_version}</strong><span>{formatDate(job.created_at)} · deadline {formatDate(job.deadline)}{job.chain_block_number ? ` · block ${job.chain_block_number}` : ""}{job.error_detail ? ` · ${job.error_detail}` : ""}</span></div><div className="record-meta"><StatusBadge value={job.status} />{job.chain_tx_hash ? <span className="mono">{shortHash(job.chain_tx_hash)}</span> : null}</div></div>)}</div> : <div className="empty-state"><strong>No cancellation jobs</strong><span>A cancellation appears here only after a buyer operator prepares the canonical version- and nonce-bound EIP-712 request.</span></div>}</section> : null}
 
       <section className="panel"><div className="panel-heading"><div><span className="kicker">IMMUTABLE HISTORY</span><h2>OrderRegistry versions</h2></div></div>{(versions ?? []).length ? <div className="record-list">{(versions ?? []).map((version) => <div className="record-row" key={version.id}><div><strong>Version {version.version}</strong><span>{formatDate(version.created_at)} · commitment <span className="mono">{shortHash(version.order_commitment)}</span>{version.chain_block_number ? ` · block ${version.chain_block_number}` : ""}</span></div><div className="record-meta"><span className="mono">{shortHash(version.version_hash)}</span><span className="mono">{shortHash(version.policy_hash)}</span></div></div>)}</div> : <div className="empty-state"><strong>No signed versions indexed yet</strong><span>OrderRegistry events populate this history only after a valid buyer authorization has been relayed and observed on Besu.</span></div>}</section>
     </div>
