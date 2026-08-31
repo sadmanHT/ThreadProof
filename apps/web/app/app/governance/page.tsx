@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Address, Hex } from "viem";
 import { createClient } from "@/lib/supabase/server";
 import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
@@ -107,12 +108,24 @@ export default async function GovernancePage() {
       proposalState: proposal ? projectedState(proposal) : null,
     }];
   });
+  const states = rows.map(projectedState);
+  const awaitingApprovals = states.filter((state) => state === "pending").length;
+  const timelocked = states.filter((state) => state === "timelocked").length;
+  const executable = states.filter((state) => state === "executable").length;
+  const executed = states.filter((state) => state === "executed").length;
 
   return (
     <div className="workspace-page">
       <header className="page-header"><div><span className="kicker">THREADPROOF CHARTER</span><h1>Governance</h1><p>Consensus orders valid transactions; the Charter determines who is authorized to exercise exceptional protocol powers through role-diverse approvals, committed action parameters and timelocks.</p></div></header>
 
       <section className="privacy-banner"><span className="privacy-icon">◇</span><div><strong>The chain is the governance authority.</strong><p>This screen is an event-derived audit view. A Supabase row cannot create an approval, satisfy a threshold, shorten a timelock, admit a factory, or execute a Charter action.</p></div></section>
+
+      <section className="governance-overview-grid">
+        <article><span>Awaiting approvals</span><strong>{awaitingApprovals}</strong><small>threshold not yet satisfied</small></article>
+        <article><span>Timelocked</span><strong>{timelocked}</strong><small>approved but not executable yet</small></article>
+        <article className={executable ? "ready" : undefined}><span>Executable</span><strong>{executable}</strong><small>threshold and timelock satisfied</small></article>
+        <article><span>Executed</span><strong>{executed}</strong><small>canonical actions completed</small></article>
+      </section>
 
       {charterConfigured && canReviewFactories ? (
         <FactoryOnboardingConsole
@@ -138,7 +151,7 @@ export default async function GovernancePage() {
       <section className="card-grid">
         {rows.map((proposal) => {
           const state = projectedState(proposal);
-          return <article className="entity-card" key={proposal.chain_proposal_id}>
+          return <article className="entity-card governance-proposal-card" key={proposal.chain_proposal_id}>
             <div className="entity-card-top"><div><span className="kicker">{titleCase(proposal.proposal_type)}</span><h2>{shortHash(proposal.chain_proposal_id, 12, 8)}</h2></div><StatusBadge value={state} /></div>
             <dl className="definition-grid">
               <div><dt>Approvals</dt><dd>{proposal.approvals_received} / {proposal.approvals_required ?? "—"}</dd></div>
@@ -150,6 +163,7 @@ export default async function GovernancePage() {
               <div><dt>Executed tx</dt><dd className="mono">{proposal.executed_tx_hash ? shortHash(proposal.executed_tx_hash) : "—"}</dd></div>
               <div><dt>Last synced block</dt><dd>{proposal.last_synced_block}</dd></div>
             </dl>
+            <Link className="proposal-open-link" href={`/app/governance/${proposal.chain_proposal_id}`}>Open proposal evidence →</Link>
           </article>;
         })}
         {!rows.length ? <div className="empty-state large full-span"><strong>No governance proposals indexed</strong><span>Once ThreadProofCharter emits ProposalCreated, the indexer will materialize this rebuildable audit view. Proposal authority remains entirely on-chain.</span></div> : null}
