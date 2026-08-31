@@ -13,6 +13,7 @@ export default async function ProductLayout({ children }: { children: React.Reac
     organizationRole: titleCase(active.organization.role),
     memberRole: titleCase(active.member_role),
   } : {};
+  const activeOrganizationProps = active ? { activeOrganizationId: active.organization_id } : {};
   const roleKeys = active ? [active.organization.role] : [];
   const organizationOptions = viewer.memberships.map((membership) => ({
     id: membership.organization_id,
@@ -29,7 +30,7 @@ export default async function ProductLayout({ children }: { children: React.Reac
       email={viewer.email}
     >
       <OrganizationContextBar
-        activeOrganizationId={active?.organization_id}
+        {...activeOrganizationProps}
         organizations={organizationOptions}
       />
       {children}
