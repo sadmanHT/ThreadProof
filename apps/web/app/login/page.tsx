@@ -20,8 +20,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     <main className="auth-shell">
       <section className="auth-story">
         <Link className="brand-lockup" href="/">ThreadProof</Link>
-        <div className="auth-story-main"><span className="kicker">CONSORTIUM ACCESS</span><h1>Private commercial data. Shared cryptographic certainty.</h1><p>Enter the permission-scoped workspace used by buyers, factories, auditors and governance participants. Workflow convenience never replaces protocol authority.</p><div className="auth-trust-list">{trustPoints.map(([title, body]) => <div key={title}><span /><div><strong>{title}</strong><small>{body}</small></div></div>)}</div></div>
-        <div className="trust-note"><strong>Trust boundary</strong><span>ThreadProof coordinates confidential workflows off-chain, but production authorization becomes authoritative only through the consortium protocol.</span></div>
+        <div className="auth-story-main">
+          <span className="kicker">CONSORTIUM ACCESS</span>
+          <h1>Private commercial data. Shared cryptographic certainty.</h1>
+          <p>Permissions are enforced by Supabase RLS; production authorization remains anchored to the consortium chain.</p>
+          <div className="auth-trust-list">{trustPoints.map(([title, body]) => <div key={title}><span /><div><strong>{title}</strong><small>{body}</small></div></div>)}</div>
+        </div>
+        <div className="trust-note"><strong>Trust boundary</strong><span>The application coordinates workflows. It cannot declare capacity, credentials, or governance actions canonical.</span></div>
       </section>
       <section className="auth-panel">
         <div className="auth-card">
