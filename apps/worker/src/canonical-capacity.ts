@@ -68,7 +68,7 @@ export function assertCapacityStateMatches(
 export async function assertCanonicalCapacityOpening(args: {
   rpcUrl: string;
   vaultAddress: Address;
-  expectedChainId?: number;
+  expectedChainId: number | undefined;
   expected: ExpectedCapacityOpening;
 }) {
   const client = createPublicClient({
