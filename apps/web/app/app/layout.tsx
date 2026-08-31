@@ -1,6 +1,7 @@
 import { requireConsortiumViewer } from "@/lib/viewer";
 import { titleCase } from "@/lib/format";
 import { AppShell } from "@/components/app-shell";
+import { OrganizationContextBar } from "@/components/organization-context-bar";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,6 @@ export default async function ProductLayout({ children }: { children: React.Reac
     organizationName: active.organization.display_name,
     organizationRole: titleCase(active.organization.role),
     memberRole: titleCase(active.member_role),
-    activeOrganizationId: active.organization_id,
   } : {};
   const roleKeys = active ? [active.organization.role] : [];
   const organizationOptions = viewer.memberships.map((membership) => ({
@@ -24,11 +24,14 @@ export default async function ProductLayout({ children }: { children: React.Reac
   return (
     <AppShell
       {...organizationProps}
-      organizationOptions={organizationOptions}
       roleKeys={roleKeys}
       userName={viewer.profile?.display_name || viewer.email}
       email={viewer.email}
     >
+      <OrganizationContextBar
+        activeOrganizationId={active?.organization_id}
+        organizations={organizationOptions}
+      />
       {children}
     </AppShell>
   );
