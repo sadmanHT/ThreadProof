@@ -17,3 +17,14 @@
   background: var(--danger-soft);
   border-left-color: var(--danger);
 }
+
+.order-table .table-row {
+  grid-template-columns: 1.2fr 1.1fr .68fr .65fr .88fr .72fr;
+  min-width: 930px;
+}
+
+.pipeline-cell {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+}
