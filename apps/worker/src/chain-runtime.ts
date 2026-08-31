@@ -77,3 +77,26 @@ export async function createVerifiedPublicClient(
   const chainId = await verifyChainRuntime(client, expectedChainId, contracts);
   return { client, chainId };
 }
+
+export function startChainRuntimeWatch(
+  rpcUrl: string,
+  expectedChainId: number | undefined,
+  contracts: readonly RequiredContract[],
+  intervalMs = 30_000,
+) {
+  let checking = false;
+  const timer = setInterval(async () => {
+    if (checking) return;
+    checking = true;
+    try {
+      await createVerifiedPublicClient(rpcUrl, expectedChainId, contracts);
+    } catch (error) {
+      console.error(`ThreadProof chain runtime readiness was lost: ${detail(error)}`);
+      process.exit(1);
+    } finally {
+      checking = false;
+    }
+  }, intervalMs);
+  timer.unref();
+  return () => clearInterval(timer);
+}
