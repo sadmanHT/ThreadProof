@@ -218,6 +218,8 @@ jobs:
           fi
       - name: Enforce production signing and Besu boundaries
         run: node scripts/check-production-boundaries.mjs
+      - name: Test consortium topology fail-closed preflight
+        run: node scripts/test-consortium-topology-preflight.mjs
       - name: Enforce canonical capacity allocation binding
         run: node scripts/check-capacity-allocation-binding.mjs
       - name: Validate production Besu compose template
