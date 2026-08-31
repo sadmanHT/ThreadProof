@@ -20,6 +20,25 @@ create table public.chain_indexer_cursors (
 
 alter table public.chain_indexer_cursors enable row level security;
 
+-- Existing deployments already have a rebuildable event mirror. Seed the operational
+-- cursor from the latest mirrored event per chain to avoid replaying from block zero.
+-- The worker MUST verify this stored hash against canonical RPC before advancing it.
+insert into public.chain_indexer_cursors (
+  chain_id,
+  last_block_number,
+  last_block_hash,
+  status,
+  updated_at
+)
+select distinct on (ce.chain_id)
+  ce.chain_id,
+  ce.block_number,
+  ce.block_hash,
+  'healthy'::public.chain_indexer_cursor_status,
+  now()
+from public.chain_events ce
+order by ce.chain_id, ce.block_number desc, ce.log_index desc;
+
 -- Browser/authenticated clients must never mutate or use the cursor as protocol truth.
 revoke all on table public.chain_indexer_cursors from public, anon, authenticated;
 grant select, insert, update on table public.chain_indexer_cursors to service_role;
