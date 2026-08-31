@@ -1,0 +1,49 @@
+/* Responsive corrections loaded after the premium product system. */
+@media (max-width: 1040px) {
+  .premium-product-shell .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(306px, 88vw);
+    height: 100dvh;
+    padding: 16px 13px;
+    transform: translateX(-102%);
+    transition: transform .22s cubic-bezier(.2,.7,.3,1);
+    box-shadow: 22px 0 70px rgba(8,15,29,.26);
+    z-index: 70;
+  }
+
+  .premium-product-shell .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .premium-product-shell .sidebar-close {
+    display: grid;
+  }
+
+  .premium-product-shell .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    border: 0;
+    padding: 0;
+    background: rgba(8,15,29,.44);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s ease;
+  }
+
+  .premium-product-shell .sidebar-backdrop.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .premium-product-shell .sidebar,
+  .premium-product-shell .sidebar-backdrop {
+    transition: none !important;
+  }
+}
