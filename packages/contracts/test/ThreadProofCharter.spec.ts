@@ -8,6 +8,18 @@ const PROPOSAL = {
   disclosure: 4,
   policyUpdate: 5,
   factoryOnboarding: 6,
+  protocolRoleUpdate: 7,
+  verifierRegistration: 8,
+  subcontractPolicyRegistration: 9,
+  emergencyPause: 10,
+  emergencyUnpause: 11,
+  credentialSuspension: 12,
+  credentialRestore: 13,
+} as const;
+
+const EMERGENCY_TARGET = {
+  capacityVault: 1,
+  subcontractGovernor: 2,
 } as const;
 
 async function deployFixture() {
@@ -35,16 +47,91 @@ async function deployFixture() {
   await registry.registerOrganization(ids.target, targetFactory.address, 2, ethers.ZeroHash);
   await registry.registerOrganization(ids.independent, independent.address, 7, ethers.ZeroHash);
 
-  const Charter = await ethers.getContractFactory("ThreadProofCharter");
-  const charter = await Charter.deploy(await registry.getAddress());
-  await charter.waitForDeployment();
+  const CredentialRegistry = await ethers.getContractFactory("CredentialRegistry");
+  const credentials = await CredentialRegistry.deploy(admin.address, await registry.getAddress());
+  await credentials.waitForDeployment();
+  await credentials.grantRole(await credentials.ISSUER_ROLE(), auditor.address);
 
-  await registry.grantRole(await registry.SUSPENDER_ROLE(), await charter.getAddress());
-  await registry.grantRole(await registry.REGISTRAR_ROLE(), await charter.getAddress());
+  const OrderRegistry = await ethers.getContractFactory("OrderRegistry");
+  const orders = await OrderRegistry.deploy(await registry.getAddress());
+  await orders.waitForDeployment();
+
+  const CapacityVault = await ethers.getContractFactory("CapacityVault");
+  const capacityVault = await CapacityVault.deploy(
+    admin.address,
+    await credentials.getAddress(),
+    await orders.getAddress(),
+    await registry.getAddress(),
+  );
+  await capacityVault.waitForDeployment();
+
+  const SubcontractGovernor = await ethers.getContractFactory("SubcontractGovernor");
+  const subcontractGovernor = await SubcontractGovernor.deploy(
+    admin.address,
+    await registry.getAddress(),
+    await credentials.getAddress(),
+    await orders.getAddress(),
+    await capacityVault.getAddress(),
+  );
+  await subcontractGovernor.waitForDeployment();
+
+  const Charter = await ethers.getContractFactory("ThreadProofCharter");
+  const charter = await Charter.deploy(
+    await registry.getAddress(),
+    await credentials.getAddress(),
+    await capacityVault.getAddress(),
+    await subcontractGovernor.getAddress(),
+  );
+  await charter.waitForDeployment();
+  const charterAddress = await charter.getAddress();
+  const defaultAdminRole = ethers.ZeroHash;
+
+  await registry.grantRole(defaultAdminRole, charterAddress);
+  await registry.grantRole(await registry.SUSPENDER_ROLE(), charterAddress);
+  await registry.grantRole(await registry.REGISTRAR_ROLE(), charterAddress);
   await registry.revokeRole(await registry.SUSPENDER_ROLE(), admin.address);
   await registry.revokeRole(await registry.REGISTRAR_ROLE(), admin.address);
+  await registry.revokeRole(defaultAdminRole, admin.address);
 
-  return { admin, buyer, industry, auditor, regulator, labor, targetFactory, replacement, independent, applicant, registry, charter, ids };
+  await credentials.grantRole(defaultAdminRole, charterAddress);
+  await credentials.grantRole(await credentials.SUSPENDER_ROLE(), charterAddress);
+  await credentials.revokeRole(await credentials.SUSPENDER_ROLE(), admin.address);
+  await credentials.revokeRole(defaultAdminRole, admin.address);
+
+  await capacityVault.grantRole(defaultAdminRole, charterAddress);
+  await capacityVault.grantRole(await capacityVault.VERIFIER_ADMIN_ROLE(), charterAddress);
+  await capacityVault.grantRole(await capacityVault.PAUSER_ROLE(), charterAddress);
+  await capacityVault.revokeRole(await capacityVault.CERTIFIER_ROLE(), admin.address);
+  await capacityVault.revokeRole(await capacityVault.VERIFIER_ADMIN_ROLE(), admin.address);
+  await capacityVault.revokeRole(await capacityVault.PAUSER_ROLE(), admin.address);
+  await capacityVault.revokeRole(defaultAdminRole, admin.address);
+
+  await subcontractGovernor.grantRole(defaultAdminRole, charterAddress);
+  await subcontractGovernor.grantRole(await subcontractGovernor.POLICY_ADMIN_ROLE(), charterAddress);
+  await subcontractGovernor.grantRole(await subcontractGovernor.PAUSER_ROLE(), charterAddress);
+  await subcontractGovernor.revokeRole(await subcontractGovernor.POLICY_ADMIN_ROLE(), admin.address);
+  await subcontractGovernor.revokeRole(await subcontractGovernor.PAUSER_ROLE(), admin.address);
+  await subcontractGovernor.revokeRole(defaultAdminRole, admin.address);
+
+  return {
+    admin,
+    buyer,
+    industry,
+    auditor,
+    regulator,
+    labor,
+    targetFactory,
+    replacement,
+    independent,
+    applicant,
+    registry,
+    credentials,
+    orders,
+    capacityVault,
+    subcontractGovernor,
+    charter,
+    ids,
+  };
 }
 
 async function createProposal(
@@ -57,6 +144,18 @@ async function createProposal(
   const proposalId = await charter.connect(signer).createProposal.staticCall(proposalType, actionHash, metadata);
   await charter.connect(signer).createProposal(proposalType, actionHash, metadata);
   return proposalId;
+}
+
+async function approveFour(charter: any, proposalId: string, fixture: Awaited<ReturnType<typeof deployFixture>>) {
+  await charter.connect(fixture.buyer).approveProposal(proposalId);
+  await charter.connect(fixture.industry).approveProposal(proposalId);
+  await charter.connect(fixture.auditor).approveProposal(proposalId);
+  await charter.connect(fixture.regulator).approveProposal(proposalId);
+}
+
+async function advance(seconds: number) {
+  await ethers.provider.send("evm_increaseTime", [seconds]);
+  await ethers.provider.send("evm_mine", []);
 }
 
 describe("ThreadProofCharter", function () {
@@ -114,8 +213,7 @@ describe("ThreadProofCharter", function () {
       .to.be.revertedWithCustomError(charter, "ProposalNotExecutable")
       .withArgs(restoreId);
 
-    await ethers.provider.send("evm_increaseTime", [6 * 60 * 60]);
-    await ethers.provider.send("evm_mine", []);
+    await advance(6 * 60 * 60);
     await charter.executeOrganizationStatus(restoreId, ids.target, 1);
     expect(await registry.isActive(ids.target)).to.equal(true);
   });
@@ -128,8 +226,7 @@ describe("ThreadProofCharter", function () {
     await charter.connect(buyer).approveProposal(proposalId);
     await charter.connect(auditor).approveProposal(proposalId);
     await charter.connect(regulator).approveProposal(proposalId);
-    await ethers.provider.send("evm_increaseTime", [6 * 60 * 60]);
-    await ethers.provider.send("evm_mine", []);
+    await advance(6 * 60 * 60);
 
     await charter.executePrimaryAccountRotation(proposalId, ids.target, replacement.address);
     expect(await registry.organizationOfAccount(replacement.address)).to.equal(ids.target);
@@ -148,8 +245,7 @@ describe("ThreadProofCharter", function () {
     await charter.connect(buyer).approveProposal(proposalId);
     await charter.connect(auditor).approveProposal(proposalId);
     await charter.connect(regulator).approveProposal(proposalId);
-    await ethers.provider.send("evm_increaseTime", [60 * 60]);
-    await ethers.provider.send("evm_mine", []);
+    await advance(60 * 60);
 
     await expect(charter.executeProtectedIdentityDisclosure(proposalId, subjectReference, evidenceHash))
       .to.emit(charter, "ProtectedIdentityDisclosureAuthorized")
@@ -227,8 +323,7 @@ describe("ThreadProofCharter", function () {
     await charter.connect(regulator).approveProposal(proposalId);
     expect(await charter.getProposalState(proposalId)).to.equal(2);
 
-    await ethers.provider.send("evm_increaseTime", [24 * 60 * 60]);
-    await ethers.provider.send("evm_mine", []);
+    await advance(24 * 60 * 60);
     await charter.executePolicyUpdate(proposalId, PROPOSAL.disclosure, newPolicy);
     expect(await charter.policyVersion()).to.equal(currentVersion + 1n);
     const stored = await charter.policies(PROPOSAL.disclosure);
@@ -268,12 +363,196 @@ describe("ThreadProofCharter", function () {
     const { regulator, charter, ids } = await deployFixture();
     const actionHash = await charter.hashOrganizationStatusAction(ids.target, 2);
     const proposalId = await createProposal(charter, regulator, PROPOSAL.suspension, actionHash);
-    await ethers.provider.send("evm_increaseTime", [2 * 24 * 60 * 60 + 1]);
-    await ethers.provider.send("evm_mine", []);
+    await advance(2 * 24 * 60 * 60 + 1);
 
     expect(await charter.getProposalState(proposalId)).to.equal(6);
     await expect(charter.connect(regulator).approveProposal(proposalId))
       .to.be.revertedWithCustomError(charter, "ProposalExpired")
       .withArgs(proposalId);
+  });
+
+  it("retires deployer bootstrap authority across governed protocol contracts", async function () {
+    const { admin, charter, registry, credentials, capacityVault, subcontractGovernor, ids } = await deployFixture();
+    const charterAddress = await charter.getAddress();
+
+    expect(await registry.hasRole(ethers.ZeroHash, admin.address)).to.equal(false);
+    expect(await credentials.hasRole(ethers.ZeroHash, admin.address)).to.equal(false);
+    expect(await capacityVault.hasRole(ethers.ZeroHash, admin.address)).to.equal(false);
+    expect(await subcontractGovernor.hasRole(ethers.ZeroHash, admin.address)).to.equal(false);
+
+    expect(await registry.hasRole(ethers.ZeroHash, charterAddress)).to.equal(true);
+    expect(await credentials.hasRole(ethers.ZeroHash, charterAddress)).to.equal(true);
+    expect(await capacityVault.hasRole(ethers.ZeroHash, charterAddress)).to.equal(true);
+    expect(await subcontractGovernor.hasRole(ethers.ZeroHash, charterAddress)).to.equal(true);
+
+    await expect(registry.connect(admin).setOrganizationStatus(ids.target, 2)).to.be.reverted;
+    await expect(capacityVault.connect(admin).pause()).to.be.reverted;
+    await expect(subcontractGovernor.connect(admin).pause()).to.be.reverted;
+  });
+
+  it("delegates only narrowly allowed operational roles through a 4-of-5 timelocked action", async function () {
+    const fixture = await deployFixture();
+    const { buyer, independent, replacement, credentials, capacityVault, charter } = fixture;
+    const issuerRole = await credentials.ISSUER_ROLE();
+    const pauserRole = await capacityVault.PAUSER_ROLE();
+
+    const allowedHash = await charter.hashProtocolRoleAction(
+      await credentials.getAddress(),
+      issuerRole,
+      independent.address,
+      true,
+    );
+    const allowedId = await createProposal(charter, buyer, PROPOSAL.protocolRoleUpdate, allowedHash);
+
+    const forbiddenHash = await charter.hashProtocolRoleAction(
+      await capacityVault.getAddress(),
+      pauserRole,
+      replacement.address,
+      true,
+    );
+    const forbiddenId = await createProposal(charter, buyer, PROPOSAL.protocolRoleUpdate, forbiddenHash);
+
+    await approveFour(charter, allowedId, fixture);
+    await approveFour(charter, forbiddenId, fixture);
+    await advance(24 * 60 * 60);
+
+    await charter.executeProtocolRoleUpdate(
+      allowedId,
+      await credentials.getAddress(),
+      issuerRole,
+      independent.address,
+      true,
+    );
+    expect(await credentials.hasRole(issuerRole, independent.address)).to.equal(true);
+
+    await expect(
+      charter.executeProtocolRoleUpdate(
+        forbiddenId,
+        await capacityVault.getAddress(),
+        pauserRole,
+        replacement.address,
+        true,
+      ),
+    ).to.be.revertedWithCustomError(charter, "InvalidProtocolRoleAction");
+  });
+
+  it("registers verifier provenance only after 4-of-5 Charter approval and timelock", async function () {
+    const fixture = await deployFixture();
+    const { buyer, charter, capacityVault } = fixture;
+    const MockVerifier = await ethers.getContractFactory("MockCapacitySpendVerifier");
+    const verifier = await MockVerifier.deploy();
+    await verifier.waitForDeployment();
+
+    const circuitVersion = 77;
+    const circuitArtifactHash = ethers.keccak256(ethers.toUtf8Bytes("capacity-spend-circuit-v77"));
+    const verificationKeyHash = ethers.keccak256(ethers.toUtf8Bytes("capacity-spend-vkey-v77"));
+    const actionHash = await charter.hashVerifierRegistrationAction(
+      circuitVersion,
+      await verifier.getAddress(),
+      circuitArtifactHash,
+      verificationKeyHash,
+    );
+    const proposalId = await createProposal(charter, buyer, PROPOSAL.verifierRegistration, actionHash);
+    await approveFour(charter, proposalId, fixture);
+
+    await expect(
+      charter.executeVerifierRegistration(
+        proposalId,
+        circuitVersion,
+        await verifier.getAddress(),
+        circuitArtifactHash,
+        verificationKeyHash,
+      ),
+    ).to.be.revertedWithCustomError(charter, "ProposalNotExecutable");
+
+    await advance(24 * 60 * 60);
+    await charter.executeVerifierRegistration(
+      proposalId,
+      circuitVersion,
+      await verifier.getAddress(),
+      circuitArtifactHash,
+      verificationKeyHash,
+    );
+    expect(await capacityVault.verifiers(circuitVersion)).to.equal(await verifier.getAddress());
+  });
+
+  it("registers subcontract policy only through the supermajority Charter path", async function () {
+    const fixture = await deployFixture();
+    const { industry, charter, subcontractGovernor } = fixture;
+    const policyHash = ethers.keccak256(ethers.toUtf8Bytes("subcontract-policy-v2"));
+    const complianceType = ethers.keccak256(ethers.toUtf8Bytes("FACTORY_COMPLIANCE"));
+    const processType = ethers.keccak256(ethers.toUtf8Bytes("SEWING_PROCESS"));
+    const actionHash = await charter.hashSubcontractPolicyAction(policyHash, 3, complianceType, processType);
+    const proposalId = await createProposal(charter, industry, PROPOSAL.subcontractPolicyRegistration, actionHash);
+    await approveFour(charter, proposalId, fixture);
+    await advance(24 * 60 * 60);
+
+    await charter.executeSubcontractPolicyRegistration(proposalId, policyHash, 3, complianceType, processType);
+    const stored = await subcontractGovernor.getPolicy(policyHash);
+    expect(stored.maxDepth).to.equal(3);
+    expect(stored.complianceCredentialType).to.equal(complianceType);
+    expect(stored.processCredentialType).to.equal(processType);
+  });
+
+  it("requires three constituencies to pause and a reviewed timelock to unpause critical protocol paths", async function () {
+    const { buyer, auditor, regulator, charter, capacityVault } = await deployFixture();
+    const pauseHash = await charter.hashEmergencyControlAction(EMERGENCY_TARGET.capacityVault, true);
+    const pauseId = await createProposal(charter, regulator, PROPOSAL.emergencyPause, pauseHash);
+    await charter.connect(buyer).approveProposal(pauseId);
+    await charter.connect(auditor).approveProposal(pauseId);
+    await charter.connect(regulator).approveProposal(pauseId);
+    await charter.executeEmergencyControl(pauseId, EMERGENCY_TARGET.capacityVault);
+    expect(await capacityVault.paused()).to.equal(true);
+
+    const unpauseHash = await charter.hashEmergencyControlAction(EMERGENCY_TARGET.capacityVault, false);
+    const unpauseId = await createProposal(charter, auditor, PROPOSAL.emergencyUnpause, unpauseHash);
+    await charter.connect(buyer).approveProposal(unpauseId);
+    await charter.connect(auditor).approveProposal(unpauseId);
+    await charter.connect(regulator).approveProposal(unpauseId);
+
+    await expect(charter.executeEmergencyControl(unpauseId, EMERGENCY_TARGET.capacityVault))
+      .to.be.revertedWithCustomError(charter, "ProposalNotExecutable");
+    await advance(6 * 60 * 60);
+    await charter.executeEmergencyControl(unpauseId, EMERGENCY_TARGET.capacityVault);
+    expect(await capacityVault.paused()).to.equal(false);
+  });
+
+  it("governs emergency credential suspension and reviewed restoration without replacing issuer revocation", async function () {
+    const { buyer, auditor, regulator, targetFactory, credentials, charter, ids } = await deployFixture();
+    const credentialId = ethers.keccak256(ethers.toUtf8Bytes("credential-governance-case"));
+    const credentialType = ethers.keccak256(ethers.toUtf8Bytes("SAFETY_CREDENTIAL"));
+    const digest = ethers.keccak256(ethers.toUtf8Bytes("credential-body"));
+    const scope = ethers.keccak256(ethers.toUtf8Bytes("credential-scope"));
+    const block = await ethers.provider.getBlock("latest");
+    const now = block?.timestamp ?? 1;
+
+    expect(targetFactory.address).to.not.equal(ethers.ZeroAddress);
+    await credentials.connect(auditor).issueCredential(
+      credentialId,
+      ids.target,
+      credentialType,
+      digest,
+      scope,
+      now - 1,
+      now + 7 * 24 * 60 * 60,
+    );
+
+    const suspendHash = await charter.hashCredentialStatusAction(credentialId, 2);
+    const suspendId = await createProposal(charter, regulator, PROPOSAL.credentialSuspension, suspendHash);
+    await charter.connect(auditor).approveProposal(suspendId);
+    await charter.connect(regulator).approveProposal(suspendId);
+    await charter.executeCredentialStatus(suspendId, credentialId, 2);
+    expect((await credentials.getCredential(credentialId)).status).to.equal(2);
+
+    const restoreHash = await charter.hashCredentialStatusAction(credentialId, 1);
+    const restoreId = await createProposal(charter, auditor, PROPOSAL.credentialRestore, restoreHash);
+    await charter.connect(buyer).approveProposal(restoreId);
+    await charter.connect(auditor).approveProposal(restoreId);
+    await charter.connect(regulator).approveProposal(restoreId);
+    await expect(charter.executeCredentialStatus(restoreId, credentialId, 1))
+      .to.be.revertedWithCustomError(charter, "ProposalNotExecutable");
+    await advance(6 * 60 * 60);
+    await charter.executeCredentialStatus(restoreId, credentialId, 1);
+    expect((await credentials.getCredential(credentialId)).status).to.equal(1);
   });
 });
