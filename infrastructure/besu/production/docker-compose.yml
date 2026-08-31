@@ -1,7 +1,35 @@
 services:
+  topology-preflight:
+    image: node:22.19.0-alpine3.22
+    restart: "no"
+    command:
+      - node
+      - /opt/threadproof/validate-consortium-topology.mjs
+    environment:
+      THREADPROOF_CHAIN_ID: ${THREADPROOF_CHAIN_ID:-2026}
+      THREADPROOF_CONSORTIUM_TOPOLOGY_PATH: /runtime/consortium-topology.json
+      THREADPROOF_BESU_GENESIS_PATH: /runtime/genesis.json
+      THREADPROOF_BESU_STATIC_NODES_PATH: /runtime/static-nodes.json
+      THREADPROOF_BESU_PERMISSIONS_PATH: /runtime/permissions_config.toml
+    read_only: true
+    network_mode: none
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ../../../scripts/validate-consortium-topology.mjs:/opt/threadproof/validate-consortium-topology.mjs:ro
+      - ${THREADPROOF_CONSORTIUM_TOPOLOGY_PATH:-./consortium-topology.json}:/runtime/consortium-topology.json:ro
+      - ${THREADPROOF_BESU_GENESIS_PATH:-./genesis.json}:/runtime/genesis.json:ro
+      - ${THREADPROOF_BESU_STATIC_NODES_PATH:-./static-nodes.json}:/runtime/static-nodes.json:ro
+      - ${THREADPROOF_BESU_PERMISSIONS_PATH:-./permissions_config.toml}:/runtime/permissions_config.toml:ro
+
   besu:
     image: hyperledger/besu:26.8.0
     restart: unless-stopped
+    depends_on:
+      topology-preflight:
+        condition: service_completed_successfully
     command:
       - --config-file=/etc/besu/config.toml
     read_only: true
@@ -28,7 +56,8 @@ services:
     image: consensys/web3signer:26.4.2-distroless
     restart: unless-stopped
     depends_on:
-      - besu
+      besu:
+        condition: service_started
     command:
       - --http-listen-host=0.0.0.0
       - --http-listen-port=9000
