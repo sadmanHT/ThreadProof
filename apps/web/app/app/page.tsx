@@ -6,20 +6,50 @@ import { formatDate, shortHash, titleCase } from "@/lib/format";
 import { StatusBadge } from "@/components/status-badge";
 
 export const dynamic = "force-dynamic";
+const PIPELINE_STATES = ["prepared", "signed", "submitting", "submitted"];
+
+type PipelineItem = {
+  key: string;
+  orderId: string;
+  label: string;
+  detail: string;
+  status: string;
+  updatedAt: string;
+};
 
 export default async function DashboardPage() {
   const viewer = await requireConsortiumViewer();
   const supabase = await createClient();
-  const [ordersCount, credentialsCount, proofsCount, proposalsCount, recentOrders, recentEvents, chain] = await Promise.all([
+  const [ordersCount, credentialsCount, proofsCount, proposalsCount, recentOrders, recentEvents, authorizationJobs, cancellationJobs, chain] = await Promise.all([
     supabase.from("purchase_orders").select("id", { count: "exact", head: true }),
     supabase.from("credentials").select("id", { count: "exact", head: true }),
     supabase.from("proof_jobs").select("id", { count: "exact", head: true }),
     supabase.from("governance_proposal_read_model").select("chain_proposal_id", { count: "exact", head: true }),
     supabase.from("purchase_orders").select("id,external_reference,title,status,updated_at").order("updated_at", { ascending: false }).limit(5),
     supabase.from("chain_events").select("id,event_name,transaction_hash,block_number,observed_at").order("block_number", { ascending: false }).limit(5),
+    supabase.from("order_authorization_jobs").select("id,purchase_order_id,target_version,status,updated_at").in("status", PIPELINE_STATES).order("updated_at", { ascending: false }).limit(6),
+    supabase.from("order_cancellation_jobs").select("id,purchase_order_id,expected_version,status,updated_at").in("status", PIPELINE_STATES).order("updated_at", { ascending: false }).limit(6),
     getBlockchainStatus(),
   ]);
   const roles = [...viewer.roles].map(titleCase).join(" · ");
+  const pipeline: PipelineItem[] = [
+    ...(authorizationJobs.data ?? []).map((job) => ({
+      key: `authorization-${job.id}`,
+      orderId: job.purchase_order_id,
+      label: `Authorize order version ${job.target_version}`,
+      detail: "Buyer EIP-712 → OrderRegistry",
+      status: job.status,
+      updatedAt: job.updated_at,
+    })),
+    ...(cancellationJobs.data ?? []).map((job) => ({
+      key: `cancellation-${job.id}`,
+      orderId: job.purchase_order_id,
+      label: `Cancel anchored version ${job.expected_version}`,
+      detail: "Buyer EIP-712 → OrderRegistry",
+      status: job.status,
+      updatedAt: job.updated_at,
+    })),
+  ].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)).slice(0, 6);
 
   return (
     <div className="workspace-page">
@@ -38,6 +68,10 @@ export default async function DashboardPage() {
           {(recentOrders.data ?? []).length ? <div className="record-list">{(recentOrders.data ?? []).map((order) => <Link className="record-row" href={`/app/orders/${order.id}`} key={order.id}><div><strong>{order.title || order.external_reference}</strong><span>{order.external_reference} · updated {formatDate(order.updated_at)}</span></div><StatusBadge value={order.status} /></Link>)}</div> : <div className="empty-state"><strong>No visible orders yet</strong><span>Buyer operators can create private draft orders once counterparties are onboarded.</span></div>}
         </article>
         <article className="panel">
+          <div className="panel-heading"><div><span className="kicker">TRANSACTION PIPELINE</span><h2>Actions in flight</h2></div><Link href="/app/orders">Open orders</Link></div>
+          {pipeline.length ? <div className="record-list">{pipeline.map((item) => <Link className="record-row" href={`/app/orders/${item.orderId}`} key={item.key}><div><strong>{item.label}</strong><span>{item.detail} · updated {formatDate(item.updatedAt)}</span></div><StatusBadge value={item.status} /></Link>)}</div> : <div className="empty-state"><strong>No buyer transactions in flight</strong><span>Prepared, signed, relaying and submitted order actions appear here until canonical chain events reconcile them.</span></div>}
+        </article>
+        <article className="panel full-dashboard-panel">
           <div className="panel-heading"><div><span className="kicker">CANONICAL MIRROR</span><h2>Chain events</h2></div><Link href="/app/chain">Inspect</Link></div>
           {(recentEvents.data ?? []).length ? <div className="record-list">{(recentEvents.data ?? []).map((event) => <div className="record-row" key={event.id}><div><strong>{titleCase(event.event_name)}</strong><span>Block {event.block_number} · {shortHash(event.transaction_hash)}</span></div></div>)}</div> : <div className="empty-state"><strong>No indexed events</strong><span>The indexer read model is empty. Direct chain validation remains required for critical writes.</span></div>}
         </article>
