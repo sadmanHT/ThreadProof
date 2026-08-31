@@ -46,10 +46,17 @@ for (const required of [
   "127.0.0.1:8545:8545",
   "127.0.0.1:8546:8546",
   "127.0.0.1:9000:9000",
-  "permissions_config.toml:/etc/besu/permissions_config.toml:ro",
 ]) {
   if (!compose.includes(required)) throw new Error(`Production Compose boundary is missing ${required}`);
 }
+
+const permissionsMount = /^\s*-\s+\$\{THREADPROOF_BESU_PERMISSIONS_PATH:-\.\/permissions_config\.toml\}:\/etc\/besu\/permissions_config\.toml:ro\s*$/m;
+if (!permissionsMount.test(compose)) {
+  throw new Error(
+    "Production Compose must mount THREADPROOF_BESU_PERMISSIONS_PATH (default ./permissions_config.toml) read-only at /etc/besu/permissions_config.toml",
+  );
+}
+
 if (/image:\s*[^\n]+:latest\b/.test(compose)) {
   throw new Error("Production blockchain images must never use a latest tag");
 }
