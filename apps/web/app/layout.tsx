@@ -9,6 +9,7 @@ import "./role-workspace.css";
 import "./evidence-depth.css";
 import "./organization-context.css";
 import "./product-premium.css";
+import "./product-responsive.css";
 
 export const metadata: Metadata = {
   title: { default: "ThreadProof", template: "%s · ThreadProof" },
