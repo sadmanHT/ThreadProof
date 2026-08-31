@@ -3,6 +3,39 @@ pragma solidity ^0.8.28;
 
 import {IThreadProofRegistry} from "./interfaces/IThreadProofRegistry.sol";
 
+interface IThreadProofAccessControlTarget {
+    function grantRole(bytes32 role, address account) external;
+    function revokeRole(bytes32 role, address account) external;
+}
+
+interface IThreadProofCredentialGovernance {
+    function setCredentialStatus(bytes32 credentialId, uint8 newStatus) external;
+}
+
+interface IThreadProofCapacityGovernance {
+    function registerVerifierWithProvenance(
+        uint32 circuitVersion,
+        address verifierAddress,
+        bytes32 circuitArtifactHash,
+        bytes32 verificationKeyHash
+    ) external;
+
+    function pause() external;
+    function unpause() external;
+}
+
+interface IThreadProofSubcontractGovernance {
+    function registerPolicy(
+        bytes32 policyHash,
+        uint8 maxDepth,
+        bytes32 complianceCredentialType,
+        bytes32 processCredentialType
+    ) external;
+
+    function pause() external;
+    function unpause() external;
+}
+
 /// @title ThreadProofCharter
 /// @notice Role-diverse consortium governance for exceptional ThreadProof protocol actions.
 /// @dev The Charter intentionally has no owner/admin escape hatch. Authority is derived from
@@ -15,11 +48,20 @@ contract ThreadProofCharter {
     uint8 public constant LABOR_MASK = 1 << 4;
     uint8 public constant ALL_CONSTITUENCIES_MASK = 0x1f;
 
+    bytes32 public constant CREDENTIAL_ISSUER_ROLE = keccak256("ISSUER_ROLE");
+    bytes32 public constant CAPACITY_CERTIFIER_ROLE = keccak256("CERTIFIER_ROLE");
+    bytes32 public constant CAPACITY_RELAYER_ROLE = keccak256("RELAYER_ROLE");
+
     bytes32 private constant ORGANIZATION_STATUS_DOMAIN = keccak256("THREADPROOF_CHARTER_ORGANIZATION_STATUS_V1");
     bytes32 private constant PRIMARY_ACCOUNT_ROTATION_DOMAIN = keccak256("THREADPROOF_CHARTER_PRIMARY_ACCOUNT_ROTATION_V1");
     bytes32 private constant PROTECTED_IDENTITY_DISCLOSURE_DOMAIN = keccak256("THREADPROOF_CHARTER_PROTECTED_IDENTITY_DISCLOSURE_V1");
     bytes32 private constant POLICY_UPDATE_DOMAIN = keccak256("THREADPROOF_CHARTER_POLICY_UPDATE_V1");
     bytes32 private constant FACTORY_ONBOARDING_DOMAIN = keccak256("THREADPROOF_CHARTER_FACTORY_ONBOARDING_V1");
+    bytes32 private constant PROTOCOL_ROLE_UPDATE_DOMAIN = keccak256("THREADPROOF_CHARTER_PROTOCOL_ROLE_UPDATE_V1");
+    bytes32 private constant VERIFIER_REGISTRATION_DOMAIN = keccak256("THREADPROOF_CHARTER_VERIFIER_REGISTRATION_V1");
+    bytes32 private constant SUBCONTRACT_POLICY_DOMAIN = keccak256("THREADPROOF_CHARTER_SUBCONTRACT_POLICY_V1");
+    bytes32 private constant EMERGENCY_CONTROL_DOMAIN = keccak256("THREADPROOF_CHARTER_EMERGENCY_CONTROL_V1");
+    bytes32 private constant CREDENTIAL_STATUS_DOMAIN = keccak256("THREADPROOF_CHARTER_CREDENTIAL_STATUS_V1");
 
     enum ProposalType {
         Unknown,
@@ -28,7 +70,14 @@ contract ThreadProofCharter {
         PrimaryAccountRotation,
         ProtectedIdentityDisclosure,
         CharterPolicyUpdate,
-        FactoryOnboarding
+        FactoryOnboarding,
+        ProtocolRoleUpdate,
+        VerifierRegistration,
+        SubcontractPolicyRegistration,
+        EmergencyPause,
+        EmergencyUnpause,
+        CredentialSuspension,
+        CredentialRestore
     }
 
     enum ProposalState {
@@ -48,6 +97,12 @@ contract ThreadProofCharter {
         Auditor,
         Regulator,
         Labor
+    }
+
+    enum EmergencyTarget {
+        Unknown,
+        CapacityVault,
+        SubcontractGovernor
     }
 
     struct Policy {
@@ -81,6 +136,10 @@ contract ThreadProofCharter {
     }
 
     IThreadProofRegistry public immutable registry;
+    address public immutable credentialRegistry;
+    address public immutable capacityVault;
+    address public immutable subcontractGovernor;
+
     uint64 public policyVersion = 1;
     uint256 public proposalNonce;
 
@@ -89,6 +148,7 @@ contract ThreadProofCharter {
     mapping(bytes32 proposalId => mapping(bytes32 organizationId => bool approved)) public organizationApproved;
 
     error InvalidRegistry();
+    error InvalidProtocolTarget(address target);
     error InvalidProposalType();
     error InvalidActionHash();
     error InvalidPolicy();
@@ -101,6 +161,7 @@ contract ThreadProofCharter {
     error ProposalNotExecutable(bytes32 proposalId);
     error ActionHashMismatch(bytes32 expected, bytes32 actual);
     error InvalidExecutionParameters();
+    error InvalidProtocolRoleAction(address target, bytes32 role, address account, bool grant);
     error OnlyProposerOrganization(bytes32 expectedOrganizationId, bytes32 actualOrganizationId);
     error StalePolicyVersion(uint64 expected, uint64 actual);
 
@@ -145,10 +206,59 @@ contract ThreadProofCharter {
         address indexed primaryAccount,
         bytes32 metadataHash
     );
+    event ProtocolRoleUpdated(
+        bytes32 indexed proposalId,
+        address indexed target,
+        bytes32 indexed role,
+        address account,
+        bool granted
+    );
+    event VerifierRegistrationAuthorized(
+        bytes32 indexed proposalId,
+        uint32 indexed circuitVersion,
+        address indexed verifier,
+        bytes32 circuitArtifactHash,
+        bytes32 verificationKeyHash
+    );
+    event SubcontractPolicyRegistrationAuthorized(
+        bytes32 indexed proposalId,
+        bytes32 indexed policyHash,
+        uint8 maxDepth,
+        bytes32 complianceCredentialType,
+        bytes32 processCredentialType
+    );
+    event EmergencyControlExecuted(
+        bytes32 indexed proposalId,
+        EmergencyTarget indexed target,
+        bool paused
+    );
+    event CredentialGovernanceStatusChanged(
+        bytes32 indexed proposalId,
+        bytes32 indexed credentialId,
+        uint8 newStatus
+    );
 
-    constructor(address registryAddress) {
+    constructor(
+        address registryAddress,
+        address credentialRegistryAddress,
+        address capacityVaultAddress,
+        address subcontractGovernorAddress
+    ) {
         if (registryAddress == address(0)) revert InvalidRegistry();
+        if (credentialRegistryAddress == address(0) || credentialRegistryAddress.code.length == 0) {
+            revert InvalidProtocolTarget(credentialRegistryAddress);
+        }
+        if (capacityVaultAddress == address(0) || capacityVaultAddress.code.length == 0) {
+            revert InvalidProtocolTarget(capacityVaultAddress);
+        }
+        if (subcontractGovernorAddress == address(0) || subcontractGovernorAddress.code.length == 0) {
+            revert InvalidProtocolTarget(subcontractGovernorAddress);
+        }
+
         registry = IThreadProofRegistry(registryAddress);
+        credentialRegistry = credentialRegistryAddress;
+        capacityVault = capacityVaultAddress;
+        subcontractGovernor = subcontractGovernorAddress;
 
         _setPolicy(
             ProposalType.OrganizationSuspension,
@@ -212,6 +322,83 @@ contract ThreadProofCharter {
                 eligibleMask: INDUSTRY_MASK | AUDITOR_MASK,
                 requiredMask: INDUSTRY_MASK | AUDITOR_MASK,
                 timelockSeconds: 0,
+                votingPeriodSeconds: 7 days,
+                exists: true
+            })
+        );
+        _setPolicy(
+            ProposalType.ProtocolRoleUpdate,
+            Policy({
+                threshold: 4,
+                eligibleMask: ALL_CONSTITUENCIES_MASK,
+                requiredMask: AUDITOR_MASK | REGULATOR_MASK,
+                timelockSeconds: 1 days,
+                votingPeriodSeconds: 7 days,
+                exists: true
+            })
+        );
+        _setPolicy(
+            ProposalType.VerifierRegistration,
+            Policy({
+                threshold: 4,
+                eligibleMask: ALL_CONSTITUENCIES_MASK,
+                requiredMask: AUDITOR_MASK | REGULATOR_MASK,
+                timelockSeconds: 1 days,
+                votingPeriodSeconds: 7 days,
+                exists: true
+            })
+        );
+        _setPolicy(
+            ProposalType.SubcontractPolicyRegistration,
+            Policy({
+                threshold: 4,
+                eligibleMask: ALL_CONSTITUENCIES_MASK,
+                requiredMask: AUDITOR_MASK | REGULATOR_MASK,
+                timelockSeconds: 1 days,
+                votingPeriodSeconds: 7 days,
+                exists: true
+            })
+        );
+        _setPolicy(
+            ProposalType.EmergencyPause,
+            Policy({
+                threshold: 3,
+                eligibleMask: ALL_CONSTITUENCIES_MASK,
+                requiredMask: 0,
+                timelockSeconds: 0,
+                votingPeriodSeconds: 1 days,
+                exists: true
+            })
+        );
+        _setPolicy(
+            ProposalType.EmergencyUnpause,
+            Policy({
+                threshold: 3,
+                eligibleMask: ALL_CONSTITUENCIES_MASK,
+                requiredMask: AUDITOR_MASK | REGULATOR_MASK,
+                timelockSeconds: 6 hours,
+                votingPeriodSeconds: 3 days,
+                exists: true
+            })
+        );
+        _setPolicy(
+            ProposalType.CredentialSuspension,
+            Policy({
+                threshold: 2,
+                eligibleMask: AUDITOR_MASK | REGULATOR_MASK,
+                requiredMask: AUDITOR_MASK | REGULATOR_MASK,
+                timelockSeconds: 0,
+                votingPeriodSeconds: 2 days,
+                exists: true
+            })
+        );
+        _setPolicy(
+            ProposalType.CredentialRestore,
+            Policy({
+                threshold: 3,
+                eligibleMask: ALL_CONSTITUENCIES_MASK,
+                requiredMask: AUDITOR_MASK | REGULATOR_MASK,
+                timelockSeconds: 6 hours,
                 votingPeriodSeconds: 7 days,
                 exists: true
             })
@@ -429,6 +616,165 @@ contract ThreadProofCharter {
         emit ProposalExecuted(proposalId, proposal.proposalType, msg.sender);
     }
 
+    function executeProtocolRoleUpdate(
+        bytes32 proposalId,
+        address target,
+        bytes32 role,
+        address account,
+        bool grant
+    ) external {
+        Proposal storage proposal = _requireExecutable(proposalId);
+        if (proposal.proposalType != ProposalType.ProtocolRoleUpdate) revert InvalidExecutionParameters();
+        _validateProtocolRoleAction(target, role, account, grant);
+        bytes32 actual = hashProtocolRoleAction(target, role, account, grant);
+        _consumeAction(proposal, actual);
+
+        if (grant) {
+            IThreadProofAccessControlTarget(target).grantRole(role, account);
+        } else {
+            IThreadProofAccessControlTarget(target).revokeRole(role, account);
+        }
+
+        emit ProtocolRoleUpdated(proposalId, target, role, account, grant);
+        emit ProposalExecuted(proposalId, proposal.proposalType, msg.sender);
+    }
+
+    function executeVerifierRegistration(
+        bytes32 proposalId,
+        uint32 circuitVersion,
+        address verifierAddress,
+        bytes32 circuitArtifactHash,
+        bytes32 verificationKeyHash
+    ) external {
+        if (
+            circuitVersion == 0 ||
+            verifierAddress == address(0) ||
+            circuitArtifactHash == bytes32(0) ||
+            verificationKeyHash == bytes32(0)
+        ) revert InvalidExecutionParameters();
+
+        Proposal storage proposal = _requireExecutable(proposalId);
+        if (proposal.proposalType != ProposalType.VerifierRegistration) revert InvalidExecutionParameters();
+        bytes32 actual = hashVerifierRegistrationAction(
+            circuitVersion,
+            verifierAddress,
+            circuitArtifactHash,
+            verificationKeyHash
+        );
+        _consumeAction(proposal, actual);
+
+        IThreadProofCapacityGovernance(capacityVault).registerVerifierWithProvenance(
+            circuitVersion,
+            verifierAddress,
+            circuitArtifactHash,
+            verificationKeyHash
+        );
+
+        emit VerifierRegistrationAuthorized(
+            proposalId,
+            circuitVersion,
+            verifierAddress,
+            circuitArtifactHash,
+            verificationKeyHash
+        );
+        emit ProposalExecuted(proposalId, proposal.proposalType, msg.sender);
+    }
+
+    function executeSubcontractPolicyRegistration(
+        bytes32 proposalId,
+        bytes32 policyHash,
+        uint8 maxDepth,
+        bytes32 complianceCredentialType,
+        bytes32 processCredentialType
+    ) external {
+        if (
+            policyHash == bytes32(0) ||
+            maxDepth == 0 ||
+            complianceCredentialType == bytes32(0) ||
+            processCredentialType == bytes32(0)
+        ) revert InvalidExecutionParameters();
+
+        Proposal storage proposal = _requireExecutable(proposalId);
+        if (proposal.proposalType != ProposalType.SubcontractPolicyRegistration) {
+            revert InvalidExecutionParameters();
+        }
+        bytes32 actual = hashSubcontractPolicyAction(
+            policyHash,
+            maxDepth,
+            complianceCredentialType,
+            processCredentialType
+        );
+        _consumeAction(proposal, actual);
+
+        IThreadProofSubcontractGovernance(subcontractGovernor).registerPolicy(
+            policyHash,
+            maxDepth,
+            complianceCredentialType,
+            processCredentialType
+        );
+
+        emit SubcontractPolicyRegistrationAuthorized(
+            proposalId,
+            policyHash,
+            maxDepth,
+            complianceCredentialType,
+            processCredentialType
+        );
+        emit ProposalExecuted(proposalId, proposal.proposalType, msg.sender);
+    }
+
+    function executeEmergencyControl(bytes32 proposalId, EmergencyTarget target) external {
+        Proposal storage proposal = _requireExecutable(proposalId);
+        bool shouldPause;
+        if (proposal.proposalType == ProposalType.EmergencyPause) {
+            shouldPause = true;
+        } else if (proposal.proposalType == ProposalType.EmergencyUnpause) {
+            shouldPause = false;
+        } else {
+            revert InvalidExecutionParameters();
+        }
+
+        address targetAddress = emergencyTargetAddress(target);
+        bytes32 actual = hashEmergencyControlAction(target, shouldPause);
+        _consumeAction(proposal, actual);
+
+        if (target == EmergencyTarget.CapacityVault) {
+            if (shouldPause) IThreadProofCapacityGovernance(targetAddress).pause();
+            else IThreadProofCapacityGovernance(targetAddress).unpause();
+        } else if (target == EmergencyTarget.SubcontractGovernor) {
+            if (shouldPause) IThreadProofSubcontractGovernance(targetAddress).pause();
+            else IThreadProofSubcontractGovernance(targetAddress).unpause();
+        } else {
+            revert InvalidExecutionParameters();
+        }
+
+        emit EmergencyControlExecuted(proposalId, target, shouldPause);
+        emit ProposalExecuted(proposalId, proposal.proposalType, msg.sender);
+    }
+
+    function executeCredentialStatus(
+        bytes32 proposalId,
+        bytes32 credentialId,
+        uint8 newStatus
+    ) external {
+        if (credentialId == bytes32(0)) revert InvalidExecutionParameters();
+        Proposal storage proposal = _requireExecutable(proposalId);
+        if (
+            (proposal.proposalType == ProposalType.CredentialSuspension && newStatus != 2) ||
+            (proposal.proposalType == ProposalType.CredentialRestore && newStatus != 1) ||
+            (proposal.proposalType != ProposalType.CredentialSuspension &&
+                proposal.proposalType != ProposalType.CredentialRestore)
+        ) {
+            revert InvalidExecutionParameters();
+        }
+
+        bytes32 actual = hashCredentialStatusAction(credentialId, newStatus);
+        _consumeAction(proposal, actual);
+        IThreadProofCredentialGovernance(credentialRegistry).setCredentialStatus(credentialId, newStatus);
+        emit CredentialGovernanceStatusChanged(proposalId, credentialId, newStatus);
+        emit ProposalExecuted(proposalId, proposal.proposalType, msg.sender);
+    }
+
     function getProposal(bytes32 proposalId) external view returns (Proposal memory) {
         return _requireProposal(proposalId);
     }
@@ -448,6 +794,12 @@ contract ThreadProofCharter {
 
     function constituencyForOrganization(bytes32 organizationId) external view returns (Constituency) {
         return _constituencyForRole(registry.roleOf(organizationId));
+    }
+
+    function emergencyTargetAddress(EmergencyTarget target) public view returns (address) {
+        if (target == EmergencyTarget.CapacityVault) return capacityVault;
+        if (target == EmergencyTarget.SubcontractGovernor) return subcontractGovernor;
+        revert InvalidExecutionParameters();
     }
 
     function hashOrganizationStatusAction(bytes32 organizationId, uint8 newStatus) public pure returns (bytes32) {
@@ -496,6 +848,57 @@ contract ThreadProofCharter {
         );
     }
 
+    function hashProtocolRoleAction(
+        address target,
+        bytes32 role,
+        address account,
+        bool grant
+    ) public pure returns (bytes32) {
+        return keccak256(abi.encode(PROTOCOL_ROLE_UPDATE_DOMAIN, target, role, account, grant));
+    }
+
+    function hashVerifierRegistrationAction(
+        uint32 circuitVersion,
+        address verifierAddress,
+        bytes32 circuitArtifactHash,
+        bytes32 verificationKeyHash
+    ) public pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                VERIFIER_REGISTRATION_DOMAIN,
+                circuitVersion,
+                verifierAddress,
+                circuitArtifactHash,
+                verificationKeyHash
+            )
+        );
+    }
+
+    function hashSubcontractPolicyAction(
+        bytes32 policyHash,
+        uint8 maxDepth,
+        bytes32 complianceCredentialType,
+        bytes32 processCredentialType
+    ) public pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                SUBCONTRACT_POLICY_DOMAIN,
+                policyHash,
+                maxDepth,
+                complianceCredentialType,
+                processCredentialType
+            )
+        );
+    }
+
+    function hashEmergencyControlAction(EmergencyTarget target, bool pauseState) public pure returns (bytes32) {
+        return keccak256(abi.encode(EMERGENCY_CONTROL_DOMAIN, target, pauseState));
+    }
+
+    function hashCredentialStatusAction(bytes32 credentialId, uint8 newStatus) public pure returns (bytes32) {
+        return keccak256(abi.encode(CREDENTIAL_STATUS_DOMAIN, credentialId, newStatus));
+    }
+
     function _requireRepresentative(address account) internal view returns (bytes32 organizationId, Constituency constituency) {
         organizationId = registry.organizationOfAccount(account);
         if (organizationId == bytes32(0) || !registry.isActive(organizationId)) {
@@ -541,6 +944,39 @@ contract ThreadProofCharter {
             revert ActionHashMismatch(proposal.actionHash, actualActionHash);
         }
         proposal.executed = true;
+    }
+
+    function _validateProtocolRoleAction(
+        address target,
+        bytes32 role,
+        address account,
+        bool grant
+    ) internal view {
+        if (account == address(0)) revert InvalidProtocolRoleAction(target, role, account, grant);
+
+        bool auditorBoundRole;
+        bool allowed;
+        if (target == credentialRegistry && role == CREDENTIAL_ISSUER_ROLE) {
+            allowed = true;
+            auditorBoundRole = true;
+        } else if (target == capacityVault && role == CAPACITY_CERTIFIER_ROLE) {
+            allowed = true;
+            auditorBoundRole = true;
+        } else if (target == capacityVault && role == CAPACITY_RELAYER_ROLE) {
+            allowed = true;
+        }
+
+        if (!allowed) revert InvalidProtocolRoleAction(target, role, account, grant);
+        if (grant && auditorBoundRole) {
+            bytes32 organizationId = registry.organizationOfAccount(account);
+            if (organizationId == bytes32(0) || !registry.isActive(organizationId)) {
+                revert InvalidProtocolRoleAction(target, role, account, grant);
+            }
+            uint8 organizationRole = registry.roleOf(organizationId);
+            if (organizationRole != 3 && organizationRole != 7) {
+                revert InvalidProtocolRoleAction(target, role, account, grant);
+            }
+        }
     }
 
     function _setPolicy(ProposalType proposalType, Policy memory policy) internal {
