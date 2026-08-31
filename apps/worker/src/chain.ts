@@ -12,6 +12,7 @@ export const capacityVaultAbi = parseAbi([
 
 export const orderRegistryAbi = parseAbi([
   "function submitOrderVersion((bytes32 orderId,bytes32 buyerOrganizationId,bytes32 primaryFactoryOrganizationId,uint32 version,bytes32 previousVersionHash,uint256 orderCommitment,bytes32 policyHash,uint256 nonce,uint64 deadline) authorization,bytes buyerSignature) returns (bytes32 versionHash)",
+  "function cancelOrder((bytes32 orderId,bytes32 buyerOrganizationId,uint32 expectedVersion,uint256 nonce,uint64 deadline) authorization,bytes buyerSignature)",
   "function nonces(bytes32 buyerOrganizationId) view returns (uint256)",
   "function getOrder(bytes32 orderId) view returns ((bytes32 buyerOrganizationId,bytes32 primaryFactoryOrganizationId,uint32 currentVersion,bytes32 currentVersionHash,uint256 currentOrderCommitment,bytes32 currentPolicyHash,uint64 updatedAt,uint8 status))",
   "event OrderVersionRecorded(bytes32 indexed orderId,bytes32 indexed buyerOrganizationId,bytes32 indexed primaryFactoryOrganizationId,uint32 version,bytes32 versionHash,uint256 orderCommitment,bytes32 policyHash,uint256 nonce,address buyerSigner)",
