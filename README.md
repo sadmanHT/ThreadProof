@@ -1,27 +1,35 @@
 # ThreadProof
 
-ThreadProof is a confidential capacity-governance system for apparel supply chains. Hyperledger Besu is the canonical shared state; Supabase is used for private operational data and read models and must never override blockchain authorization state.
+ThreadProof is a privacy-preserving capacity governance protocol for responsible apparel supply chains. It combines a permissioned blockchain, zero-knowledge proofs, verifiable credentials, and selective disclosure so buyers can validate certified production capacity without exposing a factory's full production book.
 
-## Core protocol
+## Core trust boundary
 
-- `ThreadProofRegistry` manages consortium organizations and active signing accounts.
-- `CredentialRegistry` records attributable, revocable credential commitments and scopes.
-- `OrderRegistry` records buyer-authorized order versions using EIP-712 signatures.
-- `CapacityVault` treats certified capacity as a confidential, stateful commitment. Successful PoFC spends consume a nullifier, advance the canonical commitment, and record an immutable on-chain `CapacityAllocation` reference containing commitments/IDs only.
-- `SubcontractGovernor` authorizes parent → child production relationships from current buyer-authorized orders, active factory organizations, policy-scoped compliance/process credentials, a canonical PoFC allocation reference, and an EIP-712 approval from the parent factory. Amendments, cancellation, suspension, or credential revocation fail closed when authorization is re-evaluated.
+The blockchain decides what capacity state is current. Zero-knowledge proofs prove hidden capacity transitions are valid. Auditors establish initial physical capacity claims. Credentials and signed orders establish authority. Governance controls exceptional powers. Supabase and the application coordinate these workflows but never replace canonical chain state.
 
-ThreadProof does **not** put exact production capacity, exact subcontract allocation quantities, prices, full confidential order terms, or protected supplier identity material on chain.
+## Repository
 
-The current subcontract layer also does **not** prove `sum(subcontract allocations) = parent workload`. That confidential allocation-sum invariant requires a separately reviewed ZK allocation circuit before it may be claimed.
+- `apps/web` — Next.js application and consortium workspaces.
+- `apps/worker` — proof generation/submission, order relay, and chain indexing workers.
+- `packages/contracts` — Solidity protocol contracts and tests.
+- `packages/circuits` — CapacitySpend Circom circuit and proof tooling.
+- `supabase/migrations` — coordination/read-model schema and RLS hardening.
+- `docs/architecture` — protocol and production trust-boundary documentation.
+- `infrastructure/besu/production` — fail-closed Besu + Web3Signer production deployment template.
 
-## Read models
+## Production signing
 
-The worker indexes `CapacityAllocationRecorded`, `SubcontractPolicyRegistered`, and `SubcontractAuthorized` into the generic chain-event read model for auditability. Those indexed rows are projections only: subcontract authorization is created and re-evaluated from Besu contract state, never from Supabase.
-
-## Validation status
-
-The subcontract authorization contract suite covers the canonical happy path plus unknown/cancelled/amended orders, inactive or wrong-role factories, missing/revoked policy credentials, invalid PoFC allocation references, maximum depth, cycles/re-parenting, parent-factory signatures, and replay protection. Local deployment includes `SubcontractGovernor`.
+Production machine transactions use an isolated external signer rather than in-process private keys. Proof generation is a separate process with transaction signing disabled; order relay/proof submission use Web3Signer and a public relayer address only. See `docs/architecture/production-signing.md` and `infrastructure/besu/production/README.md`.
 
 ## Development
 
-Install dependencies with the pinned workspace package manager and use the repository scripts/CI for web, worker, contracts, and circuit validation. Local contract deployment intentionally uses `MockCapacitySpendVerifier`; it is development-only and is not a production ZK verifier.
+Install the pinned workspace dependencies and run the individual packages through pnpm. Environment variable names and safe placeholders are documented in `.env.example`; real credentials and private keys must not be committed.
+
+```bash
+pnpm install --frozen-lockfile
+pnpm --filter @threadproof/web dev
+pnpm --filter @threadproof/worker typecheck
+pnpm --filter @threadproof/contracts test
+pnpm --filter @threadproof/circuits test
+```
+
+CI validates the web application, browser auth-boundary tests, workers, smart contracts, circuit invariants/generated Groth16 proof integration, secret scans, and production signing/infrastructure boundaries.
