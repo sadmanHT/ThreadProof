@@ -5,19 +5,20 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 type IconName = "overview" | "orders" | "intelligence" | "credentials" | "capacity" | "proofs" | "governance" | "chain" | "team" | "settings" | "menu" | "close" | "arrow" | "shield";
+type NavItem = { href: string; label: string; icon: IconName; section: "workspace" | "organization"; roles?: readonly string[] };
 
-const nav = [
-  ["/app", "Overview", "overview"],
-  ["/app/orders", "Orders", "orders"],
-  ["/app/intelligence", "Intelligence", "intelligence"],
-  ["/app/credentials", "Credentials", "credentials"],
-  ["/app/capacity", "Capacity", "capacity"],
-  ["/app/proofs", "Proofs", "proofs"],
-  ["/app/governance", "Governance", "governance"],
-  ["/app/chain", "Chain activity", "chain"],
-  ["/app/team", "Team", "team"],
-  ["/app/settings", "Settings", "settings"],
-] as const satisfies readonly (readonly [string, string, IconName])[];
+const nav: readonly NavItem[] = [
+  { href: "/app", label: "Overview", icon: "overview", section: "workspace" },
+  { href: "/app/orders", label: "Orders", icon: "orders", section: "workspace", roles: ["buyer", "factory"] },
+  { href: "/app/intelligence", label: "Intelligence", icon: "intelligence", section: "workspace" },
+  { href: "/app/credentials", label: "Credentials", icon: "credentials", section: "workspace" },
+  { href: "/app/capacity", label: "Capacity", icon: "capacity", section: "workspace", roles: ["factory", "auditor"] },
+  { href: "/app/proofs", label: "Proofs", icon: "proofs", section: "workspace", roles: ["buyer", "factory", "auditor"] },
+  { href: "/app/governance", label: "Governance", icon: "governance", section: "workspace", roles: ["buyer", "factory", "auditor", "regulator", "governance"] },
+  { href: "/app/chain", label: "Network", icon: "chain", section: "workspace" },
+  { href: "/app/team", label: "Team", icon: "team", section: "organization" },
+  { href: "/app/settings", label: "Settings", icon: "settings", section: "organization" },
+];
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
@@ -48,8 +49,8 @@ function isActive(pathname: string, href: string) {
 }
 
 function pageName(pathname: string) {
-  const match = nav.find(([href]) => isActive(pathname, href));
-  return match?.[1] ?? "Workspace";
+  const match = nav.find((item) => isActive(pathname, item.href));
+  return match?.label ?? "Workspace";
 }
 
 type Props = {
@@ -57,59 +58,40 @@ type Props = {
   organizationName?: string;
   organizationRole?: string;
   memberRole?: string;
+  roleKeys: string[];
   userName: string;
   email: string;
 };
 
-export function AppShell({ children, organizationName, organizationRole, memberRole, userName, email }: Props) {
+export function AppShell({ children, organizationName, organizationRole, memberRole, roleKeys, userName, email }: Props) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const currentPage = useMemo(() => pageName(pathname), [pathname]);
+  const visibleNav = useMemo(() => nav.filter((item) => !item.roles || item.roles.some((role) => roleKeys.includes(role))), [roleKeys]);
   useEffect(() => setMobileOpen(false), [pathname]);
+
+  const renderNav = (section: NavItem["section"]) => visibleNav.filter((item) => item.section === section).map((item) => {
+    const active = isActive(pathname, item.href);
+    return <Link key={item.href} href={item.href} className={active ? "active" : undefined} aria-current={active ? "page" : undefined}><span className="nav-icon"><Icon name={item.icon} /></span><span>{item.label}</span>{active ? <span className="nav-active-dot" /> : null}</Link>;
+  });
 
   return (
     <div className="app-frame">
       <button className={`sidebar-backdrop ${mobileOpen ? "visible" : ""}`} aria-label="Close navigation" onClick={() => setMobileOpen(false)} />
       <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
         <div className="sidebar-head">
-          <Link href="/app" className="sidebar-brand">
-            <span className="brand-mark"><Icon name="shield" size={19} /></span>
-            <span><strong>ThreadProof</strong><small>Consortium protocol</small></span>
-          </Link>
+          <Link href="/app" className="sidebar-brand"><span className="brand-mark"><Icon name="shield" size={19} /></span><span><strong>ThreadProof</strong><small>Consortium protocol</small></span></Link>
           <button className="sidebar-close" type="button" aria-label="Close navigation" onClick={() => setMobileOpen(false)}><Icon name="close" /></button>
         </div>
-
-        <div className="sidebar-section-label">Workspace</div>
-        <nav className="sidebar-nav" aria-label="Product navigation">
-          {nav.slice(0, 8).map(([href, label, icon]) => {
-            const active = isActive(pathname, href);
-            return <Link key={href} href={href} className={active ? "active" : undefined} aria-current={active ? "page" : undefined}><span className="nav-icon"><Icon name={icon} /></span><span>{label}</span>{active ? <span className="nav-active-dot" /> : null}</Link>;
-          })}
-        </nav>
-
-        <div className="sidebar-section-label sidebar-secondary-label">Organization</div>
-        <nav className="sidebar-nav" aria-label="Organization navigation">
-          {nav.slice(8).map(([href, label, icon]) => {
-            const active = isActive(pathname, href);
-            return <Link key={href} href={href} className={active ? "active" : undefined} aria-current={active ? "page" : undefined}><span className="nav-icon"><Icon name={icon} /></span><span>{label}</span>{active ? <span className="nav-active-dot" /> : null}</Link>;
-          })}
-        </nav>
-
+        <div className="sidebar-section-label">Workspace</div><nav className="sidebar-nav" aria-label="Product navigation">{renderNav("workspace")}</nav>
+        <div className="sidebar-section-label sidebar-secondary-label">Organization</div><nav className="sidebar-nav" aria-label="Organization navigation">{renderNav("organization")}</nav>
         <div className="sidebar-footer">
           {organizationName ? <div className="org-card"><span className="avatar org-avatar">{initials(organizationName)}</span><div><strong>{organizationName}</strong><small>{[organizationRole, memberRole].filter(Boolean).join(" · ")}</small></div></div> : null}
           <div className="user-card"><span className="avatar">{initials(userName || email)}</span><div><strong>{userName || email}</strong><small>{email}</small></div></div>
           <form action="/auth/signout" method="post"><button className="sidebar-signout" type="submit"><span>Sign out</span><Icon name="arrow" size={15} /></button></form>
         </div>
       </aside>
-
-      <div className="app-content">
-        <header className="mobile-appbar">
-          <button className="mobile-menu" type="button" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Icon name="menu" /></button>
-          <div><small>ThreadProof</small><strong>{currentPage}</strong></div>
-          <span className="avatar compact-avatar">{initials(userName || email)}</span>
-        </header>
-        <main className="app-main">{children}</main>
-      </div>
+      <div className="app-content"><header className="mobile-appbar"><button className="mobile-menu" type="button" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Icon name="menu" /></button><div><small>ThreadProof</small><strong>{currentPage}</strong></div><span className="avatar compact-avatar">{initials(userName || email)}</span></header><main className="app-main">{children}</main></div>
     </div>
   );
 }
