@@ -148,6 +148,26 @@ export type Database = {
         worker_claim_token: string | null;
         worker_claimed_at: string | null;
       }>;
+      order_cancellation_jobs: Table<{
+        buyer_organization_id: string;
+        buyer_signature: string | null;
+        chain_block_number: number | null;
+        chain_order_id: string;
+        chain_tx_hash: string | null;
+        created_at: string;
+        created_by: string;
+        deadline: string;
+        error_code: string | null;
+        error_detail: string | null;
+        expected_version: number;
+        id: string;
+        nonce: string;
+        purchase_order_id: string;
+        status: string;
+        updated_at: string;
+        worker_claim_token: string | null;
+        worker_claimed_at: string | null;
+      }>;
       order_versions: Table<{
         buyer_signature: string | null;
         chain_block_number: number | null;
