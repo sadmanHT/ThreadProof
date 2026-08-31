@@ -2,8 +2,12 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { buildPoseidon } from "circomlibjs";
 import { groth16 } from "snarkjs";
-import type { Hex } from "viem";
+import type { Address, Hex } from "viem";
 import { z } from "zod";
+import {
+  assertCanonicalCapacityOpening,
+  StaleCanonicalCapacityError,
+} from "./canonical-capacity.js";
 import {
   bufferToBytea,
   byteaToBuffer,
@@ -29,6 +33,7 @@ type Row = Record<string, any>;
 
 type JobContext = {
   opening: Row;
+  credential: Row;
   version: Row;
   order: Row;
   factory: Row;
@@ -110,6 +115,13 @@ async function loadContext(supabase: ServiceClient, job: Row): Promise<JobContex
     .single();
   if (openingError) throw openingError;
 
+  const { data: credential, error: credentialError } = await supabase
+    .from("credentials")
+    .select("*")
+    .eq("id", opening.capacity_credential_id)
+    .single();
+  if (credentialError) throw credentialError;
+
   const { data: version, error: versionError } = await supabase
     .from("order_versions")
     .select("*")
@@ -141,7 +153,7 @@ async function loadContext(supabase: ServiceClient, job: Row): Promise<JobContex
     throw new Error("Order and capacity opening policy hashes differ");
   }
 
-  return { opening, version, order, factory };
+  return { opening, credential, version, order, factory };
 }
 
 async function generateProof(supabase: ServiceClient, job: Row) {
@@ -152,13 +164,35 @@ async function generateProof(supabase: ServiceClient, job: Row) {
 
   const key = decodeDataKey(env.THREADPROOF_DATA_KEY_BASE64);
   const secrets = parseFactorySecrets(env.THREADPROOF_FACTORY_SECRETS_JSON);
-  const { opening, version, order, factory } = await loadContext(supabase, job);
+  const { opening, credential, version, order, factory } = await loadContext(supabase, job);
 
   const factoryChainId = requireHex32(factory.chain_organization_id, "factory chain organization id");
+  const capacityCredentialChainId = requireHex32(credential.chain_credential_id, "capacity credential id");
   const periodChainId = requireHex32(opening.chain_period_id, "capacity period id");
   const processChainId = requireHex32(opening.chain_process_id, "capacity process id");
   const orderChainId = requireHex32(order.chain_order_id, "order id");
   const policyHash = requireHex32(version.policy_hash, "policy hash");
+  const storedOldCommitment = BigInt(opening.capacity_commitment);
+  const openingCircuitVersion = Number(opening.circuit_version);
+  const jobCircuitVersion = Number(job.circuit_version);
+  if (openingCircuitVersion !== jobCircuitVersion) {
+    throw new StaleCanonicalCapacityError("Proof job circuit version no longer matches the private capacity opening.");
+  }
+
+  await assertCanonicalCapacityOpening({
+    rpcUrl: env.THREADPROOF_RPC_URL,
+    vaultAddress: env.THREADPROOF_CAPACITY_VAULT_ADDRESS as Address,
+    expectedChainId: env.THREADPROOF_CHAIN_ID,
+    expected: {
+      factoryOrganizationId: factoryChainId,
+      periodId: periodChainId,
+      processId: processChainId,
+      activeCommitment: storedOldCommitment,
+      capacityCredentialId: capacityCredentialChainId,
+      policyHash,
+      circuitVersion: jobCircuitVersion,
+    },
+  });
 
   const factorySecret = secrets.get(factoryChainId.toLowerCase());
   if (factorySecret == null) throw new Error(`No nullifier secret configured for factory ${factoryChainId}`);
@@ -203,7 +237,6 @@ async function generateProof(supabase: ServiceClient, job: Row) {
     oldRandomness,
     1n,
   ]);
-  const storedOldCommitment = BigInt(opening.capacity_commitment);
   if (expectedOldCommitment !== storedOldCommitment) {
     throw new Error("Private opening does not open the mirrored current capacity commitment");
   }
@@ -314,6 +347,26 @@ async function generateProof(supabase: ServiceClient, job: Row) {
   console.log(`Generated PoFC proof for job ${job.id}: ${commitmentHex(newCapacityCommitment)}`);
 }
 
+async function markStaleClaimedJob(
+  supabase: ServiceClient,
+  job: Row,
+  error: StaleCanonicalCapacityError,
+) {
+  await supabase
+    .from("proof_jobs")
+    .update({
+      status: "stale",
+      error_code: "CANONICAL_CAPACITY_STALE",
+      error_detail: error.message.slice(0, 4000),
+      completed_at: new Date().toISOString(),
+      worker_claim_token: null,
+      worker_claimed_at: null,
+    })
+    .eq("id", job.id)
+    .eq("status", "generating")
+    .eq("worker_claim_token", job.worker_claim_token);
+}
+
 async function failClaimedJob(supabase: ServiceClient, job: Row, error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   await supabase
@@ -339,6 +392,11 @@ async function runOnce(supabase: ServiceClient) {
   try {
     await generateProof(supabase, job);
   } catch (error) {
+    if (error instanceof StaleCanonicalCapacityError) {
+      await markStaleClaimedJob(supabase, job, error);
+      console.warn(`Proof job ${job.id} became stale before proving: ${error.message}`);
+      return true;
+    }
     await failClaimedJob(supabase, job, error);
     throw error;
   }
