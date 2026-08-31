@@ -1,0 +1,25 @@
+{
+  "chainId": 2026,
+  "consensus": "qbft",
+  "genesisSha256": "REPLACE_WITH_APPROVED_GENESIS_SHA256",
+  "localNode": "validator-a",
+  "validators": [
+    {
+      "name": "validator-a",
+      "enode": "REPLACE_WITH_VALIDATOR_A_ENODE"
+    },
+    {
+      "name": "validator-b",
+      "enode": "REPLACE_WITH_VALIDATOR_B_ENODE"
+    },
+    {
+      "name": "validator-c",
+      "enode": "REPLACE_WITH_VALIDATOR_C_ENODE"
+    },
+    {
+      "name": "validator-d",
+      "enode": "REPLACE_WITH_VALIDATOR_D_ENODE"
+    }
+  ],
+  "observers": []
+}
