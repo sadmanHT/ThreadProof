@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 const PIPELINE_STATES = ["prepared", "signed", "submitting", "submitted"];
 const PROOF_ACTIVE_STATES = ["queued", "generating", "generated", "submitted"];
 const CERTIFICATION_ACTIVE_STATES = ["prepared", "credential_submitted", "credential_confirmed", "capacity_submitted"];
+const EMPTY_UUID = "00000000-0000-0000-0000-000000000000";
 
 type PipelineItem = {
   key: string;
@@ -100,14 +101,24 @@ function projectedGovernanceState(proposal: { state: string; execute_after: stri
 
 export default async function DashboardPage() {
   const viewer = await requireConsortiumViewer();
-  const primaryMembership = viewer.memberships[0];
-  const perspective = workspaceRole(primaryMembership?.organization.role);
+  const activeMembership = viewer.activeMembership;
+  const activeOrganizationId = activeMembership?.organization_id ?? EMPTY_UUID;
+  const perspective = workspaceRole(activeMembership?.organization.role);
   const copy = roleCopies[perspective];
   const supabase = await createClient();
+
+  const ordersCountBase = supabase.from("purchase_orders").select("id", { count: "exact", head: true });
+  const credentialsCountBase = supabase.from("credentials").select("id", { count: "exact", head: true });
+  const recentOrdersBase = supabase.from("purchase_orders").select("id,external_reference,title,status,updated_at,current_version").order("updated_at", { ascending: false }).limit(6);
+  const authorizationBase = supabase.from("order_authorization_jobs").select("id,purchase_order_id,target_version,status,updated_at").in("status", PIPELINE_STATES).order("updated_at", { ascending: false }).limit(8);
+  const cancellationBase = supabase.from("order_cancellation_jobs").select("id,purchase_order_id,expected_version,status,updated_at").in("status", PIPELINE_STATES).order("updated_at", { ascending: false }).limit(8);
+  const proofBase = supabase.from("proof_jobs").select("id,status,circuit_version,created_at,error_code").order("created_at", { ascending: false }).limit(8);
+  const capacityBase = supabase.from("private_capacity_openings").select("id,status,period_id,process_id,circuit_version,updated_at").order("updated_at", { ascending: false }).limit(8);
+  const certificationBase = supabase.from("capacity_certification_jobs").select("id,status,period_label,process_label,updated_at,factory_organization_id").order("updated_at", { ascending: false }).limit(8);
+
   const [
     ordersCount,
     credentialsCount,
-    proofsCount,
     proposalsCount,
     recentOrders,
     recentEvents,
@@ -119,17 +130,20 @@ export default async function DashboardPage() {
     proposals,
     chain,
   ] = await Promise.all([
-    supabase.from("purchase_orders").select("id", { count: "exact", head: true }),
-    supabase.from("credentials").select("id", { count: "exact", head: true }),
-    supabase.from("proof_jobs").select("id", { count: "exact", head: true }),
+    perspective === "buyer" ? ordersCountBase.eq("buyer_organization_id", activeOrganizationId) : ordersCountBase.eq("id", EMPTY_UUID),
+    perspective === "auditor"
+      ? credentialsCountBase.eq("issuer_organization_id", activeOrganizationId)
+      : perspective === "governance"
+        ? credentialsCountBase
+        : credentialsCountBase.eq("id", EMPTY_UUID),
     supabase.from("governance_proposal_read_model").select("chain_proposal_id", { count: "exact", head: true }),
-    supabase.from("purchase_orders").select("id,external_reference,title,status,updated_at,current_version").order("updated_at", { ascending: false }).limit(6),
+    perspective === "buyer" ? recentOrdersBase.eq("buyer_organization_id", activeOrganizationId) : recentOrdersBase.eq("id", EMPTY_UUID),
     supabase.from("chain_events").select("id,event_name,transaction_hash,block_number,observed_at").order("block_number", { ascending: false }).limit(6),
-    supabase.from("order_authorization_jobs").select("id,purchase_order_id,target_version,status,updated_at").in("status", PIPELINE_STATES).order("updated_at", { ascending: false }).limit(8),
-    supabase.from("order_cancellation_jobs").select("id,purchase_order_id,expected_version,status,updated_at").in("status", PIPELINE_STATES).order("updated_at", { ascending: false }).limit(8),
-    supabase.from("proof_jobs").select("id,status,circuit_version,created_at,error_code").order("created_at", { ascending: false }).limit(8),
-    supabase.from("private_capacity_openings").select("id,status,period_id,process_id,circuit_version,updated_at").order("updated_at", { ascending: false }).limit(8),
-    supabase.from("capacity_certification_jobs").select("id,status,period_label,process_label,updated_at,factory_organization_id").order("updated_at", { ascending: false }).limit(8),
+    perspective === "buyer" ? authorizationBase.eq("buyer_organization_id", activeOrganizationId) : authorizationBase.eq("buyer_organization_id", EMPTY_UUID),
+    perspective === "buyer" ? cancellationBase.eq("buyer_organization_id", activeOrganizationId) : cancellationBase.eq("buyer_organization_id", EMPTY_UUID),
+    perspective === "factory" ? proofBase.eq("factory_organization_id", activeOrganizationId) : proofBase.eq("id", EMPTY_UUID),
+    perspective === "factory" ? capacityBase.eq("factory_organization_id", activeOrganizationId) : capacityBase.eq("id", EMPTY_UUID),
+    perspective === "auditor" ? certificationBase.eq("auditor_organization_id", activeOrganizationId) : certificationBase.eq("id", EMPTY_UUID),
     supabase.from("governance_proposal_read_model").select("chain_proposal_id,proposal_type,state,approvals_received,approvals_required,execute_after,expires_at,updated_at").order("updated_at", { ascending: false }).limit(8),
     getBlockchainStatus(),
   ]);
@@ -168,40 +182,40 @@ export default async function DashboardPage() {
 
   const roleStats = perspective === "buyer"
     ? [
-        ["Visible orders", ordersCount.count ?? 0, "relationship-scoped portfolio"],
+        ["Organization orders", ordersCount.count ?? 0, "active buyer portfolio"],
         ["Recent private drafts", draftOrders, "awaiting buyer authorization"],
         ["Actions in flight", pipeline.length, "EIP-712 → OrderRegistry"],
-        ["Feasible / accepted", feasibleOrders, "recent visible orders"],
+        ["Feasible / accepted", feasibleOrders, "recent active-org orders"],
       ] as const
     : perspective === "factory"
       ? [
-          ["Active capacity states", activeCapacity, "current private openings"],
-          ["Proofs in progress", activeProofs, "queued through submitted"],
+          ["Active capacity states", activeCapacity, "selected factory openings"],
+          ["Proofs in progress", activeProofs, "selected factory jobs"],
           ["Proof attention", proofAttention, "failed or stale"],
-          ["Recertification needed", capacityAttention, "visible capacity states"],
+          ["Recertification needed", capacityAttention, "selected factory states"],
         ] as const
       : perspective === "auditor"
         ? [
-            ["Certification in progress", activeCertification, "staged chain reconciliation"],
+            ["Certification in progress", activeCertification, "selected auditor queue"],
             ["Certification attention", certificationAttention, "failed staging jobs"],
-            ["Credentials", credentialsCount.count ?? 0, "consortium-visible metadata"],
-            ["Governance proposals", proposalsCount.count ?? 0, "Charter read model"],
+            ["Credentials issued", credentialsCount.count ?? 0, "selected auditor provenance"],
+            ["Governance proposals", proposalsCount.count ?? 0, "consortium-wide Charter state"],
           ] as const
         : [
             ["Governance proposals", proposalsCount.count ?? 0, "indexed Charter state"],
             ["Pending / timelocked", pendingGovernance, "due process underway"],
             ["Executable", executableGovernance, "threshold + timelock satisfied"],
-            ["Credentials", credentialsCount.count ?? 0, "authorization metadata"],
+            ["Credentials", credentialsCount.count ?? 0, "consortium authorization metadata"],
           ] as const;
 
   return (
     <div className={`workspace-page dashboard-page role-workspace role-${perspective}`}>
       <header className="role-workspace-hero">
         <div className="role-workspace-copy">
-          <div className="role-context"><span className="kicker">{copy.eyebrow}</span>{primaryMembership ? <span className="role-org-pill">{primaryMembership.organization.display_name}</span> : null}</div>
+          <div className="role-context"><span className="kicker">{copy.eyebrow}</span>{activeMembership ? <span className="role-org-pill">{activeMembership.organization.display_name}</span> : null}</div>
           <h1>{copy.title}</h1>
           <p>{copy.body}</p>
-          <div className="role-access-row"><span>{roles || "Consortium member"}</span><i aria-hidden="true" /> <span>{primaryMembership ? titleCase(primaryMembership.member_role) : "Viewer"}</span></div>
+          <div className="role-access-row"><span>{roles || "Consortium member"}</span><i aria-hidden="true" /> <span>{activeMembership ? titleCase(activeMembership.member_role) : "Viewer"}</span></div>
         </div>
         <div className="role-trust-card"><span className="kicker">AUTHORITY BOUNDARY</span><strong>{copy.principle}</strong><div className={`chain-pill ${chain.online ? "online" : "offline"}`}><span />{chain.configured ? (chain.online ? `Network online · block ${chain.blockNumber}` : "Network unavailable") : "RPC not configured"}</div></div>
       </header>
@@ -215,17 +229,17 @@ export default async function DashboardPage() {
       </section>
 
       {perspective === "buyer" ? <section className="dashboard-grid role-dashboard-grid">
-        <article className="panel activity-panel"><div className="panel-heading"><div><span className="kicker">ORDER PORTFOLIO</span><h2>Recent buyer work</h2></div><Link href="/app/orders">View all →</Link></div>{(recentOrders.data ?? []).length ? <div className="record-list">{(recentOrders.data ?? []).map((order) => <Link className="record-row" href={`/app/orders/${order.id}`} key={order.id}><div><strong>{order.title || order.external_reference}</strong><span>{order.external_reference} · version {order.current_version} · updated {formatDate(order.updated_at)}</span></div><StatusBadge value={order.status} /></Link>)}</div> : <div className="empty-state"><strong>No visible orders yet</strong><span>Create a private draft when an active factory counterparty is ready.</span></div>}</article>
-        <article className="panel activity-panel"><div className="panel-heading"><div><span className="kicker">BUYER SIGNATURE PIPELINE</span><h2>Actions in flight</h2></div><Link href="/app/orders">Open orders →</Link></div>{pipeline.length ? <div className="record-list">{pipeline.map((item) => <Link className="record-row" href={`/app/orders/${item.orderId}`} key={item.key}><div><strong>{item.label}</strong><span>{item.detail} · updated {formatDate(item.updatedAt)}</span></div><StatusBadge value={item.status} /></Link>)}</div> : <div className="empty-state"><strong>No buyer transactions in flight</strong><span>Prepared, signed, relaying and submitted order actions appear here until canonical chain events reconcile them.</span></div>}</article>
+        <article className="panel activity-panel"><div className="panel-heading"><div><span className="kicker">ORDER PORTFOLIO</span><h2>Recent buyer work</h2></div><Link href="/app/orders">View all →</Link></div>{(recentOrders.data ?? []).length ? <div className="record-list">{(recentOrders.data ?? []).map((order) => <Link className="record-row" href={`/app/orders/${order.id}`} key={order.id}><div><strong>{order.title || order.external_reference}</strong><span>{order.external_reference} · version {order.current_version} · updated {formatDate(order.updated_at)}</span></div><StatusBadge value={order.status} /></Link>)}</div> : <div className="empty-state"><strong>No orders in this buyer context</strong><span>Create a private draft when an active factory counterparty is ready.</span></div>}</article>
+        <article className="panel activity-panel"><div className="panel-heading"><div><span className="kicker">BUYER SIGNATURE PIPELINE</span><h2>Actions in flight</h2></div><Link href="/app/orders">Open orders →</Link></div>{pipeline.length ? <div className="record-list">{pipeline.map((item) => <Link className="record-row" href={`/app/orders/${item.orderId}`} key={item.key}><div><strong>{item.label}</strong><span>{item.detail} · updated {formatDate(item.updatedAt)}</span></div><StatusBadge value={item.status} /></Link>)}</div> : <div className="empty-state"><strong>No buyer transactions in flight</strong><span>Only staging jobs owned by the selected buyer organization appear here.</span></div>}</article>
       </section> : null}
 
       {perspective === "factory" ? <section className="dashboard-grid role-dashboard-grid">
-        <article className="panel activity-panel"><div className="panel-heading"><div><span className="kicker">PRIVATE CAPACITY STATE</span><h2>Recent openings</h2></div><Link href="/app/capacity">Capacity →</Link></div>{(capacityOpenings.data ?? []).length ? <div className="record-list">{(capacityOpenings.data ?? []).map((opening) => <Link className="record-row" href="/app/capacity" key={opening.id}><div><strong>{opening.period_id} · {titleCase(opening.process_id)}</strong><span>circuit v{opening.circuit_version} · updated {formatDate(opening.updated_at)}</span></div><StatusBadge value={opening.status} /></Link>)}</div> : <div className="empty-state"><strong>No private capacity openings visible</strong><span>Capacity appears only after an auditor-backed certification is reconciled to a matching on-chain event.</span></div>}</article>
-        <article className="panel activity-panel"><div className="panel-heading"><div><span className="kicker">ZERO-KNOWLEDGE EXECUTION</span><h2>Recent proof jobs</h2></div><Link href="/app/proofs">Proofs →</Link></div>{(proofJobs.data ?? []).length ? <div className="record-list">{(proofJobs.data ?? []).map((job) => <Link className="record-row" href="/app/proofs" key={job.id}><div><strong>PoFC · circuit v{job.circuit_version}</strong><span>{job.error_code ? `${job.error_code} · ` : ""}created {formatDate(job.created_at)}</span></div><StatusBadge value={job.status} /></Link>)}</div> : <div className="empty-state"><strong>No proof jobs visible</strong><span>Queue Proof-of-Feasible-Capacity only after an authorized order version and active private opening are both available.</span></div>}</article>
+        <article className="panel activity-panel"><div className="panel-heading"><div><span className="kicker">PRIVATE CAPACITY STATE</span><h2>Recent openings</h2></div><Link href="/app/capacity">Capacity →</Link></div>{(capacityOpenings.data ?? []).length ? <div className="record-list">{(capacityOpenings.data ?? []).map((opening) => <Link className="record-row" href="/app/capacity" key={opening.id}><div><strong>{opening.period_id} · {titleCase(opening.process_id)}</strong><span>circuit v{opening.circuit_version} · updated {formatDate(opening.updated_at)}</span></div><StatusBadge value={opening.status} /></Link>)}</div> : <div className="empty-state"><strong>No private capacity openings in this factory context</strong><span>Capacity appears only after an auditor-backed certification is reconciled to a matching on-chain event.</span></div>}</article>
+        <article className="panel activity-panel"><div className="panel-heading"><div><span className="kicker">ZERO-KNOWLEDGE EXECUTION</span><h2>Recent proof jobs</h2></div><Link href="/app/proofs">Proofs →</Link></div>{(proofJobs.data ?? []).length ? <div className="record-list">{(proofJobs.data ?? []).map((job) => <Link className="record-row" href="/app/proofs" key={job.id}><div><strong>PoFC · circuit v{job.circuit_version}</strong><span>{job.error_code ? `${job.error_code} · ` : ""}created {formatDate(job.created_at)}</span></div><StatusBadge value={job.status} /></Link>)}</div> : <div className="empty-state"><strong>No proof jobs in this factory context</strong><span>Queue Proof-of-Feasible-Capacity only after an authorized order version and active private opening are both available to the selected factory.</span></div>}</article>
       </section> : null}
 
       {perspective === "auditor" ? <section className="dashboard-grid role-dashboard-grid">
-        <article className="panel activity-panel"><div className="panel-heading"><div><span className="kicker">CAPACITY CERTIFICATION</span><h2>Reconciliation queue</h2></div><Link href="/app/capacity">Certification →</Link></div>{(certificationJobs.data ?? []).length ? <div className="record-list">{(certificationJobs.data ?? []).map((job) => <Link className="record-row" href="/app/capacity" key={job.id}><div><strong>{job.period_label} · {titleCase(job.process_label)}</strong><span>updated {formatDate(job.updated_at)}</span></div><StatusBadge value={job.status} /></Link>)}</div> : <div className="empty-state"><strong>No certification jobs visible</strong><span>Prepared and reconciled certification work appears here without disclosing the factory's exact capacity.</span></div>}</article>
+        <article className="panel activity-panel"><div className="panel-heading"><div><span className="kicker">CAPACITY CERTIFICATION</span><h2>Reconciliation queue</h2></div><Link href="/app/capacity">Certification →</Link></div>{(certificationJobs.data ?? []).length ? <div className="record-list">{(certificationJobs.data ?? []).map((job) => <Link className="record-row" href="/app/capacity" key={job.id}><div><strong>{job.period_label} · {titleCase(job.process_label)}</strong><span>updated {formatDate(job.updated_at)}</span></div><StatusBadge value={job.status} /></Link>)}</div> : <div className="empty-state"><strong>No certification jobs in this auditor context</strong><span>Only certification work owned by the selected auditor organization appears here.</span></div>}</article>
         <article className="panel activity-panel"><div className="panel-heading"><div><span className="kicker">AUDITOR DUTY</span><h2>What this role attests</h2></div><Link href="/app/credentials">Credentials →</Link></div><div className="role-duty-list"><div><span>01</span><p><strong>Assess off-chain evidence.</strong><small>Physical-world methodology remains an auditor responsibility, not a blockchain inference.</small></p></div><div><span>02</span><p><strong>Issue attributable credential state.</strong><small>CredentialRegistry records who issued it, its scope and whether it remains authorized.</small></p></div><div><span>03</span><p><strong>Bind confidential capacity to a commitment.</strong><small>The exact opening stays encrypted while the commitment becomes verifiable protocol state.</small></p></div></div></article>
       </section> : null}
 
@@ -239,7 +253,7 @@ export default async function DashboardPage() {
         {(recentEvents.data ?? []).length ? <div className="chain-event-grid">{(recentEvents.data ?? []).map((event) => <div className="chain-event-card" key={event.id}><span className="event-dot" /><div><strong>{titleCase(event.event_name)}</strong><span>Block {event.block_number}</span></div><code>{shortHash(event.transaction_hash)}</code></div>)}</div> : <div className="empty-state"><strong>No indexed events</strong><span>The indexer read model is empty. Direct chain validation remains required for critical writes.</span></div>}
       </section>
 
-      <section className="protocol-banner"><div><span className="kicker">ALL MEMBERSHIPS</span><h2>{roles || "Consortium member"}</h2></div><p>This page is composed around your primary organization perspective. Additional memberships can broaden visible workflows, but RLS and on-chain organization authority still decide what data and actions are actually available.</p></section>
+      <section className="protocol-banner"><div><span className="kicker">ACTIVE ORGANIZATION</span><h2>{activeMembership?.organization.display_name ?? "Consortium member"}</h2></div><p>Operational cards and mutations are scoped to this selected membership. Other memberships do not bleed into the current workspace; switching context is explicit. RLS, signatures and on-chain organization authority still determine what is actually permitted.</p></section>
     </div>
   );
 }
