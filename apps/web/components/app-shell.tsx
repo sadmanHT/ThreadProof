@@ -3,46 +3,87 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import * as Tooltip from "@radix-ui/react-tooltip";
+import clsx from "clsx";
+import {
+  ArrowRight,
+  BadgeCheck,
+  BrainCircuit,
+  Building2,
+  Command,
+  FileText,
+  Gauge,
+  GitBranch,
+  Landmark,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Network,
+  Search,
+  Settings,
+  ShieldCheck,
+  SlidersHorizontal,
+  Users,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 
-type IconName = "overview" | "orders" | "intelligence" | "credentials" | "capacity" | "proofs" | "governance" | "chain" | "team" | "settings" | "menu" | "close" | "arrow" | "shield";
-type NavItem = { href: string; label: string; icon: IconName; section: "workspace" | "organization"; roles?: readonly string[] };
+type IconName =
+  | "overview"
+  | "orders"
+  | "intelligence"
+  | "credentials"
+  | "capacity"
+  | "proofs"
+  | "governance"
+  | "chain"
+  | "team"
+  | "settings"
+  | "subcontracts"
+  | "audit";
+
+type NavItem = {
+  href: string;
+  label: string;
+  description: string;
+  icon: IconName;
+  section: "workspace" | "organization";
+  roles?: readonly string[];
+};
+
+const iconMap: Record<IconName, LucideIcon> = {
+  overview: LayoutDashboard,
+  orders: FileText,
+  intelligence: BrainCircuit,
+  credentials: BadgeCheck,
+  capacity: Gauge,
+  proofs: ShieldCheck,
+  governance: Landmark,
+  chain: Network,
+  team: Users,
+  settings: Settings,
+  subcontracts: GitBranch,
+  audit: SlidersHorizontal,
+};
 
 const governanceRoles = ["buyer", "factory", "auditor", "regulator", "industry", "labor_representative", "independent"] as const;
-const nav: readonly NavItem[] = [
-  { href: "/app", label: "Overview", icon: "overview", section: "workspace" },
-  { href: "/app/orders", label: "Orders", icon: "orders", section: "workspace", roles: ["buyer", "factory"] },
-  { href: "/app/capacity", label: "Capacity", icon: "capacity", section: "workspace", roles: ["factory", "auditor"] },
-  { href: "/app/proofs", label: "Proofs", icon: "proofs", section: "workspace", roles: ["buyer", "factory", "auditor"] },
-  { href: "/app/credentials", label: "Credentials", icon: "credentials", section: "workspace" },
-  { href: "/app/subcontracts", label: "Subcontracts", icon: "chain", section: "workspace", roles: ["buyer", "factory"] },
-  { href: "/app/organizations", label: "Organizations", icon: "team", section: "workspace" },
-  { href: "/app/governance", label: "Governance", icon: "governance", section: "workspace", roles: governanceRoles },
-  { href: "/app/audit", label: "Audit trail", icon: "orders", section: "workspace" },
-  { href: "/app/chain", label: "Network", icon: "chain", section: "workspace" },
-  { href: "/app/intelligence", label: "Intelligence", icon: "intelligence", section: "workspace" },
-  { href: "/app/team", label: "Team", icon: "team", section: "organization" },
-  { href: "/app/settings", label: "Settings", icon: "settings", section: "organization" },
-];
 
-function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
-  const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
-  switch (name) {
-    case "overview": return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>;
-    case "orders": return <svg {...common}><path d="M7 3h10l3 3v15H4V6l3-3Z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>;
-    case "intelligence": return <svg {...common}><path d="M12 3a6 6 0 0 0-3.7 10.7c.8.6 1.2 1.4 1.2 2.3h5c0-.9.4-1.7 1.2-2.3A6 6 0 0 0 12 3Z"/><path d="M9.5 20h5M9.5 17h5M12 1v1M4.2 5.2l1.4 1.4M19.8 5.2l-1.4 1.4"/></svg>;
-    case "credentials": return <svg {...common}><path d="M6 3h12v18H6z"/><path d="M9 7h6M9 11h6"/><path d="m9 16 2 2 4-4"/></svg>;
-    case "capacity": return <svg {...common}><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/><path d="m3 7 6-4 6 6 6-5"/></svg>;
-    case "proofs": return <svg {...common}><path d="M12 2 4.5 5v6c0 5 3.2 8.8 7.5 11 4.3-2.2 7.5-6 7.5-11V5L12 2Z"/><path d="m8.5 12 2.3 2.3 4.7-5"/></svg>;
-    case "governance": return <svg {...common}><path d="M3 10h18M5 10V8l7-4 7 4v2M5 20h14M7 10v7M12 10v7M17 10v7"/></svg>;
-    case "chain": return <svg {...common}><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>;
-    case "team": return <svg {...common}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
-    case "settings": return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>;
-    case "menu": return <svg {...common}><path d="M4 7h16M4 12h16M4 17h16"/></svg>;
-    case "close": return <svg {...common}><path d="m6 6 12 12M18 6 6 18"/></svg>;
-    case "arrow": return <svg {...common}><path d="M5 12h14M14 7l5 5-5 5"/></svg>;
-    case "shield": return <svg {...common}><path d="M12 2 4.5 5v6c0 5 3.2 8.8 7.5 11 4.3-2.2 7.5-6 7.5-11V5L12 2Z"/><path d="M9.5 12.2 11 13.7l3.6-3.8"/></svg>;
-  }
-}
+const nav: readonly NavItem[] = [
+  { href: "/app", label: "Overview", description: "Role-aware operational summary", icon: "overview", section: "workspace" },
+  { href: "/app/orders", label: "Orders", description: "Private commercial workflow and canonical versions", icon: "orders", section: "workspace", roles: ["buyer", "factory"] },
+  { href: "/app/capacity", label: "Capacity", description: "Certified private capacity commitments", icon: "capacity", section: "workspace", roles: ["factory", "auditor"] },
+  { href: "/app/proofs", label: "Proofs", description: "Proof-of-Feasible-Capacity execution", icon: "proofs", section: "workspace", roles: ["buyer", "factory", "auditor"] },
+  { href: "/app/credentials", label: "Credentials", description: "Consortium authorization evidence", icon: "credentials", section: "workspace" },
+  { href: "/app/subcontracts", label: "Subcontracts", description: "Authorized parent-child production paths", icon: "subcontracts", section: "workspace", roles: ["buyer", "factory"] },
+  { href: "/app/organizations", label: "Organizations", description: "Consortium identity directory", icon: "team", section: "workspace" },
+  { href: "/app/governance", label: "Governance", description: "Charter proposals, thresholds and timelocks", icon: "governance", section: "workspace", roles: governanceRoles },
+  { href: "/app/audit", label: "Audit trail", description: "Indexed canonical protocol evidence", icon: "audit", section: "workspace" },
+  { href: "/app/chain", label: "Network", description: "Besu network and contract status", icon: "chain", section: "workspace" },
+  { href: "/app/intelligence", label: "Intelligence", description: "Non-authoritative investigation assistance", icon: "intelligence", section: "workspace" },
+  { href: "/app/team", label: "Team", description: "Organization membership and access", icon: "team", section: "organization" },
+  { href: "/app/settings", label: "Settings", description: "Profile and workspace preferences", icon: "settings", section: "organization" },
+];
 
 function initials(value: string) {
   return value.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "TP";
@@ -70,25 +111,185 @@ type Props = {
 export function AppShell({ children, organizationName, organizationRole, memberRole, roleKeys, userName, email }: Props) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState("");
   const currentPage = useMemo(() => pageName(pathname), [pathname]);
   const visibleNav = useMemo(() => nav.filter((item) => !item.roles || item.roles.some((role) => roleKeys.includes(role))), [roleKeys]);
-  useEffect(() => setMobileOpen(false), [pathname]);
+  const commands = useMemo(() => {
+    const query = paletteQuery.trim().toLowerCase();
+    if (!query) return visibleNav;
+    return visibleNav.filter((item) => `${item.label} ${item.description}`.toLowerCase().includes(query));
+  }, [paletteQuery, visibleNav]);
+
+  useEffect(() => {
+    setMobileOpen(false);
+    setPaletteOpen(false);
+    setPaletteQuery("");
+  }, [pathname]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.tagName === "SELECT" || target?.isContentEditable;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((current) => !current);
+      } else if (!typing && event.key === "/") {
+        event.preventDefault();
+        setPaletteOpen(true);
+      } else if (event.key === "Escape") {
+        setPaletteOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const renderNav = (section: NavItem["section"]) => visibleNav.filter((item) => item.section === section).map((item) => {
     const active = isActive(pathname, item.href);
-    return <Link key={item.href} href={item.href} className={active ? "active" : undefined} aria-current={active ? "page" : undefined}><span className="nav-icon"><Icon name={item.icon} /></span><span>{item.label}</span>{active ? <span className="nav-active-dot" /> : null}</Link>;
+    const Icon = iconMap[item.icon];
+    return (
+      <Tooltip.Root key={item.href}>
+        <Tooltip.Trigger asChild>
+          <Link href={item.href} className={clsx("sidebar-link", active && "active")} aria-current={active ? "page" : undefined}>
+            <span className="nav-icon"><Icon size={17} strokeWidth={1.8} /></span>
+            <span className="sidebar-link-copy"><strong>{item.label}</strong><small>{item.description}</small></span>
+            <span className="nav-active-rail" aria-hidden="true" />
+          </Link>
+        </Tooltip.Trigger>
+        <Tooltip.Portal>
+          <Tooltip.Content className="tp-tooltip" side="right" sideOffset={10} collisionPadding={12}>
+            <strong>{item.label}</strong>
+            <span>{item.description}</span>
+            <Tooltip.Arrow className="tp-tooltip-arrow" />
+          </Tooltip.Content>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+    );
   });
 
   return (
-    <div className="app-frame">
-      <button className={`sidebar-backdrop ${mobileOpen ? "visible" : ""}`} aria-label="Close navigation" onClick={() => setMobileOpen(false)} />
-      <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
-        <div className="sidebar-head"><Link href="/app" className="sidebar-brand"><span className="brand-mark"><Icon name="shield" size={19} /></span><span><strong>ThreadProof</strong><small>Consortium protocol</small></span></Link><button className="sidebar-close" type="button" aria-label="Close navigation" onClick={() => setMobileOpen(false)}><Icon name="close" /></button></div>
-        <div className="sidebar-section-label">Workspace</div><nav className="sidebar-nav" aria-label="Product navigation">{renderNav("workspace")}</nav>
-        <div className="sidebar-section-label sidebar-secondary-label">Organization</div><nav className="sidebar-nav" aria-label="Organization navigation">{renderNav("organization")}</nav>
-        <div className="sidebar-footer">{organizationName ? <div className="org-card"><span className="avatar org-avatar">{initials(organizationName)}</span><div><strong>{organizationName}</strong><small>{[organizationRole, memberRole].filter(Boolean).join(" · ")}</small></div></div> : null}<div className="user-card"><span className="avatar">{initials(userName || email)}</span><div><strong>{userName || email}</strong><small>{email}</small></div></div><form action="/auth/signout" method="post"><button className="sidebar-signout" type="submit"><span>Sign out</span><Icon name="arrow" size={15} /></button></form></div>
-      </aside>
-      <div className="app-content"><header className="mobile-appbar"><button className="mobile-menu" type="button" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Icon name="menu" /></button><div><small>ThreadProof</small><strong>{currentPage}</strong></div><span className="avatar compact-avatar">{initials(userName || email)}</span></header><main className="app-main">{children}</main></div>
-    </div>
+    <Tooltip.Provider delayDuration={420} skipDelayDuration={120}>
+      <div className="app-frame premium-product-shell">
+        <button className={clsx("sidebar-backdrop", mobileOpen && "visible")} aria-label="Close navigation" onClick={() => setMobileOpen(false)} />
+        <aside className={clsx("sidebar", mobileOpen && "open")}>
+          <div className="sidebar-head">
+            <Link href="/app" className="sidebar-brand">
+              <span className="brand-mark"><ShieldCheck size={19} strokeWidth={1.9} /></span>
+              <span><strong>ThreadProof</strong><small>Production assurance</small></span>
+            </Link>
+            <button className="sidebar-close" type="button" aria-label="Close navigation" onClick={() => setMobileOpen(false)}><X size={18} /></button>
+          </div>
+
+          <button className="sidebar-command" type="button" onClick={() => setPaletteOpen(true)} aria-label="Search workspace">
+            <Search size={15} />
+            <span>Search workspace</span>
+            <kbd><Command size={11} />K</kbd>
+          </button>
+
+          <div className="sidebar-section-label">Workspace</div>
+          <nav className="sidebar-nav" aria-label="Product navigation">{renderNav("workspace")}</nav>
+          <div className="sidebar-section-label sidebar-secondary-label">Organization</div>
+          <nav className="sidebar-nav" aria-label="Organization navigation">{renderNav("organization")}</nav>
+
+          <div className="sidebar-footer">
+            {organizationName ? (
+              <div className="org-card premium-org-card">
+                <span className="avatar org-avatar">{initials(organizationName)}</span>
+                <div><strong>{organizationName}</strong><small>{[organizationRole, memberRole].filter(Boolean).join(" · ")}</small></div>
+              </div>
+            ) : null}
+            <div className="user-card premium-user-card">
+              <span className="avatar">{initials(userName || email)}</span>
+              <div><strong>{userName || email}</strong><small>{email}</small></div>
+            </div>
+            <form action="/auth/signout" method="post">
+              <button className="sidebar-signout" type="submit"><span>Sign out</span><LogOut size={14} /></button>
+            </form>
+          </div>
+        </aside>
+
+        <div className="app-content">
+          <header className="desktop-appbar">
+            <div className="desktop-appbar-title">
+              <span>{organizationName ?? "Consortium workspace"}</span>
+              <strong>{currentPage}</strong>
+            </div>
+            <div className="desktop-appbar-actions">
+              <button className="topbar-search" type="button" onClick={() => setPaletteOpen(true)}>
+                <Search size={14} /><span>Search</span><kbd><Command size={10} />K</kbd>
+              </button>
+              <span className="protocol-guard"><ShieldCheck size={14} /><span>Chain-enforced authority</span></span>
+            </div>
+          </header>
+
+          <header className="mobile-appbar">
+            <button className="mobile-menu" type="button" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Menu size={19} /></button>
+            <div><small>{organizationName ?? "ThreadProof"}</small><strong>{currentPage}</strong></div>
+            <button className="mobile-search" type="button" aria-label="Search workspace" onClick={() => setPaletteOpen(true)}><Search size={17} /></button>
+          </header>
+
+          <motion.main
+            className="app-main"
+            key={pathname}
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {children}
+          </motion.main>
+        </div>
+
+        <AnimatePresence>
+          {paletteOpen ? (
+            <motion.div
+              className="command-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.14 }}
+              onMouseDown={() => setPaletteOpen(false)}
+            >
+              <motion.section
+                className="command-palette"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Workspace search"
+                initial={{ opacity: 0, y: -10, scale: 0.985 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -8, scale: 0.985 }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="command-search-row">
+                  <Search size={18} />
+                  <input
+                    autoFocus
+                    value={paletteQuery}
+                    onChange={(event) => setPaletteQuery(event.target.value)}
+                    placeholder="Search pages and workflows…"
+                    aria-label="Search pages and workflows"
+                  />
+                  <kbd>ESC</kbd>
+                </div>
+                <div className="command-results" role="listbox">
+                  {commands.length ? commands.map((item) => {
+                    const Icon = iconMap[item.icon];
+                    return (
+                      <Link className="command-result" href={item.href} key={item.href} onClick={() => setPaletteOpen(false)}>
+                        <span className="command-result-icon"><Icon size={17} /></span>
+                        <span><strong>{item.label}</strong><small>{item.description}</small></span>
+                        <ArrowRight size={15} />
+                      </Link>
+                    );
+                  }) : <div className="command-empty"><Search size={20} /><strong>No matching workspace</strong><span>Try an order, proof, credential, governance, or network term.</span></div>}
+                </div>
+                <footer className="command-footer"><span><kbd>↑</kbd><kbd>↓</kbd> browse</span><span><kbd>↵</kbd> open</span><span>Authority remains enforced by RLS and chain state.</span></footer>
+              </motion.section>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </div>
+    </Tooltip.Provider>
   );
 }
