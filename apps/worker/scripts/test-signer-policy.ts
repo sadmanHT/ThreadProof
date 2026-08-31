@@ -91,4 +91,28 @@ for (const forbidden of [
   );
 }
 
-console.log("Production signer and proof-process boundary checks passed");
+const signerSource = readFileSync(new URL("../src/signer.ts", import.meta.url), "utf8");
+for (const required of ["eth_chainId", "getAddresses", "Remote signer downstream chain ID"]) {
+  assert.ok(signerSource.includes(required), `Remote signer must enforce ${required}`);
+}
+
+const proofSubmitterSource = readFileSync(new URL("../src/proof-submitter.ts", import.meta.url), "utf8");
+for (const forbidden of [
+  "private_capacity_openings",
+  "capacity_allocations",
+  "proof_job_private_state",
+  "next_capacity_ciphertext",
+  "next_randomness_ciphertext",
+]) {
+  assert.equal(
+    proofSubmitterSource.includes(forbidden),
+    false,
+    `Proof submitter must not finalize private mirror state directly: ${forbidden}`,
+  );
+}
+assert.ok(
+  proofSubmitterSource.includes("waiting for canonical event indexing"),
+  "Proof submitter must leave successful private-state reconciliation to the canonical event indexer",
+);
+
+console.log("Production signer, proof-process, and event-recovery boundary checks passed");

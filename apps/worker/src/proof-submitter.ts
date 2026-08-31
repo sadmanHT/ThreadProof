@@ -84,77 +84,6 @@ async function releaseForSignerRetry(supabase: ServiceClient, job: Row, error: R
     .eq("worker_claim_token", job.worker_claim_token);
 }
 
-async function finalizeConfirmedSpend(
-  supabase: ServiceClient,
-  job: Row,
-  txHash: Hex,
-  blockNumber: bigint,
-  publicSignals: string[],
-) {
-  const { data: privateState, error: privateStateError } = await supabase
-    .from("proof_job_private_state")
-    .select("*")
-    .eq("proof_job_id", job.id)
-    .single();
-  if (privateStateError) throw privateStateError;
-
-  const [oldCommitment, newCommitment, orderCommitment, nullifier] = publicSignals.slice(5).map(BigInt);
-  if (oldCommitment == null || newCommitment == null || orderCommitment == null || nullifier == null) {
-    throw new Error("Confirmed proof is missing capacity public signals");
-  }
-
-  const block = Number(blockNumber);
-  if (!Number.isSafeInteger(block)) throw new Error("Block number exceeds JavaScript safe integer range");
-  const confirmedAt = new Date().toISOString();
-
-  const { data: updatedOpening, error: openingError } = await supabase
-    .from("private_capacity_openings")
-    .update({
-      capacity_commitment: newCommitment.toString(),
-      encrypted_remaining_capacity: privateState.next_capacity_ciphertext,
-      encrypted_randomness: privateState.next_randomness_ciphertext,
-      last_chain_block: block,
-      status: "active",
-      updated_at: confirmedAt,
-    })
-    .eq("id", job.capacity_opening_id)
-    .eq("capacity_commitment", oldCommitment.toString())
-    .select("id")
-    .maybeSingle();
-  if (openingError) throw openingError;
-  if (!updatedOpening) throw new Error("Private capacity mirror no longer opens the confirmed old commitment");
-
-  const { error: allocationError } = await supabase.from("capacity_allocations").upsert({
-    capacity_opening_id: job.capacity_opening_id,
-    order_version_id: job.order_version_id,
-    old_commitment: oldCommitment.toString(),
-    new_commitment: newCommitment.toString(),
-    order_commitment: orderCommitment.toString(),
-    nullifier: nullifier.toString(),
-    chain_tx_hash: txHash,
-    chain_block_number: block,
-    confirmed_at: confirmedAt,
-  }, { onConflict: "chain_tx_hash", ignoreDuplicates: true });
-  if (allocationError) throw allocationError;
-
-  const { error: jobError } = await supabase
-    .from("proof_jobs")
-    .update({
-      status: "confirmed",
-      chain_tx_hash: txHash,
-      chain_block_number: block,
-      completed_at: confirmedAt,
-      error_code: null,
-      error_detail: null,
-      worker_claim_token: null,
-      worker_claimed_at: null,
-    })
-    .eq("id", job.id);
-  if (jobError) throw jobError;
-
-  await supabase.from("proof_job_private_state").delete().eq("proof_job_id", job.id);
-}
-
 async function submit(supabase: ServiceClient, job: Row) {
   const env = getProofSubmitterEnv();
   const stored = job.public_inputs as { signals?: unknown; request?: Record<string, unknown> } | null;
@@ -219,17 +148,31 @@ async function submit(supabase: ServiceClient, job: Row) {
     if (submittedError) throw submittedError;
 
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
-    if (receipt.status !== "success") throw new Error(`Capacity spend transaction reverted: ${txHash}`);
-    await finalizeConfirmedSpend(supabase, job, txHash, receipt.blockNumber, publicSignals);
-    console.log(`Confirmed PoFC spend for job ${job.id} in block ${receipt.blockNumber}`);
+    if (receipt.status !== "success") {
+      await supabase.from("proof_jobs").update({
+        status: "failed",
+        chain_block_number: Number(receipt.blockNumber),
+        completed_at: new Date().toISOString(),
+        error_code: "CHAIN_TRANSACTION_REVERTED",
+        error_detail: `CapacityVault transaction reverted: ${txHash}`,
+        worker_claim_token: null,
+        worker_claimed_at: null,
+      }).eq("id", job.id).eq("chain_tx_hash", txHash);
+      return;
+    }
+
+    // Do not materialize the next private opening here. The CapacitySpent event projection is
+    // the crash-recovery boundary and will atomically reconcile the encrypted next state.
+    console.log(`Observed successful PoFC spend ${txHash}; waiting for canonical event indexing for job ${job.id}`);
   } catch (error) {
-    if (error instanceof RelayerSignerUnavailableError) {
+    if (error instanceof RelayerSignerUnavailableError && !txHash) {
       await releaseForSignerRetry(supabase, job, error);
       return;
     }
 
     if (txHash) {
-      // Once a transaction hash exists, leave the job submitted so the canonical event indexer can settle it.
+      // Once a transaction hash exists, leave the job submitted so the canonical event indexer
+      // can settle it even if this process lost RPC connectivity after broadcast.
       await supabase.from("proof_jobs").update({
         status: "submitted",
         chain_tx_hash: txHash,

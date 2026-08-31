@@ -50,15 +50,22 @@ export async function createRelayerWallet(env: SignerEnv, chainId: number) {
       transport: http(signerUrl, { timeout: 8_000 }),
     });
 
-    let addresses: readonly Address[];
     try {
-      addresses = await wallet.getAddresses();
-    } catch {
-      throw new RelayerSignerUnavailableError("Remote signer is unreachable or rejected eth_accounts.");
-    }
+      const remoteChainIdHex = await wallet.request({ method: "eth_chainId" });
+      const remoteChainId = Number(BigInt(remoteChainIdHex));
+      if (!Number.isSafeInteger(remoteChainId) || remoteChainId !== chainId) {
+        throw new RelayerSignerUnavailableError(
+          `Remote signer downstream chain ID ${remoteChainId} does not match canonical chain ID ${chainId}.`,
+        );
+      }
 
-    if (!addresses.some((candidate) => candidate.toLowerCase() === account.toLowerCase())) {
-      throw new RelayerSignerUnavailableError("Configured relayer address is not available from the remote signer.");
+      const addresses = await wallet.getAddresses();
+      if (!addresses.some((candidate) => candidate.toLowerCase() === account.toLowerCase())) {
+        throw new RelayerSignerUnavailableError("Configured relayer address is not available from the remote signer.");
+      }
+    } catch (error) {
+      if (error instanceof RelayerSignerUnavailableError) throw error;
+      throw new RelayerSignerUnavailableError("Remote signer is unreachable or rejected the required JSON-RPC methods.");
     }
 
     return { account, wallet, mode: "remote" as const };

@@ -1,0 +1,5 @@
+# Replace with the reviewed enode URLs for this consortium deployment before startup.
+# Local node permissioning is enabled in besu-config.toml; an empty list intentionally
+# isolates the node rather than permitting arbitrary peers.
+nodes-allowlist=[]
+accounts-allowlist=[]

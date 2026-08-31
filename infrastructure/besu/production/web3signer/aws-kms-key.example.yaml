@@ -1,6 +1,7 @@
 # Metadata only. Do not put AWS access keys, session tokens, or private key material here.
+# Web3Signer 26.4.2 supports ENVIRONMENT authentication through the AWS default
+# credential provider chain; use an instance/task/workload role with least privilege.
 type: "aws-kms"
-keyType: "SECP256K1"
 authenticationMode: "ENVIRONMENT"
 kmsKeyId: "alias/threadproof-relayer"
 region: "ap-southeast-1"

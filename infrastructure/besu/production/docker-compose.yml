@@ -1,6 +1,6 @@
 services:
   besu:
-    image: hyperledger/besu:26.7.1
+    image: hyperledger/besu:26.8.0
     restart: unless-stopped
     command:
       - --config-file=/etc/besu/config.toml
@@ -15,6 +15,7 @@ services:
       - ${THREADPROOF_BESU_GENESIS_PATH:-./genesis.json}:/etc/besu/genesis.json:ro
       - ${THREADPROOF_BESU_NODE_KEY_PATH:-./secrets/besu-node-key}:/run/secrets/besu-node-key:ro
       - ${THREADPROOF_BESU_STATIC_NODES_PATH:-./static-nodes.json}:/etc/besu/static-nodes.json:ro
+      - ${THREADPROOF_BESU_PERMISSIONS_PATH:-./permissions_config.toml}:/etc/besu/permissions_config.toml:ro
     ports:
       - 127.0.0.1:8545:8545
       - 127.0.0.1:8546:8546
