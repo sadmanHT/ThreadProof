@@ -538,18 +538,27 @@ function GovernanceActionFields({
   organizations: GovernanceTargetOrganization[];
   disabled: boolean;
 }) {
+  const organizationAction =
+    actionType === governanceProposalTypes.organizationSuspension ||
+    actionType === governanceProposalTypes.organizationRestore ||
+    actionType === governanceProposalTypes.primaryAccountRotation;
+  const emergencyAction =
+    actionType === governanceProposalTypes.emergencyPause ||
+    actionType === governanceProposalTypes.emergencyUnpause;
+  const credentialAction =
+    actionType === governanceProposalTypes.credentialSuspension ||
+    actionType === governanceProposalTypes.credentialRestore;
+
   return <>
-    {[governanceProposalTypes.organizationSuspension, governanceProposalTypes.organizationRestore, governanceProposalTypes.primaryAccountRotation].includes(actionType)
-      ? <OrganizationSelect organizations={organizations} name="targetOrganizationId" disabled={disabled} />
-      : null}
+    {organizationAction ? <OrganizationSelect organizations={organizations} name="targetOrganizationId" disabled={disabled} /> : null}
     {actionType === governanceProposalTypes.primaryAccountRotation ? <label>Replacement EVM account<input name="newAccount" className="mono" required placeholder="0x…" disabled={disabled} /></label> : null}
     {actionType === governanceProposalTypes.protectedIdentityDisclosure ? <DisclosureFields disabled={disabled} /> : null}
     {actionType === governanceProposalTypes.charterPolicyUpdate ? <PolicyFields disabled={disabled} /> : null}
     {actionType === governanceProposalTypes.protocolRoleUpdate ? <ProtocolRoleFields disabled={disabled} /> : null}
     {actionType === governanceProposalTypes.verifierRegistration ? <VerifierFields disabled={disabled} /> : null}
     {actionType === governanceProposalTypes.subcontractPolicyRegistration ? <SubcontractPolicyFields disabled={disabled} /> : null}
-    {[governanceProposalTypes.emergencyPause, governanceProposalTypes.emergencyUnpause].includes(actionType) ? <EmergencyFields disabled={disabled} /> : null}
-    {[governanceProposalTypes.credentialSuspension, governanceProposalTypes.credentialRestore].includes(actionType) ? <CredentialFields disabled={disabled} /> : null}
+    {emergencyAction ? <EmergencyFields disabled={disabled} /> : null}
+    {credentialAction ? <CredentialFields disabled={disabled} /> : null}
   </>;
 }
 
