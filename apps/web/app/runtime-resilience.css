@@ -1,0 +1,103 @@
+/* Runtime recovery and loading states shared by public and authenticated routes. */
+.runtime-state-page {
+  min-height: calc(100dvh - 64px);
+  display: grid;
+  place-items: center;
+  padding: 48px 20px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(37,99,235,.07), transparent 34%),
+    #f5f7fa;
+  color: #172033;
+}
+.runtime-state-card {
+  width: min(620px, 100%);
+  padding: clamp(28px, 5vw, 48px);
+  border: 1px solid rgba(15,23,42,.09);
+  border-radius: 24px;
+  background: rgba(255,255,255,.94);
+  box-shadow: 0 28px 80px rgba(15,23,42,.09);
+}
+.runtime-state-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #dce6f5;
+  border-radius: 14px;
+  background: #f4f8ff;
+  color: #285fb8;
+}
+.runtime-state-card h1 {
+  margin: 22px 0 10px;
+  font-size: clamp(2rem, 5vw, 3.3rem);
+  line-height: 1;
+  letter-spacing: -.05em;
+}
+.runtime-state-card p {
+  margin: 0;
+  color: #667085;
+  line-height: 1.65;
+}
+.runtime-state-actions {
+  margin-top: 28px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.runtime-state-button {
+  min-height: 42px;
+  padding: 9px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #1d2939;
+  border-radius: 10px;
+  background: #1d2939;
+  color: #fff;
+  text-decoration: none;
+  font: inherit;
+  font-size: .78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.runtime-state-button.secondary {
+  border-color: #d9dee6;
+  background: #fff;
+  color: #344054;
+}
+.runtime-state-digest {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #edf0f3;
+  color: #98a2b3;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .64rem;
+}
+.runtime-loading-shell {
+  width: min(1180px, calc(100% - 32px));
+  margin: 34px auto;
+  display: grid;
+  gap: 14px;
+}
+.runtime-skeleton {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(15,23,42,.06);
+  border-radius: 18px;
+  background: #fff;
+}
+.runtime-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(100,116,139,.075), transparent);
+  animation: runtimeShimmer 1.5s ease-in-out infinite;
+}
+.runtime-skeleton.hero { min-height: 170px; }
+.runtime-skeleton.row { min-height: 76px; }
+@keyframes runtimeShimmer { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .runtime-skeleton::after { animation: none; display: none; }
+}
