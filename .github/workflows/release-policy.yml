@@ -27,6 +27,8 @@ jobs:
           node-version: 22
       - name: Test production release manifest policy
         run: node scripts/test-release-readiness.mjs
+      - name: Verify canonical evidence workflow concurrency
+        run: node scripts/test-workflow-evidence-concurrency.mjs
       - name: Verify production manifest is not committed prematurely
         if: github.ref_name != 'main' && github.event.pull_request.base.ref != 'main'
         shell: bash
