@@ -29,7 +29,7 @@
       "runtimeCodeHash": "REPLACE_ME",
       "setup": "production-ceremony",
       "ceremonyEvidenceUrl": "REPLACE_ME",
-      "ceremonyEvidenceSha256": "REPLACE_ME"
+      "ceremonyEvidenceSha256": "REPLACE_ME_WITH_0X_32_BYTE_SHA256"
     },
     "capacityRelease": {
       "circuitVersion": 1,
@@ -39,7 +39,7 @@
       "runtimeCodeHash": "REPLACE_ME",
       "setup": "production-ceremony",
       "ceremonyEvidenceUrl": "REPLACE_ME",
-      "ceremonyEvidenceSha256": "REPLACE_ME"
+      "ceremonyEvidenceSha256": "REPLACE_ME_WITH_0X_32_BYTE_SHA256"
     }
   },
   "signing": {
