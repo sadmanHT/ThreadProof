@@ -1,7 +1,14 @@
 export type AiDataClass = "consortium_visible" | "counterparty_confidential";
+export type AiThinkingLevel = "low" | "medium" | "high";
 
 export function getAiModel() {
   return process.env.THREADPROOF_AI_MODEL?.trim() || "gemini-3.7-flash";
+}
+
+export function getAiThinkingLevel(): AiThinkingLevel {
+  const configured = process.env.THREADPROOF_AI_THINKING_LEVEL?.trim().toLowerCase();
+  if (configured === "low" || configured === "high") return configured;
+  return "medium";
 }
 
 export function getAiProviderTier() {
