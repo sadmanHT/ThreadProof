@@ -2,6 +2,10 @@ import { z } from "zod";
 import { AI_TRUST_BOUNDARY } from "@/lib/ai/policy.server";
 import { runGeminiStructured } from "@/lib/ai/gemini.server";
 import type { AuditEvidence, DeterministicInvestigationSignal } from "@/lib/ai/evidence.server";
+import {
+  assertEvidenceLockedResult,
+  materializeEvidenceLockedAnswer,
+} from "@/lib/ai/evidence-lock";
 
 const evidenceSupportSchema = z.object({
   evidence_id: z.string().min(1).max(180),
@@ -86,34 +90,6 @@ const auditJsonSchema = {
   required: ["answer", "claims", "model_risk_flags", "confidence", "limitations", "recommended_next_checks"],
 } as const;
 
-function normalized(value: string) {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-export function assertEvidenceLockedResult(result: AuditCopilotResult, evidence: AuditEvidence[]) {
-  const byId = new Map(evidence.map((item) => [item.id, item]));
-  const cited = [
-    ...result.claims.flatMap((claim) => claim.supports.map((support) => support.evidence_id)),
-    ...result.model_risk_flags.flatMap((flag) => flag.evidence_ids),
-  ];
-  const unknown = [...new Set(cited.filter((id) => !byId.has(id)))];
-  if (unknown.length) {
-    throw new Error(`Gemini cited evidence that was not supplied by ThreadProof: ${unknown.slice(0, 5).join(", ")}`);
-  }
-
-  for (const claim of result.claims) {
-    for (const support of claim.supports) {
-      const evidenceItem = byId.get(support.evidence_id);
-      if (!evidenceItem) continue;
-      const fact = normalized(evidenceItem.fact);
-      const quote = normalized(support.quote);
-      if (!quote || !fact.includes(quote)) {
-        throw new Error(`Gemini returned a supporting quote that is not present in evidence ${support.evidence_id}.`);
-      }
-    }
-  }
-}
-
 export async function answerAuditQuestion(input: {
   question: string;
   organizationName: string;
@@ -121,11 +97,15 @@ export async function answerAuditQuestion(input: {
   evidence: AuditEvidence[];
   deterministicSignals: DeterministicInvestigationSignal[];
 }) {
-  const prompt = `${AI_TRUST_BOUNDARY}\n\nTASK: Act as the ThreadProof Evidence Investigator. Answer the user's protocol/audit question using ONLY the evidence bundle supplied below.\n- Each factual claim must include one or more supports. Each support contains an exact evidence_id and a short VERBATIM quote copied from that evidence record's fact field. Never invent, paraphrase, or transform the supporting quote or evidence id.\n- The final answer must be a concise synthesis of the structured claims; do not add uncited factual assertions in prose.\n- Deterministic signals were produced by ThreadProof rules, not by AI. You may explain them, but do not elevate them into canonical protocol decisions.\n- network_status evidence is a direct application RPC health observation. Other evidence entries are authorized read-model/index observations unless the fact explicitly says otherwise.\n- A proof-job status does not independently prove a Groth16 proof is valid.\n- A credential projection does not override CredentialRegistry.\n- An order projection does not override OrderRegistry or buyer EIP-712 authority.\n- A governance projection does not mean execution occurred unless canonical Charter execution is directly verified.\n- Never infer exact remaining capacity, private workloads, prices, hidden counterparties, witness values, nullifier secrets, encryption keys, or protected identities.\n- If evidence is incomplete or contradictory, lower confidence and say exactly what is missing.\n- Recommended checks should name the authoritative contract/proof/read that an operator should perform next.\n\nREQUESTING ORGANIZATION: ${input.organizationName} (${input.organizationRole})\nQUESTION: ${input.question}\n\nTHREADPROOF EVIDENCE BUNDLE:\n${JSON.stringify({ evidence: input.evidence, deterministic_signals: input.deterministicSignals })}`;
+  const prompt = `${AI_TRUST_BOUNDARY}\n\nTASK: Act as the ThreadProof Evidence Investigator. Answer the user's protocol/audit question using ONLY the evidence bundle supplied below.\n- Each factual claim must include one or more supports. Each support contains an exact evidence_id and a short VERBATIM quote copied from that evidence record's fact field. Never invent, paraphrase, or transform the supporting quote or evidence id.\n- The model answer field is advisory scratch synthesis only. ThreadProof reconstructs the displayed answer from evidence-validated claim statements and does not trust independent factual prose from this field.\n- Deterministic signals were produced by ThreadProof rules, not by AI. You may explain them, but do not elevate them into canonical protocol decisions.\n- network_status evidence is a direct application RPC health observation. Other evidence entries are authorized read-model/index observations unless the fact explicitly says otherwise.\n- A proof-job status does not independently prove a Groth16 proof is valid.\n- A credential projection does not override CredentialRegistry.\n- An order projection does not override OrderRegistry or buyer EIP-712 authority.\n- A governance projection does not mean execution occurred unless canonical Charter execution is directly verified.\n- Never infer exact remaining capacity, private workloads, prices, hidden counterparties, witness values, nullifier secrets, encryption keys, or protected identities.\n- Never represent AI itself as authorizing, approving, accepting, or confirming a protocol or business action.\n- If evidence is incomplete or contradictory, lower confidence and say exactly what is missing.\n- Recommended checks should name the authoritative contract/proof/read that an operator should perform next.\n\nREQUESTING ORGANIZATION: ${input.organizationName} (${input.organizationRole})\nQUESTION: ${input.question}\n\nTHREADPROOF EVIDENCE BUNDLE:\n${JSON.stringify({ evidence: input.evidence, deterministic_signals: input.deterministicSignals })}`;
 
   const response = await runGeminiStructured<unknown>({ prompt, schema: auditJsonSchema });
-  const result = auditCopilotResultSchema.parse(response.value);
-  assertEvidenceLockedResult(result, input.evidence);
+  const rawResult = auditCopilotResultSchema.parse(response.value);
+  assertEvidenceLockedResult(rawResult, input.evidence);
+  const result: AuditCopilotResult = {
+    ...rawResult,
+    answer: materializeEvidenceLockedAnswer(rawResult),
+  };
   return {
     id: response.id,
     model: response.model,
