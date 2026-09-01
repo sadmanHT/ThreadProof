@@ -3,6 +3,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { keccak256 } from "ethers";
 
+const PINNED_CIRCOM_REVISION = "9fd40a34f42912ee52230f8b6a114d78f6df1a48";
+const HASH32 = /^0x[0-9a-fA-F]{64}$/;
 const ALLOWED_ARGUMENTS = new Set([
   "circuit",
   "r1cs",
@@ -36,6 +38,13 @@ function required(args, key) {
 
 function sha256Bytes(bytes) {
   return `0x${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+function requireHash32(value, label) {
+  if (typeof value !== "string" || !HASH32.test(value) || /^0x0{64}$/i.test(value)) {
+    throw new Error(`${label} must be a non-zero 32-byte 0x-prefixed hash`);
+  }
+  return value.toLowerCase();
 }
 
 function requireEvidenceHash(actualBytes, evidenceArtifact, label) {
@@ -79,6 +88,12 @@ if (!/^[0-9a-f]{40}$/i.test(evidence.sourceCommit ?? "") || /^0{40}$/i.test(evid
   throw new Error("Ceremony evidence is not bound to a non-zero exact canonical source commit");
 }
 if (
+  evidence.verification?.circuitBuildRecompiled !== true ||
+  evidence.verification?.sourceCommitMatchedCleanGitHead !== true
+) {
+  throw new Error("Production verifier wrappers require ceremony evidence from an exact clean-source circuit recompilation");
+}
+if (
   !Number.isSafeInteger(evidence.verification?.phase2ContributionCount) ||
   evidence.verification.phase2ContributionCount < 1
 ) {
@@ -90,6 +105,17 @@ if (
 ) {
   throw new Error("Ceremony evidence does not preserve the ThreadProof participant-secret boundary");
 }
+if (evidence.build?.compilerPinnedSourceRevision !== PINNED_CIRCOM_REVISION) {
+  throw new Error("Ceremony evidence was not built with the pinned ThreadProof Circom source revision");
+}
+const buildAttestationSha256 = requireHash32(
+  evidence.artifacts?.buildAttestation?.sha256,
+  "build attestation SHA-256",
+);
+const compilerBinarySha256 = requireHash32(
+  evidence.build?.compilerBinarySha256,
+  "compiler binary SHA-256",
+);
 
 requireEvidenceHash(r1csBytes, evidence.artifacts?.r1cs, "R1CS");
 requireEvidenceHash(verificationKeyBytes, evidence.artifacts?.verificationKey, "verification key");
@@ -122,19 +148,28 @@ const circuitArtifactHash = keccak256(r1csBytes);
 const verificationKeyHash = keccak256(verificationKeyBytes);
 const ceremonyEvidenceSha256 = sha256Bytes(evidenceBytes);
 const wrapperContract = `${circuit}VerifierWithProvenance`;
-const wrapperSource = `// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.28;\n\nimport {${generatedVerifierContract}} from "./${circuit}Verifier.sol";\n\n/// @notice Production Groth16 verifier bound to the exact ThreadProof circuit, verification key, and ceremony evidence.\n/// @dev The proof verifier is inherited directly so the deployed runtime is self-contained and reproducible.\ncontract ${wrapperContract} is ${generatedVerifierContract} {\n    bytes32 public constant circuitArtifactHash = ${circuitArtifactHash};\n    bytes32 public constant verificationKeyHash = ${verificationKeyHash};\n    bytes32 public constant ceremonyEvidenceSha256 = ${ceremonyEvidenceSha256};\n}\n`;
+const wrapperSource = `// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.28;\n\nimport {${generatedVerifierContract}} from "./${circuit}Verifier.sol";\n\n/// @notice Production Groth16 verifier bound to exact circuit build and ceremony provenance.\n/// @dev The proof verifier is inherited directly so the deployed runtime is self-contained and reproducible.\ncontract ${wrapperContract} is ${generatedVerifierContract} {\n    bytes32 public constant circuitArtifactHash = ${circuitArtifactHash};\n    bytes32 public constant verificationKeyHash = ${verificationKeyHash};\n    bytes32 public constant buildAttestationSha256 = ${buildAttestationSha256};\n    bytes32 public constant ceremonyEvidenceSha256 = ${ceremonyEvidenceSha256};\n}\n`;
 writeFileSync(wrapperOutputPath, wrapperSource, { mode: 0o644 });
 
 const provenance = {
   schemaVersion: 1,
   setup: "production-ceremony",
   productionTrustedSetup: true,
+  circuitBuildRecompiled: true,
   verifierComposition: "direct-inheritance",
   circuit,
   circuitVersion: 1,
   sourceCommit: evidence.sourceCommit,
   ceremonyId: evidence.ceremonyId,
   phase2ContributionCount: evidence.verification.phase2ContributionCount,
+  build: {
+    attestationSha256: buildAttestationSha256,
+    gitTree: evidence.build?.gitTree,
+    compilerVersion: evidence.build?.compilerVersion,
+    compilerPinnedSourceRevision: evidence.build?.compilerPinnedSourceRevision,
+    compilerBinarySha256,
+    dependencyFileCount: evidence.build?.dependencyFileCount,
+  },
   circuitArtifact: {
     filename: basename(r1csPath),
     keccak256: circuitArtifactHash,
@@ -162,6 +197,7 @@ console.log(
     wrapperContract,
     circuitArtifactHash,
     verificationKeyHash,
+    buildAttestationSha256,
     ceremonyEvidenceSha256,
     verifierComposition: provenance.verifierComposition,
     verifierOutputPath,
