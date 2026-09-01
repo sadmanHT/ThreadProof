@@ -73,4 +73,26 @@ for (const fragment of [
   }
 }
 
+const liveProbeIndex = workflow.indexOf("Prove worker fails closed against live stalled QBFT");
+const isolationResetIndex = workflow.indexOf("Reset chain after live worker stall proof");
+const isolatedBootIndex = workflow.indexOf("Boot isolated chain for full fault recovery");
+const isolatedVerifyIndex = workflow.indexOf("Verify isolated five-validator chain");
+const fullHarnessIndex = workflow.indexOf("Exercise one-validator tolerance, quorum loss, and recovery");
+if (
+  liveProbeIndex < 0 ||
+  isolationResetIndex <= liveProbeIndex ||
+  isolatedBootIndex <= isolationResetIndex ||
+  isolatedVerifyIndex <= isolatedBootIndex ||
+  fullHarnessIndex <= isolatedVerifyIndex
+) {
+  throw new Error(
+    "QBFT workflow must destroy the live-stall test chain and boot/verify an isolated five-validator chain before the full recovery harness",
+  );
+}
+
+const pilotUpCount = workflow.split("pnpm pilot:up").length - 1;
+if (pilotUpCount < 2) {
+  throw new Error("QBFT workflow must boot separate disposable chains for worker-stall and full recovery evidence");
+}
+
 console.log("QBFT fault-resilience trust-boundary checks passed.");
