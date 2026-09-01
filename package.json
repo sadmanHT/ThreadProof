@@ -18,6 +18,7 @@
     "pilot:prepare": "node scripts/pilot-chain.mjs prepare",
     "pilot:up": "node scripts/pilot-chain.mjs up",
     "pilot:verify": "node scripts/pilot-chain.mjs verify",
+    "pilot:fault-resilience": "node scripts/pilot-fault-resilience.mjs",
     "pilot:down": "node scripts/pilot-chain.mjs down",
     "pilot:reset": "node scripts/pilot-chain.mjs reset"
   },

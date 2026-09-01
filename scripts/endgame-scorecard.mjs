@@ -33,6 +33,10 @@ const spendBenchmark = read("packages/circuits/scripts/groth16-smoke.mjs");
 const releaseBenchmark = read("packages/circuits/scripts/groth16-release-smoke.mjs");
 const gasBenchmark = read("packages/contracts/test/GasSnapshot.spec.ts");
 const liveBenchmark = read("apps/worker/scripts/pilot-live-runtime.ts");
+const chainRuntime = read("apps/worker/src/chain-runtime.ts");
+const liveStallProbe = read("apps/worker/scripts/live-stalled-chain-readiness.ts");
+const qbftFaultHarness = read("scripts/pilot-fault-resilience.mjs");
+const qbftFaultWorkflow = read(".github/workflows/qbft-fault-resilience.yml");
 
 check("capacity-release-inverse", "Capacity release restores exactly the historical hidden workload", () => {
   assert.match(releaseCircuit, /restoredCapacity === currentCapacity \+ orderWorkload/);
@@ -118,6 +122,23 @@ check("measured-benchmark-output", "Evaluation emits measured ZK, gas and live-Q
   assert.match(gasBenchmark, /contract-gas-benchmark\.json/);
   assert.match(liveBenchmark, /live-qbft-benchmark\.json/);
   assert.match(liveBenchmark, /submissionToReceiptMs/);
+});
+
+check("qbft-fault-resilience", "Five-validator QBFT evidence proves one-validator tolerance, quorum-loss stall, recovery, and live worker fail-closed behavior", () => {
+  assert.match(qbftFaultHarness, /stop", "validator5/);
+  assert.match(qbftFaultHarness, /stop", "validator4/);
+  assert.match(qbftFaultHarness, /rpcResponsive/);
+  assert.match(qbftFaultHarness, /observedAt !== stalledAt/);
+  assert.match(qbftFaultHarness, /quorumRestored/);
+  assert.match(qbftFaultHarness, /EVIDENCE_CHECKSUM_PATH/);
+  assert.match(qbftFaultHarness, /\.sha256/);
+  assert.match(chainRuntime, /CanonicalBlockProgressMonitor/);
+  assert.match(chainRuntime, /responsive RPC as healthy/);
+  assert.match(liveStallProbe, /THREADPROOF_LIVE_STALLED_CHAIN_FAIL_CLOSED/);
+  assert.match(liveStallProbe, /workerReadinessRejected: true/);
+  assert.match(qbftFaultWorkflow, /live-stalled-chain-readiness\.ts/);
+  assert.match(qbftFaultWorkflow, /pnpm pilot:fault-resilience/);
+  assert.match(qbftFaultWorkflow, /push:\s*\n\s*branches: \[develop\]/);
 });
 
 check("ai-advisory-only", "AI remains outside authoritative protocol transitions", () => {

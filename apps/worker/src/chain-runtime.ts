@@ -22,6 +22,52 @@ export class ChainRuntimeReadinessError extends Error {
   }
 }
 
+export class CanonicalBlockProgressMonitor {
+  private lastBlockNumber: bigint | undefined;
+  private lastProgressAtMs: number | undefined;
+
+  constructor(readonly stallThresholdMs: number) {
+    if (!Number.isSafeInteger(stallThresholdMs) || stallThresholdMs <= 0) {
+      throw new ChainRuntimeReadinessError("Canonical block stall threshold must be a positive integer number of milliseconds.");
+    }
+  }
+
+  observe(blockNumber: bigint, observedAtMs = Date.now()) {
+    if (blockNumber < 0n) {
+      throw new ChainRuntimeReadinessError(`Canonical RPC returned invalid block number ${blockNumber}.`);
+    }
+    if (!Number.isFinite(observedAtMs) || observedAtMs < 0) {
+      throw new ChainRuntimeReadinessError("Canonical block observation time is invalid.");
+    }
+
+    if (this.lastBlockNumber === undefined) {
+      this.lastBlockNumber = blockNumber;
+      this.lastProgressAtMs = observedAtMs;
+      return;
+    }
+
+    if (blockNumber < this.lastBlockNumber) {
+      throw new ChainRuntimeReadinessError(
+        `Canonical block height moved backwards from ${this.lastBlockNumber} to ${blockNumber}.`,
+      );
+    }
+
+    if (blockNumber > this.lastBlockNumber) {
+      this.lastBlockNumber = blockNumber;
+      this.lastProgressAtMs = observedAtMs;
+      return;
+    }
+
+    const lastProgressAtMs = this.lastProgressAtMs ?? observedAtMs;
+    const stalledForMs = observedAtMs - lastProgressAtMs;
+    if (stalledForMs >= this.stallThresholdMs) {
+      throw new ChainRuntimeReadinessError(
+        `Canonical chain has not advanced beyond block ${blockNumber} for ${stalledForMs}ms; refusing to treat a responsive RPC as healthy.`,
+      );
+    }
+  }
+}
+
 function detail(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -83,13 +129,17 @@ export function startChainRuntimeWatch(
   expectedChainId: number | undefined,
   contracts: readonly RequiredContract[],
   intervalMs = 30_000,
+  stallThresholdMs = Math.max(90_000, intervalMs * 3),
 ) {
+  const progress = new CanonicalBlockProgressMonitor(stallThresholdMs);
   let checking = false;
   const timer = setInterval(async () => {
     if (checking) return;
     checking = true;
     try {
-      await createVerifiedPublicClient(rpcUrl, expectedChainId, contracts);
+      const { client } = await createVerifiedPublicClient(rpcUrl, expectedChainId, contracts);
+      const blockNumber = await client.getBlockNumber();
+      progress.observe(blockNumber);
     } catch (error) {
       console.error(`ThreadProof chain runtime readiness was lost: ${detail(error)}`);
       process.exit(1);

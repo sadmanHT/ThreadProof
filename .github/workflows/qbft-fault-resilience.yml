@@ -1,0 +1,81 @@
+name: ThreadProof QBFT Fault Resilience
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: threadproof-qbft-fault-resilience-${{ github.event_name }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  qbft-fault-resilience:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify worker stall policy regressions
+        run: pnpm --filter @threadproof/worker test:runtime-readiness
+      - name: Boot chain for live worker stall proof
+        run: pnpm pilot:up
+      - name: Prove worker fails closed against live stalled QBFT
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose=(docker compose -f infrastructure/besu/pilot/docker-compose.yml)
+          restore() {
+            "${compose[@]}" start validator4 validator5 >/dev/null 2>&1 || true
+          }
+          trap restore EXIT
+          "${compose[@]}" stop validator5
+          "${compose[@]}" stop validator4
+          sleep 12
+          THREADPROOF_FAULT_RPC_URL=http://127.0.0.1:8545 \
+          THREADPROOF_FAULT_CHAIN_ID=2026 \
+          THREADPROOF_FAULT_STALL_THRESHOLD_MS=15000 \
+          THREADPROOF_FAULT_POLL_INTERVAL_MS=2000 \
+            pnpm --filter @threadproof/worker exec tsx scripts/live-stalled-chain-readiness.ts
+          restore
+          trap - EXIT
+      - name: Reset chain after live worker stall proof
+        run: pnpm pilot:reset
+      - name: Boot isolated chain for full fault recovery
+        run: pnpm pilot:up
+      - name: Verify isolated five-validator chain
+        run: pnpm pilot:verify
+      - name: Exercise one-validator tolerance, quorum loss, and recovery
+        run: pnpm pilot:fault-resilience
+      - name: Upload QBFT fault-resilience evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: threadproof-qbft-fault-resilience-${{ github.event.pull_request.head.sha || github.sha }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            infrastructure/besu/pilot/runtime/qbft-fault-resilience.json
+            infrastructure/besu/pilot/runtime/qbft-fault-resilience.json.sha256
+      - name: Pilot diagnostics
+        if: failure()
+        run: docker compose -f infrastructure/besu/pilot/docker-compose.yml logs --no-color || true
+      - name: Destroy disposable pilot network
+        if: always()
+        run: pnpm pilot:reset

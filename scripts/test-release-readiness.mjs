@@ -64,6 +64,8 @@ const baseManifest = {
   },
   evidence: {
     cleanStateRunUrl: "https://github.com/sadmanHT/ThreadProof/actions/runs/123",
+    qbftFaultRunUrl: "https://github.com/sadmanHT/ThreadProof/actions/runs/124",
+    qbftFaultEvidenceSha256: sha("3"),
     benchmarkBundleUrl: "https://github.com/sadmanHT/ThreadProof/actions/runs/123/artifacts/456",
     benchmarkBundleSha256: sha("1"),
     deploymentEvidenceUrl: "https://evidence.threadproof.invalid/deployment",
@@ -130,6 +132,18 @@ try {
   const unprefixedCeremonyHash = structuredClone(baseManifest);
   unprefixedCeremonyHash.verifiers.capacitySpend.ceremonyEvidenceSha256 = sha("b");
   expectFail(unprefixedCeremonyHash, "unprefixed ceremony evidence hash");
+
+  const missingFaultRun = structuredClone(baseManifest);
+  delete missingFaultRun.evidence.qbftFaultRunUrl;
+  expectFail(missingFaultRun, "missing QBFT fault-run URL");
+
+  const zeroFaultEvidence = structuredClone(baseManifest);
+  zeroFaultEvidence.evidence.qbftFaultEvidenceSha256 = "0".repeat(64);
+  expectFail(zeroFaultEvidence, "zero QBFT fault-evidence digest");
+
+  const insecureFaultUrl = structuredClone(baseManifest);
+  insecureFaultUrl.evidence.qbftFaultRunUrl = "http://evidence.threadproof.invalid/qbft-fault";
+  expectFail(insecureFaultUrl, "non-HTTPS QBFT fault-run URL");
 
   const placeholder = structuredClone(baseManifest);
   placeholder.release.preparedBy = "REPLACE_ME";

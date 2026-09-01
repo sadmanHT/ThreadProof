@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import type { Address, Hex } from "viem";
-import { ChainRuntimeReadinessError, verifyChainRuntime } from "../src/chain-runtime.js";
+import {
+  CanonicalBlockProgressMonitor,
+  ChainRuntimeReadinessError,
+  verifyChainRuntime,
+} from "../src/chain-runtime.js";
 import { getOrderRelayerEnv } from "../src/env.js";
 
 const registry = "0x1111111111111111111111111111111111111111" as Address;
@@ -50,6 +54,39 @@ await rejectsWith(/has no deployed bytecode/, () =>
 
 await rejectsWith(/Canonical RPC is unreachable/, () =>
   verifyChainRuntime(fakeClient({ chainError: new Error("connection refused") }), 2026, []),
+);
+
+const progress = new CanonicalBlockProgressMonitor(90_000);
+assert.doesNotThrow(() => progress.observe(100n, 0));
+assert.doesNotThrow(() => progress.observe(101n, 30_000));
+assert.doesNotThrow(() => progress.observe(101n, 89_999));
+assert.throws(
+  () => progress.observe(101n, 120_000),
+  (error: unknown) => {
+    assert.ok(error instanceof ChainRuntimeReadinessError);
+    assert.match(error.message, /has not advanced beyond block 101/i);
+    assert.match(error.message, /responsive RPC/i);
+    return true;
+  },
+);
+
+const recoveredProgress = new CanonicalBlockProgressMonitor(90_000);
+recoveredProgress.observe(200n, 0);
+recoveredProgress.observe(200n, 60_000);
+assert.doesNotThrow(() => recoveredProgress.observe(201n, 89_000));
+assert.doesNotThrow(() => recoveredProgress.observe(201n, 150_000));
+assert.throws(
+  () => recoveredProgress.observe(201n, 179_000),
+  /has not advanced beyond block 201/i,
+);
+
+assert.throws(
+  () => {
+    const backwards = new CanonicalBlockProgressMonitor(90_000);
+    backwards.observe(300n, 0);
+    backwards.observe(299n, 1_000);
+  },
+  /moved backwards/i,
 );
 
 const envBase: Record<string, string> = {
