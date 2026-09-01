@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { performance } from "node:perf_hooks";
+import path from "node:path";
 import type { Address } from "viem";
 import { createVerifiedPublicClient } from "../src/chain-runtime.js";
 import {
@@ -96,20 +98,30 @@ assert.ok(balanceBefore > 0n, "Pilot relayer must be funded before worker transa
 // Submit a zero-value self transaction through the exact local-development wallet path used
 // by transaction-writing workers. This proves signing, RPC submission, QBFT inclusion and
 // receipt observation against the live five-validator network without mutating protocol state.
+const started = performance.now();
 const hash = await signer.wallet.sendTransaction({
   to: signer.account.address,
   value: 0n,
 });
 const receipt = await client.waitForTransactionReceipt({ hash, confirmations: 1, timeout: 30_000 });
+const confirmationMs = Math.round((performance.now() - started) * 100) / 100;
 assert.equal(receipt.status, "success", "Worker-signed pilot transaction reverted");
 
-console.log(
-  `THREADPROOF_PILOT_WORKER_LIVE ${JSON.stringify({
-    chainId: liveChainId,
-    contractCount: requiredContracts.length,
-    signerMode: signer.mode,
-    transactionHash: hash,
-    transactionBlock: receipt.blockNumber.toString(),
-    workerSchemas: ["indexer", "order_relayer", "subcontract_relayer", "proof_submitter"],
-  })}`,
-);
+const metrics = {
+  format: "threadproof-live-qbft-benchmark/v1",
+  chainId: liveChainId,
+  validatorTopology: 5,
+  contractCount: requiredContracts.length,
+  signerMode: signer.mode,
+  transactionHash: hash,
+  transactionBlock: receipt.blockNumber.toString(),
+  gasUsed: receipt.gasUsed.toString(),
+  confirmationTarget: 1,
+  submissionToReceiptMs: confirmationMs,
+  workerSchemas: ["indexer", "order_relayer", "subcontract_relayer", "proof_submitter"],
+  note: "Wall-clock inclusion is measured on the disposable five-validator QBFT CI network and is not a production SLO.",
+};
+const artifactDir = path.resolve(process.cwd(), "../../artifacts");
+await mkdir(artifactDir, { recursive: true });
+await writeFile(path.join(artifactDir, "live-qbft-benchmark.json"), `${JSON.stringify(metrics, null, 2)}\n`);
+console.log(`THREADPROOF_PILOT_WORKER_LIVE ${JSON.stringify(metrics)}`);
