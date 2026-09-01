@@ -374,6 +374,10 @@ export type Database = {
       };
       delete_purchase_order_draft: { Args: { target_order_id: string }; Returns: undefined };
       queue_capacity_proof: { Args: { target_capacity_opening_id: string; target_order_version_id: string }; Returns: string };
+      review_ai_finding: {
+        Args: { new_review_note?: string | null; new_status: string; target_finding_id: string; target_organization_id: string };
+        Returns: undefined;
+      };
       update_purchase_order_draft: {
         Args: { new_external_reference: string; new_product_category: string; new_quantity: number; new_requested_delivery_date?: string; new_title: string; new_unit: string; target_order_id: string };
         Returns: undefined };
