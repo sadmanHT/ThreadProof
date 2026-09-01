@@ -1,0 +1,62 @@
+name: ThreadProof Live Pilot
+
+on:
+  pull_request:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: threadproof-live-pilot-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  live-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate disposable five-validator QBFT topology
+        run: pnpm pilot:prepare
+      - name: Validate pilot Compose graph
+        run: docker compose -f infrastructure/besu/pilot/docker-compose.yml config >/dev/null
+      - name: Boot and verify five-validator chain 2026
+        run: pnpm pilot:up
+      - name: Deploy ThreadProof contracts to live chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          . infrastructure/besu/pilot/runtime/pilot.env
+          set +a
+          export THREADPROOF_DEPLOYMENT_OUTPUT_PATH="$GITHUB_WORKSPACE/infrastructure/besu/pilot/runtime/deployment.json"
+          pnpm --filter @threadproof/contracts deploy:local --network threadproofLocal
+      - name: Verify worker runtime and signed transaction on live chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          . infrastructure/besu/pilot/runtime/pilot.env
+          set +a
+          export THREADPROOF_DEPLOYMENT_OUTPUT_PATH="$GITHUB_WORKSPACE/infrastructure/besu/pilot/runtime/deployment.json"
+          pnpm --filter @threadproof/worker test:pilot-live
+      - name: Pilot diagnostics
+        if: failure()
+        run: docker compose -f infrastructure/besu/pilot/docker-compose.yml logs --no-color || true
+      - name: Destroy disposable pilot network
+        if: always()
+        run: pnpm pilot:reset
