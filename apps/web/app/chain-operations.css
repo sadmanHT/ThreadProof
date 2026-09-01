@@ -1,0 +1,199 @@
+.chain-alert-stack {
+  display: grid;
+  gap: 9px;
+}
+
+.chain-health-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.chain-health-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, .96);
+  padding: 18px 19px;
+  box-shadow: var(--shadow-xs);
+  display: grid;
+  gap: 8px;
+}
+
+.chain-health-card > span:first-child {
+  color: var(--muted);
+  font-size: .66rem;
+  font-weight: 820;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.chain-health-card strong {
+  font-size: 1.08rem;
+  letter-spacing: -.025em;
+  overflow-wrap: anywhere;
+}
+
+.chain-health-card small {
+  color: var(--muted);
+  font-size: .72rem;
+  line-height: 1.45;
+}
+
+.chain-status-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.chain-status-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #9eabb3;
+  box-shadow: 0 0 0 3px #eef2f4;
+}
+
+.chain-status-dot.good {
+  background: #2d8a62;
+  box-shadow: 0 0 0 3px #e6f5ed;
+}
+
+.chain-status-dot.warn {
+  background: #b87b2b;
+  box-shadow: 0 0 0 3px #fff2df;
+}
+
+.chain-status-dot.bad {
+  background: #b34f58;
+  box-shadow: 0 0 0 3px #fbe8ea;
+}
+
+.chain-contract-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.chain-contract-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 17px;
+  background: var(--surface);
+  display: grid;
+  gap: 11px;
+}
+
+.chain-contract-card.ready {
+  border-color: #c6dfd3;
+  background: linear-gradient(145deg, #f8fcfa, #eef8f2);
+}
+
+.chain-contract-card.problem {
+  border-color: #ecd3b6;
+  background: linear-gradient(145deg, #fffdf9, #fff7ea);
+}
+
+.chain-contract-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chain-contract-head strong {
+  font-size: .9rem;
+  letter-spacing: -.015em;
+}
+
+.chain-contract-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: .76rem;
+  line-height: 1.5;
+}
+
+.chain-contract-address {
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .8);
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hash-link {
+  color: var(--brand-2);
+  text-decoration: underline;
+  text-decoration-color: rgba(36, 95, 124, .25);
+  text-underline-offset: 3px;
+  transition: color .15s ease, text-decoration-color .15s ease;
+}
+
+.hash-link:hover {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}
+
+.chain-provenance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.chain-provenance-card {
+  min-width: 0;
+  padding: 17px 18px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  display: grid;
+  gap: 7px;
+}
+
+.chain-provenance-card > span {
+  color: var(--muted);
+  font-size: .65rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.chain-provenance-card strong,
+.chain-provenance-card code {
+  overflow-wrap: anywhere;
+}
+
+.chain-trust-note {
+  border-left: 4px solid var(--accent);
+  padding: 14px 16px;
+  border-radius: 0 12px 12px 0;
+  background: var(--accent-soft);
+  color: #365e5b;
+  font-size: .8rem;
+  line-height: 1.55;
+}
+
+.chain-table .table-row > span {
+  min-width: 0;
+}
+
+@media (max-width: 1080px) {
+  .chain-health-strip,
+  .chain-contract-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .chain-health-strip,
+  .chain-contract-grid,
+  .chain-provenance-grid {
+    grid-template-columns: 1fr;
+  }
+}
