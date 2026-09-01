@@ -46,13 +46,13 @@ export default async function ChainPage() {
       .from("verifier_provenance_read_model")
       .select("*")
       .order("circuit_version", { ascending: false }),
-    (supabase as any).rpc("get_chain_indexer_health"),
+    supabase.rpc("get_chain_indexer_health"),
     getBlockchainStatus(),
   ]);
 
   const events = eventsResult.data ?? [];
   const verifierProvenance = verifierResult.data ?? [];
-  const cursorRows = (indexerResult.data ?? []) as IndexerHealth[];
+  const cursorRows: IndexerHealth[] = indexerResult.data ?? [];
   const cursor = cursorRows.find((item) => Number(item.chain_id) === chain.chainId) ?? cursorRows[0] ?? null;
   const chainHead = toBigInt(chain.blockNumber);
   const indexedHead = toBigInt(cursor?.last_block_number);
