@@ -136,11 +136,23 @@ const orderRelayerSchema = commonSchema.extend({
   validateSignerConfig(value, ctx, true);
 });
 
+const subcontractRelayerSchema = commonSchema.extend({
+  THREADPROOF_REGISTRY_ADDRESS: address,
+  THREADPROOF_CREDENTIAL_REGISTRY_ADDRESS: address,
+  THREADPROOF_ORDER_REGISTRY_ADDRESS: address,
+  THREADPROOF_CAPACITY_VAULT_ADDRESS: address,
+  THREADPROOF_SUBCONTRACT_GOVERNOR_ADDRESS: address,
+}).superRefine((value, ctx) => {
+  validateDeploymentConfig(value, ctx);
+  validateSignerConfig(value, ctx, true);
+});
+
 export type CommonEnv = z.infer<typeof commonSchema>;
 export type ProofEnv = z.infer<typeof proofSchema>;
 export type ProofSubmitterEnv = z.infer<typeof proofSubmitterSchema>;
 export type IndexerEnv = z.infer<typeof indexerSchema>;
 export type OrderRelayerEnv = z.infer<typeof orderRelayerSchema>;
+export type SubcontractRelayerEnv = z.infer<typeof subcontractRelayerSchema>;
 
 export function getCommonEnv(): CommonEnv {
   return commonSchema.parse(process.env);
@@ -160,6 +172,10 @@ export function getIndexerEnv(): IndexerEnv {
 
 export function getOrderRelayerEnv(): OrderRelayerEnv {
   return orderRelayerSchema.parse(process.env);
+}
+
+export function getSubcontractRelayerEnv(): SubcontractRelayerEnv {
+  return subcontractRelayerSchema.parse(process.env);
 }
 
 export function parseFactorySecrets(raw: string) {
