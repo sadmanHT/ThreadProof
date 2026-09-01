@@ -40,12 +40,17 @@ function rlpList(items) {
   return Buffer.concat([rlpLength(payload.length, 0xc0), payload]);
 }
 
-function qbftExtraData(addresses) {
+function qbftExtraData(addresses, { modernNoVote = false, vote = null } = {}) {
   const validatorList = rlpList(addresses.map((address) => rlpBytes(Buffer.from(address.slice(2), "hex"))));
+  const voteItem = vote
+    ? rlpBytes(vote)
+    : modernNoVote
+      ? rlpList([])
+      : rlpBytes(Buffer.alloc(0));
   return `0x${rlpList([
     rlpBytes(Buffer.alloc(32)),
     validatorList,
-    rlpBytes(Buffer.alloc(0)),
+    voteItem,
     rlpBytes(Buffer.alloc(0)),
     rlpList([]),
   ]).toString("hex")}`;
@@ -118,6 +123,16 @@ assert.deepEqual(
   decodeQbftGenesisValidators(genesis.extraData).sort(),
   validators.map((validator) => validator.address).sort(),
 );
+
+// Besu 26.x emits the canonical QBFT "No Vote" field as an empty RLP list.
+const modernBesuExtraData = qbftExtraData(validators.map((validator) => validator.address), { modernNoVote: true });
+assert.deepEqual(
+  decodeQbftGenesisValidators(modernBesuExtraData).sort(),
+  validators.map((validator) => validator.address).sort(),
+);
+rejects(/must not contain an initial validator vote/, () => decodeQbftGenesisValidators(
+  qbftExtraData(validators.map((validator) => validator.address), { vote: Buffer.from([1]) }),
+));
 
 assert.deepEqual(parsePermissionNodes('nodes-allowlist=["enode://x"]\n'), ["enode://x"]);
 rejects(/JSON-compatible TOML string array/, () => parsePermissionNodes("nodes-allowlist=['enode://x']\n"));
