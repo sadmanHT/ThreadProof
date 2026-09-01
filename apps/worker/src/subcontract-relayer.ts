@@ -72,6 +72,16 @@ function isContractRevert(error: unknown) {
     || (typeof item.message === "string" && item.message.includes("ContractFunctionRevertedError"));
 }
 
+function eventField(data: unknown, key: string) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const value = (data as Record<string, unknown>)[key];
+  return typeof value === "string" || typeof value === "number" ? String(value) : null;
+}
+
+function sameHex(left: unknown, right: unknown) {
+  return typeof left === "string" && typeof right === "string" && left.toLowerCase() === right.toLowerCase();
+}
+
 function domain(chainId: number, verifyingContract: `0x${string}`) {
   return {
     name: "ThreadProof SubcontractGovernor",
@@ -228,8 +238,8 @@ async function observeReceipt(
       return;
     }
 
-    // Canonical confirmation is event-driven in the indexer. A receipt alone records only
-    // the observed block and leaves the job submitted until SubcontractAuthorized matches.
+    // Canonical confirmation is event-driven. A receipt records only the observed block;
+    // the job stays submitted until the confirmation-adjusted indexer mirrors the exact event.
     await supabase.from(TABLE).update({
       chain_block_number: Number(receipt.blockNumber),
       updated_at: new Date().toISOString(),
@@ -241,6 +251,84 @@ async function observeReceipt(
       updated_at: new Date().toISOString(),
       error_code: "CHAIN_CONFIRMATION_PENDING",
       error_detail: errorDetail(error),
+    }).eq("id", job.id).eq("status", "submitted").eq("chain_tx_hash", txHash);
+  }
+}
+
+async function reconcileSubmittedJobs(
+  supabase: ServiceClient,
+  publicClient: ReturnType<typeof createPublicClient>,
+) {
+  const { data: jobs, error } = await supabase
+    .from(TABLE)
+    .select("*")
+    .eq("status", "submitted")
+    .not("chain_tx_hash", "is", null)
+    .order("updated_at", { ascending: true })
+    .limit(40);
+  if (error) throw error;
+
+  for (const job of jobs ?? []) {
+    const txHash = job.chain_tx_hash as Hex;
+    const { data: event, error: eventError } = await supabase
+      .from("chain_events")
+      .select("data,block_number,transaction_hash")
+      .eq("transaction_hash", txHash)
+      .eq("event_name", "SubcontractAuthorized")
+      .limit(1)
+      .maybeSingle();
+    if (eventError) throw eventError;
+
+    if (!event) {
+      try {
+        const receipt = await publicClient.getTransactionReceipt({ hash: txHash });
+        if (receipt.status === "reverted") {
+          await supabase.from(TABLE).update({
+            status: "failed",
+            chain_block_number: Number(receipt.blockNumber),
+            updated_at: new Date().toISOString(),
+            error_code: "CHAIN_TRANSACTION_REVERTED",
+            error_detail: `SubcontractGovernor transaction reverted: ${txHash}`,
+          }).eq("id", job.id).eq("status", "submitted").eq("chain_tx_hash", txHash);
+        }
+      } catch {
+        // Receipt or confirmed event is not available yet. Keep the job submitted.
+      }
+      continue;
+    }
+
+    const [{ data: parentFactory }, { data: subcontractor }, { data: buyer }] = await Promise.all([
+      supabase.from("organizations").select("chain_organization_id").eq("id", job.parent_factory_organization_id).maybeSingle(),
+      supabase.from("organizations").select("chain_organization_id").eq("id", job.subcontractor_organization_id).maybeSingle(),
+      supabase.from("organizations").select("chain_organization_id").eq("id", job.buyer_organization_id).maybeSingle(),
+    ]);
+    const matches = !!parentFactory && !!subcontractor && !!buyer
+      && sameHex(eventField(event.data, "childOrderId"), job.child_chain_order_id)
+      && sameHex(eventField(event.data, "parentOrderId"), job.parent_chain_order_id)
+      && sameHex(eventField(event.data, "subcontractorOrganizationId"), subcontractor.chain_organization_id)
+      && sameHex(eventField(event.data, "buyerOrganizationId"), buyer.chain_organization_id)
+      && sameHex(eventField(event.data, "parentFactoryOrganizationId"), parentFactory.chain_organization_id)
+      && Number(eventField(event.data, "sequence")) === Number(job.sequence)
+      && sameHex(eventField(event.data, "capacityAllocationId"), job.chain_capacity_allocation_id);
+
+    if (!matches) {
+      await supabase.from(TABLE).update({
+        status: "failed",
+        chain_block_number: Number(event.block_number),
+        updated_at: new Date().toISOString(),
+        error_code: "SUBCONTRACT_EVENT_MISMATCH",
+        error_detail: "Indexed SubcontractAuthorized event did not match the staged child, parent, parties, sequence, or capacity allocation.",
+      }).eq("id", job.id).eq("status", "submitted").eq("chain_tx_hash", txHash);
+      continue;
+    }
+
+    await supabase.from(TABLE).update({
+      status: "confirmed",
+      chain_block_number: Number(event.block_number),
+      confirmed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      error_code: null,
+      error_detail: null,
     }).eq("id", job.id).eq("status", "submitted").eq("chain_tx_hash", txHash);
   }
 }
@@ -405,9 +493,11 @@ async function processJob(supabase: ServiceClient, job: Row, heartbeatSeconds: n
 async function main() {
   const env = getSubcontractRelayerEnv();
   const supabase = createServiceClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
+  const { publicClient: reconciliationClient } = await canonicalClient();
   console.log(`ThreadProof subcontract relayer started with ${env.THREADPROOF_SIGNER_MODE} signing`);
   while (true) {
     await releaseAbandonedClaims(supabase, env.THREADPROOF_WORKER_LEASE_SECONDS);
+    await reconcileSubmittedJobs(supabase, reconciliationClient);
     const job = await claimSignedJob(supabase);
     if (job) {
       await processJob(supabase, job, env.THREADPROOF_WORKER_HEARTBEAT_SECONDS);
