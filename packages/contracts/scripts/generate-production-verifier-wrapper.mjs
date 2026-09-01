@@ -96,7 +96,7 @@ if (
   evidence.verification?.repositoryNodeModulesIgnored !== true
 ) {
   throw new Error(
-    "Production verifier wrappers require ceremony evidence from an exact clean-source compilation using frozen-lockfile rehydrated dependencies",
+    "Production verifier wrappers require ceremony evidence from an exact clean-source circuit recompilation using frozen-lockfile rehydrated dependencies",
   );
 }
 if (
