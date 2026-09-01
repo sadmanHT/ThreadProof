@@ -16,6 +16,8 @@
     "submit:proofs": "tsx src/run-proof-submitter.ts",
     "release:proof": "tsx src/run-capacity-release-generator.ts",
     "submit:releases": "tsx src/run-capacity-release-submitter.ts",
+    "disclosure:export": "tsx src/due-process-disclosure.ts",
+    "credential:package": "tsx src/credential-package.ts",
     "index": "tsx src/run-indexer.ts",
     "relay:orders": "tsx src/run-order-relayer.ts",
     "relay:subcontracts": "tsx src/run-subcontract-relayer.ts"
