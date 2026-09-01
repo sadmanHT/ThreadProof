@@ -10,6 +10,7 @@
     "test:canonical-proof-preflight": "tsx scripts/test-canonical-proof-preflight.ts",
     "test:indexer-cursor": "tsx scripts/test-indexer-cursor.ts",
     "test:job-lease": "tsx scripts/test-job-lease.ts",
+    "test:pilot-live": "tsx scripts/pilot-live-runtime.ts",
     "proof": "tsx src/run-proof-generator.ts",
     "submit:proofs": "tsx src/run-proof-submitter.ts",
     "index": "tsx src/run-indexer.ts",
