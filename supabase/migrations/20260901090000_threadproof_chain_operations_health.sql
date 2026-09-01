@@ -14,7 +14,7 @@ grant select (
 
 create policy chain_indexer_cursors_consortium_read on public.chain_indexer_cursors
   for select to authenticated
-  using ((select public.is_consortium_member()));
+  using ((select private.is_consortium_member()));
 
 create or replace function public.get_chain_indexer_health()
 returns table (
