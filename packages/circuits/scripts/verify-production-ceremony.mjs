@@ -1,13 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -80,14 +72,12 @@ function artifact(path) {
   };
 }
 
-function findContributions(value) {
-  if (!value || typeof value !== "object") return null;
-  if (Array.isArray(value.contributions)) return value.contributions;
-  for (const nested of Object.values(value)) {
-    const found = findContributions(nested);
-    if (found) return found;
-  }
-  return null;
+function verifiedContributionCount(zkeyVerifyOutput) {
+  const numbers = [
+    ...zkeyVerifyOutput.matchAll(/\bcontribution\s+#(\d+)\b/gi),
+  ].map((match) => Number(match[1]));
+  const unique = new Set(numbers.filter((value) => Number.isSafeInteger(value) && value > 0));
+  return unique.size;
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -131,85 +121,74 @@ const verificationKeyPath = join(outDir, `${circuit}_verification_key.json`);
 const solidityVerifierPath = join(outDir, `${circuit}Verifier.sol`);
 const evidencePath = join(outDir, `${circuit}_ceremony_evidence.json`);
 const evidenceChecksumPath = `${evidencePath}.sha256`;
-const tempDir = mkdtempSync(join(tmpdir(), "threadproof-ceremony-"));
-const zkeyJsonPath = join(tempDir, `${circuit}.zkey.json`);
 
-try {
-  runSnarkjs(["powersoftau", "verify", ptauPath]);
-  const zkeyVerifyOutput = runSnarkjs(["zkey", "verify", r1csPath, ptauPath, zkeyPath]);
-  if (!/ZKey Ok!/i.test(zkeyVerifyOutput)) {
-    throw new Error("snarkjs zkey verify exited successfully but did not report ZKey Ok!");
-  }
-
-  runSnarkjs(["zkey", "export", "json", zkeyPath, zkeyJsonPath]);
-  const zkeyJson = JSON.parse(readFileSync(zkeyJsonPath, "utf8"));
-  const contributions = findContributions(zkeyJson);
-  if (!contributions) {
-    throw new Error("Could not locate the Phase-2 contribution transcript in the exported zkey JSON");
-  }
-  if (contributions.length < minimumContributionCount) {
-    throw new Error(
-      `Final zkey contains ${contributions.length} Phase-2 contribution(s); at least ${minimumContributionCount} required`,
-    );
-  }
-
-  runSnarkjs(["zkey", "export", "verificationkey", zkeyPath, verificationKeyPath]);
-  runSnarkjs(["zkey", "export", "solidityverifier", zkeyPath, solidityVerifierPath]);
-  const snarkjsVersion = runSnarkjs(["--version"]).trim().split(/\r?\n/).at(-1) || "unknown";
-
-  const evidence = {
-    schemaVersion: 1,
-    format: "threadproof-groth16-ceremony-evidence/v1",
-    mode,
-    circuit,
-    circuitVersion: 1,
-    ceremonyId,
-    sourceCommit,
-    verification: {
-      powersOfTauVerified: true,
-      finalZkeyVerified: true,
-      phase2ContributionCount: contributions.length,
-      minimumPhase2ContributionCount: minimumContributionCount,
-    },
-    artifacts: {
-      r1cs: artifact(r1csPath),
-      powersOfTau: artifact(ptauPath),
-      finalZkey: artifact(zkeyPath),
-      verificationKey: artifact(verificationKeyPath),
-      solidityVerifier: artifact(solidityVerifierPath),
-    },
-    tooling: {
-      snarkjsVersion,
-    },
-    generatedAt: new Date().toISOString(),
-    handling: {
-      participantEntropyAcceptedByThisTool: false,
-      participantPrivateMaterialPersistedByThisTool: false,
-      finalZkeyCopiedByThisTool: false,
-      note: "This verifier consumes finalized ceremony artifacts only. Ceremony contributions and participant entropy must be created outside this repository workflow.",
-    },
-  };
-
-  const evidenceBytes = Buffer.from(`${JSON.stringify(evidence, null, 2)}\n`, "utf8");
-  writeFileSync(evidencePath, evidenceBytes, { mode: 0o644 });
-  const evidenceSha256 = `0x${createHash("sha256").update(evidenceBytes).digest("hex")}`;
-  writeFileSync(
-    evidenceChecksumPath,
-    `${evidenceSha256.slice(2)}  ${basename(evidencePath)}\n`,
-    { mode: 0o644 },
-  );
-
-  console.log(
-    `THREADPROOF_PRODUCTION_CEREMONY_EVIDENCE ${JSON.stringify({
-      circuit,
-      mode,
-      phase2ContributionCount: contributions.length,
-      evidencePath,
-      evidenceSha256,
-      verificationKeyPath,
-      solidityVerifierPath,
-    })}`,
-  );
-} finally {
-  rmSync(tempDir, { recursive: true, force: true });
+runSnarkjs(["powersoftau", "verify", ptauPath]);
+const zkeyVerifyOutput = runSnarkjs(["zkey", "verify", r1csPath, ptauPath, zkeyPath]);
+if (!/ZKey Ok!/i.test(zkeyVerifyOutput)) {
+  throw new Error("snarkjs zkey verify exited successfully but did not report ZKey Ok!");
 }
+
+const contributionCount = verifiedContributionCount(zkeyVerifyOutput);
+if (contributionCount < minimumContributionCount) {
+  throw new Error(
+    `Verified zkey transcript contains ${contributionCount} Phase-2 contribution(s); at least ${minimumContributionCount} required`,
+  );
+}
+
+runSnarkjs(["zkey", "export", "verificationkey", zkeyPath, verificationKeyPath]);
+runSnarkjs(["zkey", "export", "solidityverifier", zkeyPath, solidityVerifierPath]);
+const snarkjsVersion = runSnarkjs(["--version"]).trim().split(/\r?\n/).at(-1) || "unknown";
+
+const evidence = {
+  schemaVersion: 1,
+  format: "threadproof-groth16-ceremony-evidence/v1",
+  mode,
+  circuit,
+  circuitVersion: 1,
+  ceremonyId,
+  sourceCommit,
+  verification: {
+    powersOfTauVerified: true,
+    finalZkeyVerified: true,
+    phase2ContributionCount: contributionCount,
+    minimumPhase2ContributionCount: minimumContributionCount,
+  },
+  artifacts: {
+    r1cs: artifact(r1csPath),
+    powersOfTau: artifact(ptauPath),
+    finalZkey: artifact(zkeyPath),
+    verificationKey: artifact(verificationKeyPath),
+    solidityVerifier: artifact(solidityVerifierPath),
+  },
+  tooling: {
+    snarkjsVersion,
+  },
+  generatedAt: new Date().toISOString(),
+  handling: {
+    participantEntropyAcceptedByThisTool: false,
+    participantPrivateMaterialPersistedByThisTool: false,
+    finalZkeyCopiedByThisTool: false,
+    note: "This verifier consumes finalized ceremony artifacts only. Ceremony contributions and participant entropy must be created outside this repository workflow.",
+  },
+};
+
+const evidenceBytes = Buffer.from(`${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+writeFileSync(evidencePath, evidenceBytes, { mode: 0o644 });
+const evidenceSha256 = `0x${createHash("sha256").update(evidenceBytes).digest("hex")}`;
+writeFileSync(
+  evidenceChecksumPath,
+  `${evidenceSha256.slice(2)}  ${basename(evidencePath)}\n`,
+  { mode: 0o644 },
+);
+
+console.log(
+  `THREADPROOF_PRODUCTION_CEREMONY_EVIDENCE ${JSON.stringify({
+    circuit,
+    mode,
+    phase2ContributionCount: contributionCount,
+    evidencePath,
+    evidenceSha256,
+    verificationKeyPath,
+    solidityVerifierPath,
+  })}`,
+);
