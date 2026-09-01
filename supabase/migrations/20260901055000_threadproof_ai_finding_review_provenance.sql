@@ -25,3 +25,7 @@ comment on column public.ai_findings.review_note is
 
 create index ai_findings_review_status_idx
   on public.ai_findings(organization_id, status, reviewed_at desc);
+
+create index ai_findings_reviewed_by_idx
+  on public.ai_findings(reviewed_by)
+  where reviewed_by is not null;
