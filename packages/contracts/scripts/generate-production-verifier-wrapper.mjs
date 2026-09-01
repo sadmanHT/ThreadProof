@@ -75,8 +75,8 @@ if (evidence.mode !== "production") {
 if (evidence.circuit !== circuit || evidence.circuitVersion !== 1) {
   throw new Error("Ceremony evidence circuit identity does not match the requested production wrapper");
 }
-if (!/^[0-9a-f]{40}$/i.test(evidence.sourceCommit ?? "")) {
-  throw new Error("Ceremony evidence is not bound to an exact canonical source commit");
+if (!/^[0-9a-f]{40}$/i.test(evidence.sourceCommit ?? "") || /^0{40}$/i.test(evidence.sourceCommit ?? "")) {
+  throw new Error("Ceremony evidence is not bound to a non-zero exact canonical source commit");
 }
 if (
   !Number.isSafeInteger(evidence.verification?.phase2ContributionCount) ||
