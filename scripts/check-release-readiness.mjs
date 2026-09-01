@@ -137,7 +137,7 @@ for (const key of ["capacitySpend", "capacityRelease"]) {
   hash32(verifier.runtimeCodeHash, `verifiers.${key}.runtimeCodeHash`);
   requireValue(verifier.setup === "production-ceremony", `verifiers.${key}.setup must equal production-ceremony.`);
   httpsUrl(verifier.ceremonyEvidenceUrl, `verifiers.${key}.ceremonyEvidenceUrl`);
-  sha256(verifier.ceremonyEvidenceSha256, `verifiers.${key}.ceremonyEvidenceSha256`);
+  hash32(verifier.ceremonyEvidenceSha256, `verifiers.${key}.ceremonyEvidenceSha256`);
 }
 
 const signing = manifest.signing;
