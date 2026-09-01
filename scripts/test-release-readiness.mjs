@@ -44,7 +44,7 @@ const baseManifest = {
       runtimeCodeHash: h("a"),
       setup: "production-ceremony",
       ceremonyEvidenceUrl: "https://evidence.threadproof.invalid/capacity-spend",
-      ceremonyEvidenceSha256: sha("b"),
+      ceremonyEvidenceSha256: h("b"),
     },
     capacityRelease: {
       circuitVersion: 1,
@@ -54,7 +54,7 @@ const baseManifest = {
       runtimeCodeHash: h("e"),
       setup: "production-ceremony",
       ceremonyEvidenceUrl: "https://evidence.threadproof.invalid/capacity-release",
-      ceremonyEvidenceSha256: sha("f"),
+      ceremonyEvidenceSha256: h("f"),
     },
   },
   signing: {
@@ -122,6 +122,10 @@ try {
   const developmentSetup = structuredClone(baseManifest);
   developmentSetup.verifiers.capacitySpend.setup = "development";
   expectFail(developmentSetup, "development Groth16 setup");
+
+  const unprefixedCeremonyHash = structuredClone(baseManifest);
+  unprefixedCeremonyHash.verifiers.capacitySpend.ceremonyEvidenceSha256 = sha("b");
+  expectFail(unprefixedCeremonyHash, "unprefixed ceremony evidence hash");
 
   const placeholder = structuredClone(baseManifest);
   placeholder.release.preparedBy = "REPLACE_ME";
