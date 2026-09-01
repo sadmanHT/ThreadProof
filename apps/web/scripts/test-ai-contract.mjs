@@ -132,7 +132,8 @@ check("UI never claims AI is canonical", () => {
   assert.match(page, /Evidence-grounded AI\. Protocol-enforced truth/);
   assert.match(page, /Protocol[\s\S]*Authorize \+ finalize/);
   assert.match(resultPanel, /still required/);
-  assert.match(resultPanel, /does not authorize protocol state/);
+  assert.match(resultPanel, /Review is not authorization/);
+  assert.match(resultPanel, /cannot change OrderRegistry, CredentialRegistry, CapacityVault, SubcontractGovernor, or Charter state/);
 });
 
 console.log(JSON.stringify({
