@@ -30,7 +30,7 @@ const FORBIDDEN_CLAIM_PATTERNS: Array<{ pattern: RegExp; message: string }> = [
     message: "AI must not disclose ThreadProof private protocol secrets or protected identities.",
   },
   {
-    pattern: /\b(?:i|threadproof\s+ai|gemini|the\s+ai)\s+(?:hereby\s+)?(?:authorize|approve|accept|confirm)\b/i,
+    pattern: /\b(?:i|threadproof\s+ai|gemini|the\s+ai)\s+(?!(?:cannot|can't|do\s+not|don't|must\s+not|will\s+not|am\s+unable\s+to)\b)(?:(?:hereby|have|has|can)\s+)?(?:authoriz(?:e|es|ed|ing)|approv(?:e|es|ed|ing)|accept(?:s|ed|ing)?|confirm(?:s|ed|ing)?)\b/i,
     message: "AI must not represent itself as protocol or business authority.",
   },
 ];
