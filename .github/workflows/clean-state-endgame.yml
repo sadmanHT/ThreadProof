@@ -59,6 +59,20 @@ jobs:
             circom
           echo "$RUNNER_TEMP/circom/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/circom/bin/circom" --version | grep -F "2.2.0"
+      - name: Restore exact tracked source before ZK provenance rebuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Next.js may rewrite this tracked compiler-config file during `next build`.
+          # Restore only that known framework mutation, then fail closed on every other
+          # tracked modification before the clean-source R1CS attestation runs.
+          git restore --source=HEAD --worktree -- apps/web/tsconfig.json
+          tracked_status="$(git status --porcelain --untracked-files=no)"
+          if [ -n "$tracked_status" ]; then
+            echo "Tracked source checkout is not clean before ZK provenance rebuild:"
+            printf '%s\n' "$tracked_status"
+            exit 1
+          fi
       - name: Rebuild both ZK circuits from source
         run: |
           rm -rf packages/circuits/artifacts packages/contracts/contracts/generated
