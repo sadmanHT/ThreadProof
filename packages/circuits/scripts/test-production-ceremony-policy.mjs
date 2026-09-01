@@ -38,6 +38,8 @@ for (const fragment of requiredCeremonyFragments) {
 const requiredBuildFragments = [
   'REQUIRED_CIRCOM_VERSION = "2.2.0"',
   'PINNED_CIRCOM_REVISION = "9fd40a34f42912ee52230f8b6a114d78f6df1a48"',
+  'basename, delimiter, dirname, join, relative, resolve, sep',
+  '(process.env.PATH ?? "").split(delimiter)',
   '["status", "--porcelain", "--untracked-files=no"]',
   '["rev-parse", "HEAD^{tree}"]',
   "collectCircuitClosure",
