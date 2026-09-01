@@ -10,6 +10,7 @@ const orderIntelligence = read("apps/web/lib/ai/order-intelligence.server.ts");
 const actions = read("apps/web/app/app/intelligence/actions.ts");
 const page = read("apps/web/app/app/intelligence/page.tsx");
 const resultPanel = read("apps/web/components/intelligence-result-panel.tsx");
+const databaseTypes = read("apps/web/lib/database.types.ts");
 const reviewMigration = read("supabase/migrations/20260901055000_threadproof_ai_finding_review_provenance.sql");
 const envExample = read(".env.example");
 
@@ -97,6 +98,16 @@ check("order extraction requires source evidence and deterministic pressure scor
   assert.match(orderIntelligence, /DELIVERY_ACCELERATED/);
   assert.match(orderIntelligence, /SMV_MISSING/);
   assert.match(resultPanel, /Production-pressure index/);
+});
+
+check("AI audit tables are strongly typed in the web client", () => {
+  assert.match(databaseTypes, /ai_runs:\s*Table</);
+  assert.match(databaseTypes, /ai_findings:\s*Table</);
+  assert.match(databaseTypes, /reviewed_by:\s*string \| null/);
+  assert.match(databaseTypes, /reviewed_at:\s*string \| null/);
+  assert.match(databaseTypes, /review_note:\s*string \| null/);
+  assert.doesNotMatch(page, /as any/);
+  assert.doesNotMatch(page, /aiSupabase/);
 });
 
 check("AI finding review has attributable human provenance", () => {
