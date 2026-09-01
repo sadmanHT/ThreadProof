@@ -1,5 +1,5 @@
 import { createECDH, createHash, randomBytes } from "node:crypto";
-import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,7 +14,6 @@ const PILOT_DIR = join(REPO_ROOT, "infrastructure", "besu", "pilot");
 const RUNTIME_DIR = join(PILOT_DIR, "runtime");
 const GENERATED_DIR = join(RUNTIME_DIR, "generated");
 const COMPOSE_FILE = join(PILOT_DIR, "docker-compose.yml");
-const CONFIG_FILE = join(PILOT_DIR, "qbftConfigFile.json");
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -33,6 +32,13 @@ function run(command, args, options = {}) {
 function ensureDocker() {
   run("docker", ["version", "--format", "{{.Server.Version}}"], { capture: true });
   run("docker", ["compose", "version"], { capture: true });
+}
+
+function dockerHostUserArgs() {
+  if (typeof process.getuid === "function" && typeof process.getgid === "function") {
+    return ["--user", `${process.getuid()}:${process.getgid()}`];
+  }
+  return [];
 }
 
 async function findNamedFiles(root, name) {
@@ -79,6 +85,7 @@ function pilotContainerPath(hostPath) {
 function besuPublicKey(keyPath, outputPath) {
   run("docker", [
     "run", "--rm",
+    ...dockerHostUserArgs(),
     "-v", `${PILOT_DIR}:/work`,
     BESU_IMAGE,
     "public-key", "export",
@@ -90,10 +97,11 @@ function besuPublicKey(keyPath, outputPath) {
 async function prepare() {
   ensureDocker();
   await rm(RUNTIME_DIR, { recursive: true, force: true });
-  await mkdir(RUNTIME_DIR, { recursive: true });
+  await mkdir(RUNTIME_DIR, { recursive: true, mode: 0o700 });
 
   run("docker", [
     "run", "--rm",
+    ...dockerHostUserArgs(),
     "-v", `${PILOT_DIR}:/work`,
     BESU_IMAGE,
     "operator", "generate-blockchain-config",
@@ -114,8 +122,11 @@ async function prepare() {
     const validatorDir = join(RUNTIME_DIR, `validator-${ordinal}`);
     const keyPath = join(validatorDir, "key");
     const publicKeyPath = join(validatorDir, "key.pub");
-    await mkdir(validatorDir, { recursive: true });
+    await mkdir(validatorDir, { recursive: true, mode: 0o700 });
     await cp(generatedKeys[index], keyPath);
+    // The runtime directory itself is 0700. Read-only key mode lets the non-root Besu
+    // container consume the bind-mounted file without making the pilot directory public.
+    await chmod(keyPath, 0o444);
     besuPublicKey(keyPath, publicKeyPath);
     const nodeId = normalizeNodeId(await readFile(publicKeyPath, "utf8"), `validator-${ordinal} public key`);
     const address = validatorAddressFromNodeId(nodeId);
@@ -127,7 +138,7 @@ async function prepare() {
   const deployerDir = join(RUNTIME_DIR, "deployer");
   const deployerKeyPath = join(deployerDir, "key");
   const deployerPublicKeyPath = join(deployerDir, "key.pub");
-  await mkdir(deployerDir, { recursive: true });
+  await mkdir(deployerDir, { recursive: true, mode: 0o700 });
   const deployerPrivateKey = disposablePrivateKey();
   await writeFile(deployerKeyPath, `${deployerPrivateKey}\n`, { mode: 0o600 });
   besuPublicKey(deployerKeyPath, deployerPublicKeyPath);
