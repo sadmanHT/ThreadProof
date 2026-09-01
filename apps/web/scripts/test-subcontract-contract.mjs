@@ -68,8 +68,13 @@ assert.match(migration, /alter table public\.subcontract_authorization_jobs enab
 assert.match(migration, /subcontract_jobs_parent_factory_insert/);
 assert.match(migration, /subcontract_jobs_parent_factory_sign/);
 assert.match(privilegeMigration, /revoke select on public\.subcontract_authorization_jobs from authenticated/);
-assert.doesNotMatch(privilegeMigration, /grant select \([\s\S]*worker_claim_token/);
-assert.doesNotMatch(privilegeMigration, /grant select \([\s\S]*parent_factory_signature/);
+const selectGrant = privilegeMigration.match(/grant select \(([\s\S]*?)\) on public\.subcontract_authorization_jobs to authenticated;/)?.[1];
+assert.ok(selectGrant, "authenticated SELECT whitelist must be explicit");
+assert.doesNotMatch(selectGrant, /worker_claim_token/);
+assert.doesNotMatch(selectGrant, /worker_claimed_at/);
+assert.doesNotMatch(selectGrant, /parent_factory_signature/);
+assert.match(selectGrant, /\bid\b/);
+assert.match(selectGrant, /\bstatus\b/);
 
 console.log(JSON.stringify({
   threadproof_subcontract_contract_tests: "PASS",
