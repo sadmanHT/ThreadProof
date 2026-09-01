@@ -6,6 +6,10 @@ const ceremonyUrl = new URL("./verify-production-ceremony.mjs", import.meta.url)
 const ceremonyPath = fileURLToPath(ceremonyUrl);
 const ceremonySource = readFileSync(ceremonyUrl, "utf8");
 const buildSource = readFileSync(new URL("./verify-circuit-build.mjs", import.meta.url), "utf8");
+const wrapperSource = readFileSync(
+  new URL("../../contracts/scripts/generate-production-verifier-wrapper.mjs", import.meta.url),
+  "utf8",
+);
 
 const requiredCeremonyFragments = [
   '"powersoftau", "verify"',
@@ -29,7 +33,13 @@ const requiredCeremonyFragments = [
   'join(scriptDir, "verify-circuit-build.mjs")',
   "circuitBuildRecompiled: true",
   "sourceCommitMatchedCleanGitHead: true",
+  "dependenciesRehydratedFromFrozenLockfile: true",
+  "repositoryNodeModulesIgnored: true",
+  'DEPENDENCY_INSTALL_METHOD = "pnpm-offline-frozen-lockfile"',
+  'REQUIRED_PNPM_VERSION = "10.15.0"',
   "buildAttestation",
+  "dependencyInstallMethod",
+  "pnpmExecutableSha256",
   "dependencyFileCount",
   "Production verification requires explicit --min-contributions of at least 2",
   "Production verification requires --min-contributions >= 2",
@@ -43,11 +53,18 @@ for (const fragment of requiredCeremonyFragments) {
 
 const requiredBuildFragments = [
   'REQUIRED_CIRCOM_VERSION = "2.2.0"',
+  'REQUIRED_PNPM_VERSION = "10.15.0"',
   'PINNED_CIRCOM_REVISION = "9fd40a34f42912ee52230f8b6a114d78f6df1a48"',
-  'basename, delimiter, dirname, join, relative, resolve, sep',
   '(process.env.PATH ?? "").split(delimiter)',
   '["status", "--porcelain", "--untracked-files=no"]',
   '["rev-parse", "HEAD^{tree}"]',
+  "rehydrateCircuitDependencies",
+  '"--offline"',
+  '"--frozen-lockfile"',
+  '"--ignore-scripts"',
+  '"--prod"',
+  '"@threadproof/circuits..."',
+  "dependencyWorkspace.isolatedNodeModules",
   "collectCircuitClosure",
   '"--r1cs"',
   '"--wasm"',
@@ -56,15 +73,50 @@ const requiredBuildFragments = [
   "recompiledR1csMatched: true",
   "sourceCommitMatchedHead: true",
   "dependencyClosureHashed: true",
+  "dependenciesRehydratedFromFrozenLockfile: true",
+  "repositoryNodeModulesIgnored: true",
+  "offlineDependencyInstall: true",
+  "dependencyInstallScriptsDisabled: true",
+  'method: "pnpm-offline-frozen-lockfile"',
+  "repositoryNodeModulesUsed: false",
   "compilerBinaryHashed: true",
   "lockfileHashed: true",
   'resolve(repoRoot, "pnpm-lock.yaml")',
   'resolve(packageRoot, "package.json")',
+  'resolve(repoRoot, "pnpm-workspace.yaml")',
   "threadproof-circuit-build-attestation/v1",
 ];
 for (const fragment of requiredBuildFragments) {
   if (!buildSource.includes(fragment)) {
     throw new Error(`Circuit build verifier is missing required provenance fragment: ${fragment}`);
+  }
+}
+
+for (const forbiddenMutableDependencyPath of [
+  'resolve(packageRoot, "node_modules", specifier)',
+  'resolve(repoRoot, "node_modules", specifier)',
+  '"-l",\n      resolve(packageRoot, "node_modules")',
+]) {
+  if (buildSource.includes(forbiddenMutableDependencyPath)) {
+    throw new Error(
+      `Attested circuit compilation must not trust repository node_modules: ${forbiddenMutableDependencyPath}`,
+    );
+  }
+}
+
+const requiredWrapperFragments = [
+  "dependenciesRehydratedFromFrozenLockfile !== true",
+  "repositoryNodeModulesIgnored !== true",
+  'DEPENDENCY_INSTALL_METHOD = "pnpm-offline-frozen-lockfile"',
+  'REQUIRED_PNPM_VERSION = "10.15.0"',
+  "phase2ContributionCount < 2",
+  "minimumPhase2ContributionCount < 2",
+  "pnpmExecutableSha256",
+  "repositoryNodeModulesIgnored: true",
+];
+for (const fragment of requiredWrapperFragments) {
+  if (!wrapperSource.includes(fragment)) {
+    throw new Error(`Production verifier wrapper is missing required provenance fragment: ${fragment}`);
   }
 }
 
