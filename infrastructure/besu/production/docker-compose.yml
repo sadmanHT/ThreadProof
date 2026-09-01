@@ -33,8 +33,11 @@ services:
     command:
       - --config-file=/etc/besu/config.toml
     read_only: true
+    environment:
+      JAVA_TOOL_OPTIONS: -Djna.tmpdir=/opt/besu/native -Dio.netty.native.workdir=/opt/besu/native
     tmpfs:
       - /tmp
+      - /opt/besu/native:rw,exec,nosuid,nodev,size=64m,mode=1777
     security_opt:
       - no-new-privileges:true
     volumes:
