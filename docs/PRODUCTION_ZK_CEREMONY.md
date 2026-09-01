@@ -8,13 +8,17 @@ Production requires a separately administered multi-party ceremony for each circ
 
 ThreadProof repository tooling:
 
+- requires production verification to run from the exact named Git source commit with no tracked working-tree modifications;
+- independently recompiles the selected circuit before accepting ceremony artifacts;
+- requires the freshly rebuilt R1CS SHA-256 to equal the supplied ceremony R1CS SHA-256;
+- records the exact Git tree, recursive Circom include closure, `pnpm-lock.yaml`, circuit package manifest, Circom binary hash, required Circom version, and pinned Circom source revision in a circuit-build attestation;
 - verifies a finalized Powers-of-Tau transcript with `snarkjs powersoftau verify`;
-- verifies the final circuit-specific zkey against the exact R1CS and Powers-of-Tau file with `snarkjs zkey verify`;
+- verifies the final circuit-specific zkey against that build-verified R1CS and Powers-of-Tau file with `snarkjs zkey verify`;
 - confirms the finalized zkey contains at least one Phase-2 contribution;
 - exports the public verification key and Solidity verifier from that finalized zkey;
-- hashes the R1CS, Powers-of-Tau file, final zkey, verification key, Solidity verifier, and public ceremony-evidence file;
-- generates a production provenance wrapper only from evidence marked `mode=production`;
-- binds the wrapper to the exact R1CS hash, verification-key hash, and ceremony-evidence SHA-256.
+- hashes the build attestation, R1CS, Powers-of-Tau file, final zkey, verification key, Solidity verifier, and public ceremony-evidence file;
+- generates a production provenance wrapper only from evidence marked `mode=production` that records a successful clean-source circuit recompilation;
+- binds the wrapper to the exact R1CS hash, verification-key hash, build-attestation SHA-256, and ceremony-evidence SHA-256.
 
 ThreadProof repository tooling MUST NOT:
 
@@ -27,21 +31,26 @@ ThreadProof repository tooling MUST NOT:
 
 At least one honest Phase-2 contributor is required for Groth16 security. Consortium governance SHOULD use multiple independently administered contributors and a documented final-beacon policy.
 
+The build attestation proves that, at verification time, the supplied R1CS byte hash matched a fresh compilation from the exact clean Git HEAD using the recorded dependency closure and compiler binary. It does **not** by itself prove how the Circom compiler binary was originally built or that every external package registry was honest. The pinned compiler source revision, compiler-binary hash, frozen lockfile, recursive dependency hashes, and reproducible re-run are the review boundary for that toolchain risk.
+
 ## Inputs
 
 For each circuit, the ceremony verification operator needs:
 
-1. the exact `.r1cs` rebuilt from the frozen canonical `develop` source SHA;
+1. the exact `.r1cs` produced for the frozen canonical `develop` source SHA;
 2. the consortium-approved finalized Powers-of-Tau `.ptau` file;
 3. the finalized circuit-specific `.zkey` after the approved Phase-2 contributions;
 4. a public ceremony identifier;
-5. the exact 40-hex canonical source commit SHA.
+5. the exact 40-hex canonical source commit SHA;
+6. the pinned Circom 2.2.0 compiler installed from revision `9fd40a34f42912ee52230f8b6a114d78f6df1a48` and project dependencies installed from the frozen lockfile.
 
 The large `.ptau` and `.zkey` files are intentionally ignored by Git. Store them in the consortium's approved artifact store with independent integrity controls.
 
+Before production verification, checkout exactly the tested source SHA, install dependencies with the frozen lockfile, install the pinned Circom compiler, and confirm `git status --porcelain --untracked-files=no` is empty. Generated untracked artifact files are allowed; tracked source modifications are not.
+
 ## Verify CapacitySpend
 
-From `packages/circuits` after installing the pinned project dependencies and rebuilding the circuit:
+From `packages/circuits` after installing the pinned project dependencies and building the circuit:
 
 ```sh
 pnpm compile
@@ -57,7 +66,9 @@ pnpm ceremony:verify -- \
   --min-contributions 2
 ```
 
-The command fails closed if the transcript cannot be verified, the zkey does not match the circuit/PTAU, or the contribution count is below the requested minimum.
+Before checking the transcript/zkey, the command invokes `verify-circuit-build.mjs`, recompiles `CapacitySpend` into a disposable directory, and requires the rebuilt R1CS to be byte-hash identical to `artifacts/CapacitySpend.r1cs`. It fails closed if the named source SHA differs from the actual Git HEAD, tracked source is dirty, Circom is not 2.2.0, includes cannot be resolved, or the rebuilt R1CS differs.
+
+It then fails closed if the Powers-of-Tau transcript cannot be verified, the zkey does not match the verified circuit/PTAU, or the contribution count is below the requested minimum.
 
 ## Verify CapacityRelease
 
@@ -75,18 +86,22 @@ pnpm ceremony:verify -- \
   --min-contributions 2
 ```
 
+The same clean-source recompilation boundary applies to `CapacityRelease`.
+
 ## Public evidence output
 
 Each verification produces:
 
+- `build-verification/<Circuit>_build_attestation.json`;
+- `build-verification/<Circuit>_build_attestation.json.sha256`;
 - `<Circuit>_verification_key.json`;
 - `<Circuit>Verifier.sol`;
 - `<Circuit>_ceremony_evidence.json`;
 - `<Circuit>_ceremony_evidence.json.sha256`.
 
-The evidence JSON contains only public verification metadata and artifact hashes. It does not contain contributor entropy or participant private material.
+The build attestation records only public reproducibility material: source/tree identifiers, compiler/version hashes, dependency/include hashes, lockfile/package hashes, and rebuilt/supplied artifact hashes. The ceremony evidence contains only public verification metadata and artifact hashes. Neither contains contributor entropy or participant private material.
 
-Archive the evidence JSON and checksum in the production release evidence store. Copy the evidence URL and SHA-256 into the corresponding `release/production-release.json` verifier entry.
+Archive both evidence JSON files and checksums in the production release evidence store. The ceremony evidence hashes the build attestation, so the ceremony record is cryptographically linked to the exact source-to-R1CS verification run. Copy the ceremony evidence URL and SHA-256 into the corresponding `release/production-release.json` verifier entry.
 
 ## Generate the production provenance wrapper
 
@@ -104,31 +119,32 @@ pnpm generate:production-verifier-wrapper -- \
 
 Repeat with `CapacityRelease` and the release evidence directory.
 
-The generator refuses `ci-validation` evidence. It re-hashes the R1CS, verification key, and Solidity verifier before producing the wrapper. The wrapper exposes:
+The generator refuses `ci-validation` evidence and refuses production evidence that does not record the clean-source circuit recompilation boundary or pinned Circom revision. It re-hashes the R1CS, verification key, and Solidity verifier before producing the wrapper. The wrapper exposes:
 
 - `circuitArtifactHash` — Keccak-256 of the exact R1CS;
 - `verificationKeyHash` — Keccak-256 of the exact exported verification key;
+- `buildAttestationSha256` — SHA-256 of the clean-source build-attestation JSON;
 - `ceremonyEvidenceSha256` — SHA-256 of the public ceremony-evidence JSON.
 
-The first two hashes are the values ThreadProof already records in verifier provenance and validates in `CapacityVault`. The ceremony evidence hash gives the production deployment an additional public audit link to the MPC transcript evidence.
+The R1CS and verification-key hashes are the values ThreadProof already records in verifier provenance and validates in `CapacityVault`. The build and ceremony evidence hashes give the deployed production verifier explicit public links to the source-build verification and MPC transcript evidence.
 
 ## Governance and deployment
 
 A successful ceremony verification does **not** authorize deployment by itself.
 
-1. Archive the evidence and generated verifier sources.
-2. Independently review artifact hashes.
+1. Archive the build attestation, ceremony evidence, checksums, and generated verifier sources.
+2. Independently reproduce the build attestation from the exact source SHA and review artifact hashes.
 3. Compile the production verifier wrappers using the frozen release source/toolchain.
 4. Deploy the verifier contracts through the controlled production deployment process.
 5. Verify runtime bytecode and provenance with `verify:production-deployment`.
 6. Register the CapacitySpend verifier through the Charter verifier-registration proposal.
 7. Register the CapacityRelease verifier through Charter proposal type 14 (`ReleaseVerifierRegistration`).
-8. Record proposal IDs, execution transactions, deployed addresses, runtime-code hashes, and ceremony evidence URLs in the production release evidence bundle.
+8. Record proposal IDs, execution transactions, deployed addresses, runtime-code hashes, build-attestation hashes, and ceremony evidence URLs in the production release evidence bundle.
 
 No bootstrap administrator should retain a bypass around Charter verifier governance after production initialization.
 
 ## CI validation
 
-CI exercises the same finalized-artifact verifier against the repository's **development-only** proving keys using `mode=ci-validation`. CI-validation evidence cannot be consumed by the production provenance-wrapper generator, and the production release policy continues to require `setup=production-ceremony`.
+CI exercises the same source-to-R1CS recompilation and finalized-artifact verifier against the repository's **development-only** proving keys using `mode=ci-validation`. CI-validation evidence cannot be consumed by the production provenance-wrapper generator, and the production release policy continues to require `setup=production-ceremony`.
 
-This separation is intentional: CI proves that the verification tooling works; consortium participants provide the independent entropy and production ceremony trust assumption.
+This separation is intentional: CI proves that the build and ceremony verification tooling works; consortium participants provide the independent entropy and production ceremony trust assumption.
