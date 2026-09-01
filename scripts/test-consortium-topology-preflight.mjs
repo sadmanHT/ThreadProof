@@ -1,13 +1,62 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createECDH, createHash } from "node:crypto";
 import {
   ConsortiumTopologyError,
+  decodeQbftGenesisValidators,
   parsePermissionNodes,
   validateConsortiumTopology,
+  validatorAddressFromNodeId,
 } from "./validate-consortium-topology.mjs";
 
-const nodeId = (hex) => hex.repeat(128);
-const enode = (hex, host) => `enode://${nodeId(hex)}@${host}:30303`;
+function deterministicValidator(seed, name) {
+  const privateKey = Buffer.alloc(32);
+  privateKey[31] = seed;
+  const ecdh = createECDH("secp256k1");
+  ecdh.setPrivateKey(privateKey);
+  const nodeId = ecdh.getPublicKey(undefined, "uncompressed").subarray(1).toString("hex");
+  return {
+    name,
+    nodeId,
+    address: validatorAddressFromNodeId(nodeId),
+    enode: `enode://${nodeId}@${name}.internal:30303`,
+  };
+}
+
+function rlpLength(length, offset) {
+  if (length < 56) return Buffer.from([offset + length]);
+  const hex = length.toString(16).padStart(2, "0");
+  const lengthBytes = Buffer.from(hex.length % 2 === 0 ? hex : `0${hex}`, "hex");
+  return Buffer.concat([Buffer.from([offset + 55 + lengthBytes.length]), lengthBytes]);
+}
+
+function rlpBytes(value) {
+  const bytes = Buffer.from(value);
+  if (bytes.length === 1 && bytes[0] < 0x80) return bytes;
+  return Buffer.concat([rlpLength(bytes.length, 0x80), bytes]);
+}
+
+function rlpList(items) {
+  const payload = Buffer.concat(items);
+  return Buffer.concat([rlpLength(payload.length, 0xc0), payload]);
+}
+
+function qbftExtraData(addresses) {
+  const validatorList = rlpList(addresses.map((address) => rlpBytes(Buffer.from(address.slice(2), "hex"))));
+  return `0x${rlpList([
+    rlpBytes(Buffer.alloc(32)),
+    validatorList,
+    rlpBytes(Buffer.alloc(0)),
+    rlpBytes(Buffer.alloc(0)),
+    rlpList([]),
+  ]).toString("hex")}`;
+}
+
+const validators = [
+  deterministicValidator(1, "validator-a"),
+  deterministicValidator(2, "validator-b"),
+  deterministicValidator(3, "validator-c"),
+  deterministicValidator(4, "validator-d"),
+].map(({ name, enode, address }) => ({ name, enode, address }));
 
 const genesis = {
   config: {
@@ -20,7 +69,7 @@ const genesis = {
   },
   nonce: "0x0",
   timestamp: "0x0",
-  extraData: `0x${"00".repeat(33)}`,
+  extraData: qbftExtraData(validators.map((validator) => validator.address)),
   gasLimit: "0x1fffffffffffff",
   difficulty: "0x1",
   mixHash: `0x${"00".repeat(32)}`,
@@ -29,13 +78,6 @@ const genesis = {
 };
 const genesisText = `${JSON.stringify(genesis, null, 2)}\n`;
 const genesisSha256 = createHash("sha256").update(genesisText, "utf8").digest("hex");
-
-const validators = [
-  { name: "validator-a", enode: enode("a", "validator-a.internal") },
-  { name: "validator-b", enode: enode("b", "validator-b.internal") },
-  { name: "validator-c", enode: enode("c", "validator-c.internal") },
-  { name: "validator-d", enode: enode("d", "validator-d.internal") },
-];
 const staticNodes = validators.slice(1).map((validator) => validator.enode);
 const permissionsSource = `nodes-allowlist=${JSON.stringify(staticNodes)}\naccounts-allowlist=[]\n`;
 const topology = {
@@ -72,6 +114,10 @@ assert.equal(valid.toleratedFaults, 1);
 assert.equal(valid.staticPeerCount, 3);
 assert.equal(valid.localNode, "validator-a");
 assert.equal(valid.localRole, "validator");
+assert.deepEqual(
+  decodeQbftGenesisValidators(genesis.extraData).sort(),
+  validators.map((validator) => validator.address).sort(),
+);
 
 assert.deepEqual(parsePermissionNodes('nodes-allowlist=["enode://x"]\n'), ["enode://x"]);
 rejects(/JSON-compatible TOML string array/, () => parsePermissionNodes("nodes-allowlist=['enode://x']\n"));
@@ -82,11 +128,28 @@ rejects(/at least 4 validators/, () => validate({
   permissionsSource: `nodes-allowlist=${JSON.stringify(validators.slice(1, 3).map((validator) => validator.enode))}\n`,
 }));
 
-rejects(/node public ids.*unique/i, () => validate({
+rejects(/address does not match its enode public key/, () => validate({
   topology: {
     ...topology,
-    validators: [...validators.slice(0, 3), { name: "validator-d", enode: enode("c", "validator-d.internal") }],
+    validators: validators.map((validator, index) => index === 3
+      ? { ...validator, address: validators[2].address }
+      : validator),
   },
+}));
+
+const replacement = deterministicValidator(5, "validator-e");
+rejects(/do not exactly match the QBFT genesis/, () => validate({
+  topology: {
+    ...topology,
+    validators: [...validators.slice(0, 3), {
+      name: replacement.name,
+      enode: replacement.enode,
+      address: replacement.address,
+    }],
+    localNode: "validator-a",
+  },
+  staticNodes: [validators[1].enode, validators[2].enode, replacement.enode],
+  permissionsSource: `nodes-allowlist=${JSON.stringify([validators[1].enode, validators[2].enode, replacement.enode])}\n`,
 }));
 
 rejects(/Remote validator validator-d must be a static peer/, () => validate({
@@ -97,10 +160,10 @@ rejects(/absent from the Besu nodes-allowlist/, () => validate({
   permissionsSource: `nodes-allowlist=${JSON.stringify(staticNodes.slice(0, 2))}\n`,
 }));
 
-const unknown = enode("e", "unknown.internal");
+const observer = deterministicValidator(6, "observer-a");
 rejects(/not approved by the topology manifest/, () => validate({
-  staticNodes: [...staticNodes, unknown],
-  permissionsSource: `nodes-allowlist=${JSON.stringify([...staticNodes, unknown])}\n`,
+  staticNodes: [...staticNodes, observer.enode],
+  permissionsSource: `nodes-allowlist=${JSON.stringify([...staticNodes, observer.enode])}\n`,
 }));
 
 rejects(/Genesis SHA-256 .* does not match/, () => validate({
@@ -121,6 +184,10 @@ rejects(/Topology chain ID 2027/, () => validate({
 
 rejects(/localNode .* is not present/, () => validate({
   topology: { ...topology, localNode: "validator-z" },
+}));
+
+rejects(/RLP\(\[vanity, validators, vote, round, seals\]\)/, () => validate({
+  genesis: { ...genesis, extraData: `0x${"00".repeat(33)}` },
 }));
 
 console.log("ThreadProof consortium topology preflight checks passed");
