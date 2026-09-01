@@ -89,6 +89,7 @@ requireValue(isRecord(release), "release section is required.");
 const releaseVersion = cleanText(release.version, "release.version");
 requireValue(VERSION.test(releaseVersion), "release.version must be a semantic version such as v1.0.0.");
 requireValue(typeof release.sourceDevelopCommit === "string" && GIT_SHA.test(release.sourceDevelopCommit), "release.sourceDevelopCommit must be a full 40-character Git SHA.");
+requireValue(!/^0{40}$/i.test(release.sourceDevelopCommit), "release.sourceDevelopCommit must not be the zero SHA.");
 isoDate(release.preparedAt, "release.preparedAt");
 cleanText(release.preparedBy, "release.preparedBy");
 
@@ -137,7 +138,7 @@ for (const key of ["capacitySpend", "capacityRelease"]) {
   hash32(verifier.runtimeCodeHash, `verifiers.${key}.runtimeCodeHash`);
   requireValue(verifier.setup === "production-ceremony", `verifiers.${key}.setup must equal production-ceremony.`);
   httpsUrl(verifier.ceremonyEvidenceUrl, `verifiers.${key}.ceremonyEvidenceUrl`);
-  sha256(verifier.ceremonyEvidenceSha256, `verifiers.${key}.ceremonyEvidenceSha256`);
+  hash32(verifier.ceremonyEvidenceSha256, `verifiers.${key}.ceremonyEvidenceSha256`);
 }
 
 const signing = manifest.signing;

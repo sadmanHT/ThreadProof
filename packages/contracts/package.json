@@ -6,13 +6,15 @@
     "compile": "hardhat compile",
     "test": "hardhat test",
     "clean": "hardhat clean",
-    "typecheck": "hardhat compile && tsc --noEmit",
+    "typecheck": "hardhat compile && tsc --noEmit && node scripts/test-production-verifier-wrapper.mjs",
     "deploy:local": "hardhat run scripts/deploy-local.ts",
     "verify:generated": "hardhat run scripts/generated-verifier-smoke.ts",
     "verify:live-pofc": "hardhat run scripts/live-pofc.ts",
     "verify:live-subcontract": "hardhat run scripts/live-subcontract.ts",
     "verify:live-capacity-release": "hardhat run scripts/live-capacity-release.ts",
-    "verify:production-deployment": "hardhat run scripts/verify-production-deployment.ts --network threadproofLocal"
+    "verify:production-deployment": "hardhat run scripts/verify-production-deployment.ts --network threadproofLocal",
+    "test:production-verifier-wrapper": "node scripts/test-production-verifier-wrapper.mjs",
+    "generate:production-verifier-wrapper": "node scripts/generate-production-verifier-wrapper.mjs"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0"
