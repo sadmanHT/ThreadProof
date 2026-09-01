@@ -17,7 +17,7 @@ concurrency:
 jobs:
   qbft-fault-resilience:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,7 +34,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Verify worker stall policy regressions
         run: pnpm --filter @threadproof/worker test:runtime-readiness
-      - name: Boot fresh five-validator chain 2026
+      - name: Boot chain for live worker stall proof
         run: pnpm pilot:up
       - name: Prove worker fails closed against live stalled QBFT
         shell: bash
@@ -55,7 +55,12 @@ jobs:
             pnpm --filter @threadproof/worker exec tsx scripts/live-stalled-chain-readiness.ts
           restore
           trap - EXIT
-          sleep 12
+      - name: Reset chain after live worker stall proof
+        run: pnpm pilot:reset
+      - name: Boot isolated chain for full fault recovery
+        run: pnpm pilot:up
+      - name: Verify isolated five-validator chain
+        run: pnpm pilot:verify
       - name: Exercise one-validator tolerance, quorum loss, and recovery
         run: pnpm pilot:fault-resilience
       - name: Upload QBFT fault-resilience evidence
