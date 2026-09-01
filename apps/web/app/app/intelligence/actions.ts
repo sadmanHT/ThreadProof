@@ -4,9 +4,12 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service.server";
+import { getBlockchainStatus } from "@/lib/blockchain";
 import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
 import { analyzeOrderDocument } from "@/lib/ai/order-intelligence.server";
 import { answerAuditQuestion } from "@/lib/ai/audit-copilot.server";
+import { buildAuditEvidenceBundle } from "@/lib/ai/evidence.server";
 import { assertAiDataClassAllowed, assertOrderDocumentAiAllowed, getAiModel } from "@/lib/ai/policy.server";
 import {
   assertAiRateLimit,
@@ -100,7 +103,7 @@ export async function runOrderIntelligenceAction(formData: FormData) {
     baselineHash: baseline ? sha256(JSON.stringify(baseline)) : null,
     syntheticDemo,
   }));
-  const promptTemplateHash = sha256("threadproof:gemini:order-intelligence:v1");
+  const promptTemplateHash = sha256("threadproof:gemini:order-intelligence:v2:evidenced-pressure");
   const model = getAiModel();
 
   let runId: string | null = null;
@@ -117,6 +120,7 @@ export async function runOrderIntelligenceAction(formData: FormData) {
       subjectId: purchaseOrderId?.success ? purchaseOrderId.data : null,
       dataClass: "counterparty_confidential",
       metadata: {
+        intelligence_version: 2,
         synthetic_demo: syntheticDemo,
         source_text_present: Boolean(sourceText),
         file_name: file?.name ?? null,
@@ -132,6 +136,14 @@ export async function runOrderIntelligenceAction(formData: FormData) {
     });
 
     await completeAiRun({ runId, output: analysis.result, providerResponseId: analysis.id });
+    const evidenceRefs = [
+      ...references,
+      ...analysis.result.field_evidence.map((evidence) => ({
+        field: evidence.field,
+        source_locator: evidence.source_locator,
+        excerpt_hash: sha256(evidence.excerpt),
+      })),
+    ];
     const findings = [
       ...analysis.result.risk_flags.map((flag) => ({
         severity: flag.severity,
@@ -149,7 +161,7 @@ export async function runOrderIntelligenceAction(formData: FormData) {
         ...finding,
         subjectType: purchaseOrderId?.success ? "purchase_order" : "document",
         subjectId: purchaseOrderId?.success ? purchaseOrderId.data : null,
-        evidenceRefs: references,
+        evidenceRefs,
       })));
     } catch {
       // The primary input/output audit record is already complete; secondary finding rows are best-effort.
@@ -160,7 +172,7 @@ export async function runOrderIntelligenceAction(formData: FormData) {
   }
 
   revalidatePath("/app/intelligence");
-  redirect(`/app/intelligence?run=${runId}&message=${encodeURIComponent("Order intelligence completed. Review all extracted values before using them in a business workflow.")}`);
+  redirect(`/app/intelligence?run=${runId}&message=${encodeURIComponent("Order intelligence completed. Review the evidence-backed extraction and deterministic pressure signals before using any value in a business workflow.")}`);
 }
 
 export async function runAuditCopilotAction(formData: FormData) {
@@ -185,7 +197,7 @@ export async function runAuditCopilotAction(formData: FormData) {
 
   const supabase = await createClient();
   const orgId = parsed.data.organizationId;
-  const [orders, credentials, proofJobs, events, governance] = await Promise.all([
+  const [orders, credentials, proofJobs, events, governance, chainStatus] = await Promise.all([
     supabase
       .from("purchase_orders")
       .select("id,chain_order_id,buyer_organization_id,factory_organization_id,status,current_version,current_order_commitment,current_policy_hash,updated_at")
@@ -194,7 +206,7 @@ export async function runAuditCopilotAction(formData: FormData) {
       .limit(25),
     supabase
       .from("credentials")
-      .select("id,chain_credential_id,issuer_organization_id,subject_organization_id,credential_type,digest,scope_hash,status,valid_from,valid_until,chain_tx_hash,created_at")
+      .select("id,chain_credential_id,issuer_organization_id,subject_organization_id,credential_type,status,valid_from,valid_until,chain_tx_hash,created_at")
       .or(`issuer_organization_id.eq.${orgId},subject_organization_id.eq.${orgId}`)
       .order("created_at", { ascending: false })
       .limit(25),
@@ -206,28 +218,37 @@ export async function runAuditCopilotAction(formData: FormData) {
       .limit(20),
     supabase
       .from("chain_events")
-      .select("id,event_name,transaction_hash,block_number,contract_address,indexed_values,data,observed_at")
+      .select("id,event_name,transaction_hash,block_number,contract_address,observed_at")
       .order("block_number", { ascending: false })
-      .limit(40),
+      .limit(60),
     supabase
       .from("governance_proposal_read_model")
       .select("chain_proposal_id,proposal_type,state,policy_version,approvals_received,approvals_required,execute_after,executed_tx_hash,last_synced_block,updated_at")
       .order("updated_at", { ascending: false })
       .limit(20),
+    getBlockchainStatus(),
   ]);
 
-  const context = {
+  const sourceErrors = [orders.error, credentials.error, proofJobs.error, events.error, governance.error]
+    .filter(Boolean)
+    .map((error) => ({ code: error?.code ?? "QUERY_ERROR" }));
+  const bundle = buildAuditEvidenceBundle({
     orders: orders.data ?? [],
     credentials: credentials.data ?? [],
     proof_jobs: proofJobs.data ?? [],
     chain_events: events.data ?? [],
     governance: governance.data ?? [],
-    source_errors: [orders.error, credentials.error, proofJobs.error, events.error, governance.error]
-      .filter(Boolean)
-      .map((error) => ({ code: error?.code ?? "QUERY_ERROR" })),
-  };
-  const inputHash = sha256(JSON.stringify({ question: parsed.data.question, context }));
-  const promptTemplateHash = sha256("threadproof:gemini:audit-copilot:v1");
+    chain_status: chainStatus,
+    source_errors: sourceErrors,
+  });
+
+  const inputHash = sha256(JSON.stringify({
+    question: parsed.data.question,
+    evidence: bundle.evidence,
+    deterministic_signals: bundle.deterministic_signals,
+  }));
+  const evidenceHashes = bundle.evidence.slice(0, 80).map((evidence) => sha256(JSON.stringify(evidence)));
+  const promptTemplateHash = sha256("threadproof:gemini:audit-copilot:v2:evidence-locked");
   const model = getAiModel();
   let runId: string | null = null;
 
@@ -239,21 +260,108 @@ export async function runAuditCopilotAction(formData: FormData) {
       modelName: model,
       promptTemplateHash,
       inputHash,
+      inputReferenceHashes: evidenceHashes,
       dataClass: "consortium_visible",
-      metadata: { context_version: 1 },
+      metadata: {
+        context_version: 2,
+        evidence_count: bundle.evidence.length,
+        deterministic_signal_count: bundle.deterministic_signals.length,
+        chain_online: chainStatus.online,
+      },
     });
     const answer = await answerAuditQuestion({
       question: parsed.data.question,
       organizationName: membership.organization.display_name,
       organizationRole: membership.organization.role,
-      context,
+      evidence: bundle.evidence,
+      deterministicSignals: bundle.deterministic_signals,
     });
-    await completeAiRun({ runId, output: answer.result, providerResponseId: answer.id });
+    const output = {
+      ...answer.result,
+      deterministic_signals: bundle.deterministic_signals,
+      evidence_manifest: bundle.evidence.map((evidence) => ({
+        id: evidence.id,
+        source: evidence.source,
+        reference: evidence.reference,
+        observed_at: evidence.observed_at,
+      })),
+    };
+    await completeAiRun({ runId, output, providerResponseId: answer.id });
+
+    try {
+      await recordAiFindings(runId, orgId, [
+        ...bundle.deterministic_signals.map((signal) => ({
+          severity: signal.severity,
+          type: `RULE_${signal.code}`,
+          explanation: signal.explanation,
+          subjectType: "investigation",
+          subjectId: null,
+          evidenceRefs: signal.evidence_ids,
+        })),
+        ...answer.result.model_risk_flags.map((flag) => ({
+          severity: flag.severity,
+          type: `AI_${flag.code}`,
+          explanation: flag.explanation,
+          subjectType: "investigation",
+          subjectId: null,
+          evidenceRefs: flag.evidence_ids,
+        })),
+      ]);
+    } catch {
+      // The evidence-locked AI run remains auditable even if secondary review rows cannot be created.
+    }
   } catch (error) {
     if (runId) await failAiRun(runId, "AUDIT_COPILOT_FAILED", error instanceof Error ? error.message : "Unknown AI failure");
-    failRedirect(error instanceof Error ? error.message : "Audit Copilot failed.");
+    failRedirect(error instanceof Error ? error.message : "Evidence Investigator failed.");
   }
 
   revalidatePath("/app/intelligence");
-  redirect(`/app/intelligence?run=${runId}&message=${encodeURIComponent("Audit Copilot completed. Its answer is advisory; critical protocol decisions still require direct contract/proof validation.")}`);
+  redirect(`/app/intelligence?run=${runId}&message=${encodeURIComponent("Evidence Investigator completed. Claims are locked to supplied evidence IDs; critical decisions still require direct contract/proof validation.")}`);
+}
+
+export async function reviewAiFindingAction(formData: FormData) {
+  const viewer = await requireConsortiumViewer();
+  const parsed = z.object({
+    findingId: z.string().uuid(),
+    organizationId: z.string().uuid(),
+    runId: z.string().uuid().optional(),
+    status: z.enum(["open", "acknowledged", "dismissed", "resolved"]),
+    reviewNote: z.string().trim().max(2000).optional(),
+  }).safeParse({
+    findingId: formData.get("findingId"),
+    organizationId: formData.get("organizationId"),
+    runId: String(formData.get("runId") ?? "") || undefined,
+    status: formData.get("status"),
+    reviewNote: String(formData.get("reviewNote") ?? "") || undefined,
+  });
+  if (!parsed.success) failRedirect("Invalid AI finding review request.");
+  const membership = selectedMembership(viewer, parsed.data.organizationId);
+  if (!membership || !hasOperationalRole(membership)) failRedirect("An active operator/admin/signer membership is required to review AI findings.");
+
+  const service = createServiceClient();
+  const { data: finding, error: findingError } = await service
+    .from("ai_findings")
+    .select("id,organization_id")
+    .eq("id", parsed.data.findingId)
+    .maybeSingle();
+  if (findingError || !finding || finding.organization_id !== parsed.data.organizationId) {
+    failRedirect("The AI finding is not available for the selected organization.");
+  }
+
+  const reopening = parsed.data.status === "open";
+  const { error: updateError } = await service
+    .from("ai_findings")
+    .update({
+      status: parsed.data.status,
+      reviewed_by: reopening ? null : viewer.userId,
+      reviewed_at: reopening ? null : new Date().toISOString(),
+      review_note: reopening ? null : parsed.data.reviewNote ?? null,
+    })
+    .eq("id", parsed.data.findingId)
+    .eq("organization_id", parsed.data.organizationId);
+  if (updateError) failRedirect("Unable to update the AI finding review state.");
+
+  revalidatePath("/app/intelligence");
+  const target = parsed.data.runId ? `/app/intelligence?run=${parsed.data.runId}` : "/app/intelligence";
+  redirect(`${target}&message=${encodeURIComponent(`AI finding marked ${parsed.data.status}. This review is operational only and does not authorize protocol state.`)}`);
 }
