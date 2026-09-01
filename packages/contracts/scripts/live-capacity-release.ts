@@ -122,10 +122,13 @@ async function main() {
   await releaseVerifierDeployment.waitForDeployment();
   const releaseVerifierAddress = await releaseVerifierDeployment.getAddress();
   const releaseVerifier = new ethers.Contract(releaseVerifierAddress, provenanceVerifierAbi, pofc.provider);
-  assert.equal(await releaseVerifier.circuitArtifactHash(), expectedCircuitHash);
-  assert.equal(await releaseVerifier.verificationKeyHash(), expectedVerificationKeyHash);
+  const circuitArtifactHash = releaseVerifier.getFunction("circuitArtifactHash");
+  const verificationKeyHash = releaseVerifier.getFunction("verificationKeyHash");
+  const verifyProof = releaseVerifier.getFunction("verifyProof");
+  assert.equal(await circuitArtifactHash.staticCall(), expectedCircuitHash);
+  assert.equal(await verificationKeyHash.staticCall(), expectedVerificationKeyHash);
   assert.equal(
-    await releaseVerifier.verifyProof(releaseProof.a, releaseProof.b, releaseProof.c, releasePublicSignals),
+    await verifyProof.staticCall(releaseProof.a, releaseProof.b, releaseProof.c, releasePublicSignals),
     true,
     "Provenance-bound release verifier rejected its matching proof",
   );
@@ -133,7 +136,7 @@ async function main() {
   const tamperedReleaseSignals = [...releasePublicSignals] as typeof releasePublicSignals;
   tamperedReleaseSignals[8] = (tamperedReleaseSignals[8] + 1n) % SNARK_SCALAR_FIELD;
   assert.equal(
-    await releaseVerifier.verifyProof(releaseProof.a, releaseProof.b, releaseProof.c, tamperedReleaseSignals),
+    await verifyProof.staticCall(releaseProof.a, releaseProof.b, releaseProof.c, tamperedReleaseSignals),
     false,
     "Release verifier accepted a tampered release nullifier signal",
   );
