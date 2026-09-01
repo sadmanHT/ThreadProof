@@ -111,14 +111,24 @@ Copy `release/production-release.example.json` to `release/production-release.js
 
 Replace every placeholder with verified, non-secret production evidence. The manifest contains only public deployment identifiers, hashes, URLs and attestations; never place private keys, KMS credentials, passwords, decrypted supplier identities, ZK witnesses or Supabase service keys in it.
 
-Validate locally:
+Validate the release policy locally:
 
 ```bash
 node scripts/test-release-readiness.mjs
 node scripts/check-release-readiness.mjs
 ```
 
-The checker requires:
+Then verify the manifest against the actual persistent chain. The verifier reads only the RPC and does not require or print a signer private key:
+
+```bash
+THREADPROOF_RPC_URL="https://your-approved-production-rpc" \
+THREADPROOF_CHAIN_ID=2026 \
+pnpm --filter @threadproof/contracts verify:production-deployment
+```
+
+That command checks the live RPC chain ID and genesis hash, recomputes runtime bytecode hashes for every manifest contract and both ZK verifiers, and compares the CapacityVault spend/release verifier provenance records to the manifest's circuit artifact, verification-key and code hashes. A mismatch fails closed.
+
+The manifest checker requires:
 
 - semantic release version;
 - full tested `develop` SHA;
