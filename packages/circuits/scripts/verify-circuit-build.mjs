@@ -13,6 +13,7 @@ import {
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const REQUIRED_CIRCOM_VERSION = "2.2.0";
 const PINNED_CIRCOM_REVISION = "9fd40a34f42912ee52230f8b6a114d78f6df1a48";
@@ -144,7 +145,7 @@ if (!sourceRelative) throw new Error("--circuit must be CapacitySpend or Capacit
 
 const r1csPath = resolve(required(args, "r1cs"));
 const outDir = resolve(required(args, "out-dir"));
-const scriptDir = dirname(new URL(import.meta.url).pathname);
+const scriptDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(scriptDir, "..");
 const repoRoot = git(packageRoot, ["rev-parse", "--show-toplevel"]);
 const gitHead = git(repoRoot, ["rev-parse", "HEAD"]).toLowerCase();
