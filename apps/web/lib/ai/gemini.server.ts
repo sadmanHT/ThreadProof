@@ -1,4 +1,8 @@
 import { getAiModel, getAiThinkingLevel, type AiThinkingLevel } from "@/lib/ai/policy.server";
+import {
+  normalizeGeminiUsage,
+  type GeminiObservability,
+} from "@/lib/ai/observability";
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -25,20 +29,6 @@ type GeminiInteractionResponse = {
     type?: string;
     content?: Array<{ type?: string; text?: string }>;
   }>;
-};
-
-export type GeminiUsage = {
-  cachedTokens: number | null;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  thoughtTokens: number | null;
-  toolUseTokens: number | null;
-  totalTokens: number | null;
-};
-
-export type GeminiObservability = {
-  providerLatencyMs: number;
-  usage: GeminiUsage;
 };
 
 export type GeminiStructuredResult<T> = {
@@ -148,21 +138,6 @@ function extractOutputText(response: GeminiInteractionResponse) {
 
 function isTimeoutError(error: unknown) {
   return typeof error === "object" && error !== null && "name" in error && error.name === "TimeoutError";
-}
-
-export function normalizeGeminiTokenCount(value: unknown) {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
-}
-
-export function normalizeGeminiUsage(usage: GeminiUsageResponse | undefined): GeminiUsage {
-  return {
-    cachedTokens: normalizeGeminiTokenCount(usage?.total_cached_tokens),
-    inputTokens: normalizeGeminiTokenCount(usage?.total_input_tokens),
-    outputTokens: normalizeGeminiTokenCount(usage?.total_output_tokens),
-    thoughtTokens: normalizeGeminiTokenCount(usage?.total_thought_tokens),
-    toolUseTokens: normalizeGeminiTokenCount(usage?.total_tool_use_tokens),
-    totalTokens: normalizeGeminiTokenCount(usage?.total_tokens),
-  };
 }
 
 export async function runGeminiStructured<T>({
