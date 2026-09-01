@@ -108,10 +108,18 @@ jobs:
             packages/circuits/artifacts/public.json
             packages/circuits/artifacts/verification_key.json
             packages/circuits/artifacts/verifier_provenance.json
+            packages/circuits/artifacts/ceremony-validation/build-verification/CapacitySpend_build_attestation.json
+            packages/circuits/artifacts/ceremony-validation/build-verification/CapacitySpend_build_attestation.json.sha256
+            packages/circuits/artifacts/ceremony-validation/CapacitySpend_ceremony_evidence.json
+            packages/circuits/artifacts/ceremony-validation/CapacitySpend_ceremony_evidence.json.sha256
             packages/circuits/artifacts/release-valid-input.json
             packages/circuits/artifacts/release_proof.json
             packages/circuits/artifacts/release_public.json
             packages/circuits/artifacts/release_verification_key.json
             packages/circuits/artifacts/release_verifier_provenance.json
+            packages/circuits/artifacts/release-ceremony-validation/build-verification/CapacityRelease_build_attestation.json
+            packages/circuits/artifacts/release-ceremony-validation/build-verification/CapacityRelease_build_attestation.json.sha256
+            packages/circuits/artifacts/release-ceremony-validation/CapacityRelease_ceremony_evidence.json
+            packages/circuits/artifacts/release-ceremony-validation/CapacityRelease_ceremony_evidence.json.sha256
             packages/contracts/contracts/generated/CapacitySpendVerifierWithProvenance.sol
             packages/contracts/contracts/generated/CapacityReleaseVerifierWithProvenance.sol

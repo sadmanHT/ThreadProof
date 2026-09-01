@@ -204,6 +204,10 @@ jobs:
             packages/circuits/artifacts/proof.json
             packages/circuits/artifacts/public.json
             packages/circuits/artifacts/verifier_provenance.json
+            packages/circuits/artifacts/ceremony-validation/build-verification/CapacitySpend_build_attestation.json
+            packages/circuits/artifacts/ceremony-validation/build-verification/CapacitySpend_build_attestation.json.sha256
+            packages/circuits/artifacts/ceremony-validation/CapacitySpend_ceremony_evidence.json
+            packages/circuits/artifacts/ceremony-validation/CapacitySpend_ceremony_evidence.json.sha256
             packages/contracts/contracts/generated/CapacitySpendVerifierWithProvenance.sol
 
   security:

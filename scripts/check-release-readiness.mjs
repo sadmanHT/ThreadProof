@@ -136,6 +136,7 @@ for (const key of ["capacitySpend", "capacityRelease"]) {
   hash32(verifier.circuitArtifactHash, `verifiers.${key}.circuitArtifactHash`);
   hash32(verifier.verificationKeyHash, `verifiers.${key}.verificationKeyHash`);
   hash32(verifier.runtimeCodeHash, `verifiers.${key}.runtimeCodeHash`);
+  hash32(verifier.buildAttestationSha256, `verifiers.${key}.buildAttestationSha256`);
   requireValue(verifier.setup === "production-ceremony", `verifiers.${key}.setup must equal production-ceremony.`);
   httpsUrl(verifier.ceremonyEvidenceUrl, `verifiers.${key}.ceremonyEvidenceUrl`);
   hash32(verifier.ceremonyEvidenceSha256, `verifiers.${key}.ceremonyEvidenceSha256`);

@@ -59,6 +59,20 @@ jobs:
             circom
           echo "$RUNNER_TEMP/circom/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/circom/bin/circom" --version | grep -F "2.2.0"
+      - name: Restore exact tracked source before ZK provenance rebuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Next.js may rewrite this tracked compiler-config file during `next build`.
+          # Restore only that known framework mutation, then fail closed on every other
+          # tracked modification before the clean-source R1CS attestation runs.
+          git restore --source=HEAD --worktree -- apps/web/tsconfig.json
+          tracked_status="$(git status --porcelain --untracked-files=no)"
+          if [ -n "$tracked_status" ]; then
+            echo "Tracked source checkout is not clean before ZK provenance rebuild:"
+            printf '%s\n' "$tracked_status"
+            exit 1
+          fi
       - name: Rebuild both ZK circuits from source
         run: |
           rm -rf packages/circuits/artifacts packages/contracts/contracts/generated
@@ -129,10 +143,18 @@ jobs:
             packages/circuits/artifacts/public.json
             packages/circuits/artifacts/verification_key.json
             packages/circuits/artifacts/verifier_provenance.json
+            packages/circuits/artifacts/ceremony-validation/build-verification/CapacitySpend_build_attestation.json
+            packages/circuits/artifacts/ceremony-validation/build-verification/CapacitySpend_build_attestation.json.sha256
+            packages/circuits/artifacts/ceremony-validation/CapacitySpend_ceremony_evidence.json
+            packages/circuits/artifacts/ceremony-validation/CapacitySpend_ceremony_evidence.json.sha256
             packages/circuits/artifacts/release-valid-input.json
             packages/circuits/artifacts/release_proof.json
             packages/circuits/artifacts/release_public.json
             packages/circuits/artifacts/release_verification_key.json
             packages/circuits/artifacts/release_verifier_provenance.json
+            packages/circuits/artifacts/release-ceremony-validation/build-verification/CapacityRelease_build_attestation.json
+            packages/circuits/artifacts/release-ceremony-validation/build-verification/CapacityRelease_build_attestation.json.sha256
+            packages/circuits/artifacts/release-ceremony-validation/CapacityRelease_ceremony_evidence.json
+            packages/circuits/artifacts/release-ceremony-validation/CapacityRelease_ceremony_evidence.json.sha256
             packages/contracts/contracts/generated/CapacitySpendVerifierWithProvenance.sol
             packages/contracts/contracts/generated/CapacityReleaseVerifierWithProvenance.sol

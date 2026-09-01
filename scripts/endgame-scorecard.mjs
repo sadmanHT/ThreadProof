@@ -37,6 +37,12 @@ const chainRuntime = read("apps/worker/src/chain-runtime.ts");
 const liveStallProbe = read("apps/worker/scripts/live-stalled-chain-readiness.ts");
 const qbftFaultHarness = read("scripts/pilot-fault-resilience.mjs");
 const qbftFaultWorkflow = read(".github/workflows/qbft-fault-resilience.yml");
+const cleanStateWorkflow = read(".github/workflows/clean-state-endgame.yml");
+const circuitBuildVerifier = read("packages/circuits/scripts/verify-circuit-build.mjs");
+const ceremonyVerifier = read("packages/circuits/scripts/verify-production-ceremony.mjs");
+const productionVerifierWrapper = read("packages/contracts/scripts/generate-production-verifier-wrapper.mjs");
+const releaseReadiness = read("scripts/check-release-readiness.mjs");
+const productionDeploymentVerifier = read("packages/contracts/scripts/verify-production-deployment.ts");
 
 check("capacity-release-inverse", "Capacity release restores exactly the historical hidden workload", () => {
   assert.match(releaseCircuit, /restoredCapacity === currentCapacity \+ orderWorkload/);
@@ -139,6 +145,23 @@ check("qbft-fault-resilience", "Five-validator QBFT evidence proves one-validato
   assert.match(qbftFaultWorkflow, /live-stalled-chain-readiness\.ts/);
   assert.match(qbftFaultWorkflow, /pnpm pilot:fault-resilience/);
   assert.match(qbftFaultWorkflow, /push:\s*\n\s*branches: \[develop\]/);
+});
+
+check("zk-source-build-provenance", "Production ceremony evidence is bound to a clean exact-source R1CS recompilation and deployed verifier commitment", () => {
+  assert.match(circuitBuildVerifier, /sourceCommit !== gitHead/);
+  assert.match(circuitBuildVerifier, /--untracked-files=no/);
+  assert.match(circuitBuildVerifier, /collectCircuitClosure/);
+  assert.match(circuitBuildVerifier, /rebuiltR1cs\.sha256\.toLowerCase\(\) !== suppliedR1cs\.sha256\.toLowerCase\(\)/);
+  assert.match(circuitBuildVerifier, /PINNED_CIRCOM_REVISION/);
+  assert.match(ceremonyVerifier, /circuitBuildRecompiled: true/);
+  assert.match(ceremonyVerifier, /artifacts:\s*\{\s*buildAttestation:/s);
+  assert.match(productionVerifierWrapper, /buildAttestationSha256/);
+  assert.match(productionVerifierWrapper, /clean-source circuit recompilation/);
+  assert.match(releaseReadiness, /buildAttestationSha256/);
+  assert.match(productionDeploymentVerifier, /buildAttestationSha256\(\)/);
+  assert.match(cleanStateWorkflow, /git restore --source=HEAD --worktree -- apps\/web\/tsconfig\.json/);
+  assert.match(cleanStateWorkflow, /git status --porcelain --untracked-files=no/);
+  assert.match(cleanStateWorkflow, /Tracked source checkout is not clean before ZK provenance rebuild/);
 });
 
 check("ai-advisory-only", "AI remains outside authoritative protocol transitions", () => {

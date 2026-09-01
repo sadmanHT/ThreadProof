@@ -13,10 +13,11 @@ This runbook governs promotion from the fully tested `develop` branch to `main` 
    - ThreadProof Live Capacity Release
    - ThreadProof Clean-State Endgame
    - ThreadProof Release Policy
+   - ThreadProof QBFT Fault Resilience
 2. Record that 40-character SHA as `release.sourceDevelopCommit`.
 3. Do not modify application, worker, contract, circuit, infrastructure, or migration code on the production-promotion branch. Any such change must return to `develop` and repeat the complete matrix.
 
-The production-readiness workflow enforces that only `release/production-release.json`, `CHANGELOG.md`, and `docs/releases/*` may differ after the tested source commit.
+The production release guards enforce that only `release/production-release.json`, `CHANGELOG.md`, and `docs/releases/*` may differ after the tested source commit. The trusted target-side `main` guard also rejects untested application/config/circuit history that exists only on `main`.
 
 ## 2. Provision the persistent chain-2026 consortium
 
@@ -40,15 +41,20 @@ CI-generated Groth16 setup material is explicitly development evidence.
 
 Before a production release:
 
-1. Freeze the exact CapacitySpend and CapacityRelease circuit sources and compiler version.
-2. Run the consortium-approved production ceremony/setup process.
-3. Archive the ceremony transcript/evidence in durable storage.
-4. Record a SHA-256 digest and HTTPS evidence location for each ceremony package.
-5. Compute the final circuit artifact hash and verification-key hash.
-6. Deploy the final provenance-bound verifier contracts.
-7. Register the spend and release verifiers through the ThreadProof Charter governance process. Release-verifier registration must use the dedicated Charter proposal type and its required threshold/timelock.
+1. Freeze the exact CapacitySpend and CapacityRelease source SHA, lockfile and pinned Circom 2.2.0 compiler revision.
+2. Install dependencies from the frozen lockfile and use Circom revision `9fd40a34f42912ee52230f8b6a114d78f6df1a48`.
+3. From a clean checkout of exactly `release.sourceDevelopCommit`, run the circuit build verifier for each R1CS. It must recursively hash the Circom include closure and byte-hash match the supplied R1CS against a fresh recompilation.
+4. Archive each `<Circuit>_build_attestation.json` and checksum. Independently reproduce or review the recorded Git tree, compiler binary hash, source/include hashes, lockfile hash and R1CS hash.
+5. Run the consortium-approved production ceremony/setup process using the build-verified R1CS for each circuit.
+6. Verify the finalized Powers-of-Tau and zkey using `verify-production-ceremony.mjs`. Ceremony evidence must cryptographically include the corresponding build-attestation SHA-256.
+7. Archive the ceremony transcript/evidence and SHA-256 digest in durable storage.
+8. Generate production verifier wrappers. They must expose `circuitArtifactHash`, `verificationKeyHash`, `buildAttestationSha256`, and `ceremonyEvidenceSha256` as immutable public constants.
+9. Deploy the final provenance-bound verifier contracts.
+10. Register the spend and release verifiers through the ThreadProof Charter governance process. Release-verifier registration must use the dedicated Charter proposal type and its required threshold/timelock.
 
-The production manifest requires `setup: "production-ceremony"` for both verifiers and rejects development setup labels.
+The production manifest requires `setup: "production-ceremony"` and a non-zero `buildAttestationSha256` for both verifiers. Legacy production evidence that only labels a source commit without proving a clean source-to-R1CS recompilation is rejected.
+
+See `docs/PRODUCTION_ZK_CEREMONY.md` for the exact artifact and command flow.
 
 ## 4. Deploy and verify protocol contracts
 
@@ -68,7 +74,7 @@ For every contract, record:
 - deployment transaction/evidence;
 - role ownership and governance handoff.
 
-Confirm the final contract code hashes directly against the chain before recording them in the release manifest.
+Confirm the final contract code hashes directly against the chain before recording them in the release manifest. For each production ZK verifier, also read the deployed `buildAttestationSha256()` and `ceremonyEvidenceSha256()` constants and require them to equal the release manifest.
 
 ## 5. Run production-environment acceptance tests
 
@@ -100,6 +106,7 @@ These controls are independent operator actions and must not be self-attested by
 - protect `main` or apply an equivalent repository ruleset;
 - block force-push/deletion for normal operation;
 - require the ThreadProof CI/security/release checks before merge;
+- require `ThreadProof Trusted Main Release Guard / trusted-main-release-guard` for production release PRs after its one-time bootstrap has been manually reviewed and installed;
 - enable Supabase Auth leaked-password protection;
 - re-read GitHub protection/ruleset state and rerun Supabase security advisors.
 
@@ -107,9 +114,11 @@ Record the verifier/operator identity and timestamp in `externalControls` only a
 
 ## 7. Prepare the release manifest
 
-Copy `release/production-release.example.json` to `release/production-release.json` on a dedicated release branch created from the tested `develop` source.
+Copy `release/production-release.example.json` to `release/production-release.json` on a dedicated `release/*` branch created from the tested `develop` source.
 
 Replace every placeholder with verified, non-secret production evidence. The manifest contains only public deployment identifiers, hashes, URLs and attestations; never place private keys, KMS credentials, passwords, decrypted supplier identities, ZK witnesses or Supabase service keys in it.
+
+For both `verifiers.capacitySpend` and `verifiers.capacityRelease`, record the exact production `buildAttestationSha256` emitted by the clean-source build verification and exposed by the deployed verifier wrapper.
 
 Validate the release policy locally:
 
@@ -126,7 +135,7 @@ THREADPROOF_CHAIN_ID=2026 \
 pnpm --filter @threadproof/contracts verify:production-deployment
 ```
 
-That command checks the live RPC chain ID and genesis hash, recomputes runtime bytecode hashes for every manifest contract and both ZK verifiers, and compares the CapacityVault spend/release verifier provenance records to the manifest's circuit artifact, verification-key and code hashes. A mismatch fails closed.
+That command checks the live RPC chain ID and genesis hash, recomputes runtime bytecode hashes for every manifest contract and both ZK verifiers, compares the CapacityVault spend/release verifier provenance records to the manifest's circuit artifact, verification-key and code hashes, and verifies each verifier's deployed build-attestation and ceremony-evidence constants. A mismatch fails closed.
 
 The manifest checker requires:
 
@@ -136,22 +145,21 @@ The manifest checker requires:
 - at least five validators;
 - all six required protocol contracts with distinct addresses and runtime code hashes;
 - production-ceremony evidence for both ZK verifiers;
+- non-zero circuit build-attestation SHA-256 commitments for both ZK verifiers;
 - remote Web3Signer plus KMS/HSM-backed custody;
-- clean-state, benchmark and deployment evidence;
+- clean-state, QBFT fault, benchmark and deployment evidence;
 - verified branch protection for `develop` and `main`;
 - verified Supabase leaked-password protection;
 - explicit production-release approval.
 
 ## 8. Promote to main
 
-Open a pull request to `main` from the dedicated release branch. The `ThreadProof Production Readiness` workflow will:
+Open a pull request to `main` from the dedicated `release/*` branch. Production promotion is guarded in two layers:
 
-1. validate the manifest;
-2. rerun production trust-boundary and endgame scorecard checks;
-3. verify the recorded source commit is an ancestor of both the release branch and `origin/develop`;
-4. reject any application/code/config change made after the tested source commit.
+1. The tested `develop` production-readiness workflow validates manifest structure, canonical evidence and release-only delta.
+2. The trusted `pull_request_target` guard already installed on `main` executes only target-side policy code, never candidate code. It re-resolves all nine canonical successful `develop` push workflows for exactly `release.sourceDevelopCommit`, checks clean-state/QBFT run bindings, requires build-attestation commitments, rejects forks and moved heads, and rejects untested candidate or target-only application/config/circuit changes.
 
-Only merge after every required check is green and the PR still points to the reviewed release head.
+Only merge after every required check is green, branch protection/rulesets actually require the trusted guard, and the PR still points to the reviewed release head.
 
 ## 9. Tag and archive
 
@@ -159,7 +167,7 @@ After main promotion:
 
 - create the release tag/version;
 - publish the final manifest and release notes;
-- retain ceremony, benchmark, clean-state and deployment evidence in durable storage;
+- retain circuit build attestations, ceremony evidence, benchmark, clean-state, QBFT fault and deployment evidence in durable storage;
 - record genesis and contract/verifier hashes in consortium operations documentation;
 - verify workers and indexer are reporting healthy runtime state;
 - verify the web application reports the expected chain ID, bytecode and canonical transaction state.

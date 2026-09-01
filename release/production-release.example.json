@@ -27,6 +27,7 @@
       "circuitArtifactHash": "REPLACE_ME",
       "verificationKeyHash": "REPLACE_ME",
       "runtimeCodeHash": "REPLACE_ME",
+      "buildAttestationSha256": "REPLACE_ME_WITH_0X_32_BYTE_SHA256",
       "setup": "production-ceremony",
       "ceremonyEvidenceUrl": "REPLACE_ME",
       "ceremonyEvidenceSha256": "REPLACE_ME_WITH_0X_32_BYTE_SHA256"
@@ -37,6 +38,7 @@
       "circuitArtifactHash": "REPLACE_ME",
       "verificationKeyHash": "REPLACE_ME",
       "runtimeCodeHash": "REPLACE_ME",
+      "buildAttestationSha256": "REPLACE_ME_WITH_0X_32_BYTE_SHA256",
       "setup": "production-ceremony",
       "ceremonyEvidenceUrl": "REPLACE_ME",
       "ceremonyEvidenceSha256": "REPLACE_ME_WITH_0X_32_BYTE_SHA256"
