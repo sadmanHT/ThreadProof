@@ -16,7 +16,7 @@ The bootstrap PR itself is **not** protected by the guard it installs. Before me
 
 Do not combine application, contract, circuit, dependency, infrastructure, or release-manifest changes into the bootstrap PR.
 
-After merge, configure `main` branch protection or a repository ruleset so the `ThreadProof Trusted Main Release Guard / trusted-main-release-guard` check is required for production release PRs. The guard is defense in depth until that external platform control is enabled.
+After merge, configure `main` branch protection or a repository ruleset so the `ThreadProof Trusted Main Release Guard / trusted-main-release-guard` check is required for production release PRs. Also require the PR branch to be up to date with current `main` before merge, or use an equivalent merge-queue/ruleset guarantee. The guard rechecks the target SHA while it runs, but platform policy must prevent a previously successful check from remaining sufficient after `main` advances. Block normal direct pushes, force-pushes, and branch deletion. The guard is defense in depth until those external controls are enabled.
 
 ## Trust boundary
 
@@ -36,7 +36,7 @@ The guard requires a production release PR to:
 - have all nine required ThreadProof workflows completed successfully as `push` runs on `develop` for exactly the manifest source SHA;
 - retain production ceremony, remote Web3Signer/KMS-HSM, external-control, and release-approval attestations required by the manifest schema.
 
-The guard re-reads the current `main` tip before succeeding so a moved target requires a fresh run. The candidate guard also re-reads the PR head/base before success.
+The guard re-reads the current `main` tip before succeeding so a moved target during verification fails closed. The candidate guard also re-reads the PR head/base before success. Branch protection's up-to-date/merge-queue requirement closes the later race in which `main` could advance after a successful guard run but before merge.
 
 ## Why target-only history is checked
 
