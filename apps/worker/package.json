@@ -18,6 +18,7 @@
     "release:proof": "tsx src/run-capacity-release-generator.ts",
     "submit:releases": "tsx src/run-capacity-release-submitter.ts",
     "identity:manage": "tsx src/protected-identity.ts",
+    "protected:identity": "tsx src/protected-identity.ts",
     "disclosure:export": "tsx src/due-process-disclosure.ts",
     "credential:package": "tsx src/credential-package.ts",
     "index": "tsx src/run-indexer.ts",
