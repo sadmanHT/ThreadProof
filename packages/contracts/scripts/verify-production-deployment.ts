@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { ethers } from "hardhat";
+import { ethers, network } from "hardhat";
 
 type ContractManifestEntry = {
   name: string;
@@ -37,10 +37,22 @@ type ReleaseManifest = {
   };
 };
 
-const provenanceAbi = [
+type RpcBlock = {
+  hash?: string | null;
+};
+
+type VerifierProvenance = {
+  verifier: string;
+  circuitArtifactHash: string;
+  verificationKeyHash: string;
+  verifierCodeHash: string;
+  registeredAt: bigint;
+};
+
+const provenanceInterface = new ethers.Interface([
   "function getVerifierProvenance(uint32 circuitVersion) view returns (tuple(address verifier, bytes32 circuitArtifactHash, bytes32 verificationKeyHash, bytes32 verifierCodeHash, uint64 registeredAt))",
   "function getReleaseVerifierProvenance(uint32 circuitVersion) view returns (tuple(address verifier, bytes32 circuitArtifactHash, bytes32 verificationKeyHash, bytes32 verifierCodeHash, uint64 registeredAt))",
-] as const;
+]);
 
 function fail(message: string): never {
   throw new Error(`Production deployment verification failed: ${message}`);
@@ -56,10 +68,34 @@ function requireEqual(actual: string, expected: string, label: string) {
   }
 }
 
+async function rpc<T>(method: string, params: unknown[] = []) {
+  return (await network.provider.send(method, params)) as T;
+}
+
 async function runtimeCodeHash(address: string, label: string) {
-  const code = await ethers.provider.getCode(address);
-  if (code === "0x") fail(`${label} has no deployed runtime bytecode at ${address}`);
+  const code = await rpc<string>("eth_getCode", [address, "latest"]);
+  if (!code || code === "0x") fail(`${label} has no deployed runtime bytecode at ${address}`);
   return ethers.keccak256(code);
+}
+
+async function verifierProvenance(
+  vaultAddress: string,
+  functionName: "getVerifierProvenance" | "getReleaseVerifierProvenance",
+  circuitVersion: number,
+): Promise<VerifierProvenance> {
+  const data = provenanceInterface.encodeFunctionData(functionName, [circuitVersion]);
+  const result = await rpc<string>("eth_call", [{ to: vaultAddress, data }, "latest"]);
+  const decoded = provenanceInterface.decodeFunctionResult(functionName, result);
+  const tuple = decoded[0];
+  if (!tuple) fail(`${functionName} returned no provenance tuple.`);
+
+  return {
+    verifier: String(tuple.verifier),
+    circuitArtifactHash: String(tuple.circuitArtifactHash),
+    verificationKeyHash: String(tuple.verificationKeyHash),
+    verifierCodeHash: String(tuple.verifierCodeHash),
+    registeredAt: BigInt(tuple.registeredAt),
+  };
 }
 
 function loadManifest() {
@@ -77,18 +113,49 @@ function loadManifest() {
   };
 }
 
+async function verifyVerifier(
+  kind: "capacitySpend" | "capacityRelease",
+  verifier: VerifierManifestEntry,
+  vaultAddress: string,
+  functionName: "getVerifierProvenance" | "getReleaseVerifierProvenance",
+) {
+  if (verifier.setup !== "production-ceremony") {
+    fail(`${kind} verifier is not marked as production-ceremony.`);
+  }
+  if (!ethers.isAddress(verifier.address)) fail(`${kind} verifier address is invalid.`);
+
+  const actualVerifierCodeHash = await runtimeCodeHash(verifier.address, `${kind} verifier`);
+  requireEqual(actualVerifierCodeHash, verifier.runtimeCodeHash, `${kind} verifier runtime code hash`);
+
+  const provenance = await verifierProvenance(vaultAddress, functionName, verifier.circuitVersion);
+  requireEqual(provenance.verifier, verifier.address, `${kind} provenance verifier address`);
+  requireEqual(provenance.circuitArtifactHash, verifier.circuitArtifactHash, `${kind} circuit artifact hash`);
+  requireEqual(provenance.verificationKeyHash, verifier.verificationKeyHash, `${kind} verification key hash`);
+  requireEqual(provenance.verifierCodeHash, verifier.runtimeCodeHash, `${kind} registered verifier code hash`);
+
+  return {
+    circuitVersion: verifier.circuitVersion,
+    address: verifier.address,
+    runtimeCodeHash: actualVerifierCodeHash,
+    circuitArtifactHash: provenance.circuitArtifactHash,
+    verificationKeyHash: provenance.verificationKeyHash,
+    registeredAt: provenance.registeredAt.toString(),
+  };
+}
+
 async function main() {
   const { manifest, manifestPath, manifestSha256 } = loadManifest();
 
   if (manifest.schemaVersion !== 1) fail("unsupported release manifest schema.");
   if (manifest.chain.chainId !== 2026) fail(`manifest chain ID must be 2026, got ${manifest.chain.chainId}.`);
 
-  const network = await ethers.provider.getNetwork();
-  if (network.chainId !== BigInt(manifest.chain.chainId)) {
-    fail(`RPC chain ID ${network.chainId.toString()} does not match manifest ${manifest.chain.chainId}.`);
+  const chainIdHex = await rpc<string>("eth_chainId");
+  const chainId = BigInt(chainIdHex);
+  if (chainId !== BigInt(manifest.chain.chainId)) {
+    fail(`RPC chain ID ${chainId.toString()} does not match manifest ${manifest.chain.chainId}.`);
   }
 
-  const genesis = await ethers.provider.getBlock(0);
+  const genesis = await rpc<RpcBlock>("eth_getBlockByNumber", ["0x0", false]);
   if (!genesis?.hash) fail("RPC did not return canonical genesis block 0.");
   requireEqual(genesis.hash, manifest.chain.genesisHash, "genesis hash");
 
@@ -103,36 +170,18 @@ async function main() {
   const vaultEntry = manifest.contracts.find((entry) => entry.name === "CapacityVault");
   if (!vaultEntry) fail("CapacityVault is missing from the release manifest.");
 
-  const vault = new ethers.Contract(vaultEntry.address, provenanceAbi, ethers.provider);
-  const verifierEvidence: Record<string, unknown> = {};
-
-  for (const [kind, verifier, functionName] of [
-    ["capacitySpend", manifest.verifiers.capacitySpend, "getVerifierProvenance"],
-    ["capacityRelease", manifest.verifiers.capacityRelease, "getReleaseVerifierProvenance"],
-  ] as const) {
-    if (verifier.setup !== "production-ceremony") {
-      fail(`${kind} verifier is not marked as production-ceremony.`);
-    }
-    if (!ethers.isAddress(verifier.address)) fail(`${kind} verifier address is invalid.`);
-
-    const actualVerifierCodeHash = await runtimeCodeHash(verifier.address, `${kind} verifier`);
-    requireEqual(actualVerifierCodeHash, verifier.runtimeCodeHash, `${kind} verifier runtime code hash`);
-
-    const provenance = await vault[functionName](verifier.circuitVersion);
-    requireEqual(String(provenance.verifier), verifier.address, `${kind} provenance verifier address`);
-    requireEqual(String(provenance.circuitArtifactHash), verifier.circuitArtifactHash, `${kind} circuit artifact hash`);
-    requireEqual(String(provenance.verificationKeyHash), verifier.verificationKeyHash, `${kind} verification key hash`);
-    requireEqual(String(provenance.verifierCodeHash), verifier.runtimeCodeHash, `${kind} registered verifier code hash`);
-
-    verifierEvidence[kind] = {
-      circuitVersion: verifier.circuitVersion,
-      address: verifier.address,
-      runtimeCodeHash: actualVerifierCodeHash,
-      circuitArtifactHash: String(provenance.circuitArtifactHash),
-      verificationKeyHash: String(provenance.verificationKeyHash),
-      registeredAt: String(provenance.registeredAt),
-    };
-  }
+  const spendEvidence = await verifyVerifier(
+    "capacitySpend",
+    manifest.verifiers.capacitySpend,
+    vaultEntry.address,
+    "getVerifierProvenance",
+  );
+  const releaseEvidence = await verifyVerifier(
+    "capacityRelease",
+    manifest.verifiers.capacityRelease,
+    vaultEntry.address,
+    "getReleaseVerifierProvenance",
+  );
 
   console.log(
     `THREADPROOF_PRODUCTION_DEPLOYMENT_VERIFIED ${JSON.stringify({
@@ -140,11 +189,14 @@ async function main() {
       sourceDevelopCommit: manifest.release.sourceDevelopCommit,
       manifestFile: path.relative(path.resolve(__dirname, "../../.."), manifestPath),
       manifestSha256,
-      chainId: network.chainId.toString(),
+      chainId: chainId.toString(),
       genesisHash: genesis.hash,
       validatorCountAttested: manifest.chain.validatorCount,
       contracts: codeEvidence,
-      verifiers: verifierEvidence,
+      verifiers: {
+        capacitySpend: spendEvidence,
+        capacityRelease: releaseEvidence,
+      },
     })}`,
   );
 }
