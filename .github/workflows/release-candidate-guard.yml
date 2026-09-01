@@ -1,0 +1,68 @@
+name: ThreadProof Trusted Main Release Guard
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: threadproof-trusted-main-release-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+jobs:
+  trusted-main-release-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted main policy only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Setup pinned Node runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Assert trusted checkout boundary
+        shell: bash
+        env:
+          EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_BASE_SHA"
+          test -f scripts/trusted-main-release-guard.mjs
+          test -f scripts/trusted-main-target-history-guard.mjs
+          test -f scripts/trusted-main-build-evidence-guard.mjs
+      - name: Reject untested target-only main history
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          THREADPROOF_RELEASE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          THREADPROOF_RELEASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/trusted-main-target-history-guard.mjs
+      - name: Require circuit build-attestation evidence
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          THREADPROOF_RELEASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/trusted-main-build-evidence-guard.mjs
+      - name: Validate release candidate without executing candidate code
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          THREADPROOF_RELEASE_PR_NUMBER: ${{ github.event.pull_request.number }}
+          THREADPROOF_RELEASE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          THREADPROOF_RELEASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          THREADPROOF_RELEASE_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          THREADPROOF_RELEASE_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: node scripts/trusted-main-release-guard.mjs
+      - name: Record trust boundary
+        if: always()
+        shell: bash
+        run: |
+          echo "This pull_request_target workflow executes only the main-branch guards checked out at the target base SHA."
+          echo "It never checks out or executes release-candidate code and has read-only repository permissions."
