@@ -231,6 +231,6 @@ jobs:
         run: |
           set -euo pipefail
           docker compose \
-            --env-file infrastructure/besu/production/.env.example \
+            --env-file .env.example \
             -f infrastructure/besu/production/docker-compose.yml \
             config >/dev/null
