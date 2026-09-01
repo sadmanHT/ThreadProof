@@ -1,0 +1,111 @@
+x-besu-common: &besu-common
+  image: hyperledger/besu:26.8.0
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  validator1:
+    <<: *besu-common
+    command:
+      - --config-file=/etc/besu/config.toml
+      - --node-private-key-file=/run/secrets/node-key
+      - --p2p-host=172.28.0.11
+    volumes:
+      - validator1-data:/var/lib/besu
+      - ./besu-config.toml:/etc/besu/config.toml:ro
+      - ./runtime/genesis.json:/etc/besu/genesis.json:ro
+      - ./runtime/static-nodes.json:/etc/besu/static-nodes.json:ro
+      - ./runtime/permissions_config.toml:/etc/besu/permissions_config.toml:ro
+      - ./runtime/validator-1/key:/run/secrets/node-key:ro
+    ports:
+      - 127.0.0.1:8545:8545
+      - 127.0.0.1:8546:8546
+    networks:
+      pilot-chain:
+        ipv4_address: 172.28.0.11
+
+  validator2:
+    <<: *besu-common
+    command:
+      - --config-file=/etc/besu/config.toml
+      - --node-private-key-file=/run/secrets/node-key
+      - --p2p-host=172.28.0.12
+    volumes:
+      - validator2-data:/var/lib/besu
+      - ./besu-config.toml:/etc/besu/config.toml:ro
+      - ./runtime/genesis.json:/etc/besu/genesis.json:ro
+      - ./runtime/static-nodes.json:/etc/besu/static-nodes.json:ro
+      - ./runtime/permissions_config.toml:/etc/besu/permissions_config.toml:ro
+      - ./runtime/validator-2/key:/run/secrets/node-key:ro
+    networks:
+      pilot-chain:
+        ipv4_address: 172.28.0.12
+
+  validator3:
+    <<: *besu-common
+    command:
+      - --config-file=/etc/besu/config.toml
+      - --node-private-key-file=/run/secrets/node-key
+      - --p2p-host=172.28.0.13
+    volumes:
+      - validator3-data:/var/lib/besu
+      - ./besu-config.toml:/etc/besu/config.toml:ro
+      - ./runtime/genesis.json:/etc/besu/genesis.json:ro
+      - ./runtime/static-nodes.json:/etc/besu/static-nodes.json:ro
+      - ./runtime/permissions_config.toml:/etc/besu/permissions_config.toml:ro
+      - ./runtime/validator-3/key:/run/secrets/node-key:ro
+    networks:
+      pilot-chain:
+        ipv4_address: 172.28.0.13
+
+  validator4:
+    <<: *besu-common
+    command:
+      - --config-file=/etc/besu/config.toml
+      - --node-private-key-file=/run/secrets/node-key
+      - --p2p-host=172.28.0.14
+    volumes:
+      - validator4-data:/var/lib/besu
+      - ./besu-config.toml:/etc/besu/config.toml:ro
+      - ./runtime/genesis.json:/etc/besu/genesis.json:ro
+      - ./runtime/static-nodes.json:/etc/besu/static-nodes.json:ro
+      - ./runtime/permissions_config.toml:/etc/besu/permissions_config.toml:ro
+      - ./runtime/validator-4/key:/run/secrets/node-key:ro
+    networks:
+      pilot-chain:
+        ipv4_address: 172.28.0.14
+
+  validator5:
+    <<: *besu-common
+    command:
+      - --config-file=/etc/besu/config.toml
+      - --node-private-key-file=/run/secrets/node-key
+      - --p2p-host=172.28.0.15
+    volumes:
+      - validator5-data:/var/lib/besu
+      - ./besu-config.toml:/etc/besu/config.toml:ro
+      - ./runtime/genesis.json:/etc/besu/genesis.json:ro
+      - ./runtime/static-nodes.json:/etc/besu/static-nodes.json:ro
+      - ./runtime/permissions_config.toml:/etc/besu/permissions_config.toml:ro
+      - ./runtime/validator-5/key:/run/secrets/node-key:ro
+    networks:
+      pilot-chain:
+        ipv4_address: 172.28.0.15
+
+volumes:
+  validator1-data:
+  validator2-data:
+  validator3-data:
+  validator4-data:
+  validator5-data:
+
+networks:
+  pilot-chain:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
