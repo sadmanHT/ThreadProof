@@ -37,7 +37,7 @@ export default async function SubcontractsPage() {
     supabase.from("chain_events").select("id,event_name,data,transaction_hash,block_number,observed_at").in("event_name", ["SubcontractAuthorized", "SubcontractPolicyRegistered"]).order("block_number", { ascending: false }).limit(100),
     supabase.from("organizations").select("id,display_name,chain_organization_id,status,role"),
     supabase.from("purchase_orders").select("id,chain_order_id,external_reference,title,status"),
-    supabase.from("subcontract_authorization_jobs").select("*").order("created_at", { ascending: false }).limit(60),
+    supabase.from("subcontract_authorization_jobs").select("id,parent_order_id,child_order_id,parent_chain_order_id,child_chain_order_id,parent_factory_organization_id,subcontractor_organization_id,sequence,nonce,deadline,status,chain_tx_hash,error_detail,created_at").order("created_at", { ascending: false }).limit(60),
     parentOrdersQuery,
   ]);
   const parentOrders = parentOrdersResult.data ?? [];
