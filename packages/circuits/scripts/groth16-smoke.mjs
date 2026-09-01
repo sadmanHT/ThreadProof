@@ -1,5 +1,6 @@
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { performance } from "node:perf_hooks";
 import path from "node:path";
 
 const artifactsDir = path.resolve("artifacts");
@@ -14,6 +15,7 @@ const verificationKey = path.join(artifactsDir, "verification_key.json");
 const proofPath = path.join(artifactsDir, "proof.json");
 const publicPath = path.join(artifactsDir, "public.json");
 const verifierPath = path.join(artifactsDir, "CapacitySpendVerifier.sol");
+const benchmarkPath = path.join(artifactsDir, "CapacitySpend_benchmark.json");
 
 function run(args) {
   const result = spawnSync("snarkjs", args, {
@@ -28,9 +30,21 @@ function run(args) {
   return `${result.stdout}${result.stderr}`;
 }
 
+function timed(args) {
+  const started = performance.now();
+  const output = run(args);
+  return { output, elapsedMs: Math.round((performance.now() - started) * 100) / 100 };
+}
+
+function integerMetric(output, label) {
+  const match = output.match(new RegExp(`${label}\\s*:\\s*([0-9]+)`, "i"));
+  return match ? Number(match[1]) : null;
+}
+
 // CI-only development ceremony. These deterministic labels/entropy values are intentionally
 // NOT suitable for production. Production requires a documented multi-party ceremony or
 // a separately reviewed proving-system decision.
+const ceremonyStarted = performance.now();
 run(["powersoftau", "new", "bn128", "14", potInitial]);
 run([
   "powersoftau",
@@ -51,10 +65,11 @@ run([
   "-e=threadproof-capacity-spend-development-only",
 ]);
 run(["zkey", "export", "verificationkey", zkeyFinal, verificationKey]);
-run(["groth16", "prove", zkeyFinal, witnessPath, proofPath, publicPath]);
-const verifyOutput = run(["groth16", "verify", verificationKey, publicPath, proofPath]);
-if (!verifyOutput.toLowerCase().includes("ok")) {
-  throw new Error(`Groth16 verification did not report OK:\n${verifyOutput}`);
+const ceremonyMs = Math.round((performance.now() - ceremonyStarted) * 100) / 100;
+const prove = timed(["groth16", "prove", zkeyFinal, witnessPath, proofPath, publicPath]);
+const verify = timed(["groth16", "verify", verificationKey, publicPath, proofPath]);
+if (!verify.output.toLowerCase().includes("ok")) {
+  throw new Error(`Groth16 verification did not report OK:\n${verify.output}`);
 }
 run(["zkey", "export", "solidityverifier", zkeyFinal, verifierPath]);
 
@@ -68,13 +83,29 @@ if (!verifierSource.includes("verifyProof")) {
   throw new Error("Generated Solidity verifier does not expose verifyProof");
 }
 
+const r1csInfo = run(["r1cs", "info", r1csPath]);
 const metrics = {
-  publicSignals: publicSignals.length,
-  proofBytes: statSync(proofPath).size,
-  verificationKeyBytes: statSync(verificationKey).size,
-  verifierSolidityBytes: statSync(verifierPath).size,
+  format: "threadproof-zk-benchmark/v1",
+  circuit: "CapacitySpend",
+  measurements: {
+    constraints: integerMetric(r1csInfo, "Constraints"),
+    wires: integerMetric(r1csInfo, "Wires"),
+    labels: integerMetric(r1csInfo, "Labels"),
+    privateInputs: integerMetric(r1csInfo, "Private Inputs"),
+    publicInputs: integerMetric(r1csInfo, "Public Inputs"),
+    publicOutputs: integerMetric(r1csInfo, "Public Outputs"),
+    provingMs: prove.elapsedMs,
+    verificationMs: verify.elapsedMs,
+    developmentCeremonyMs: ceremonyMs,
+    publicSignals: publicSignals.length,
+    proofBytes: statSync(proofPath).size,
+    verificationKeyBytes: statSync(verificationKey).size,
+    verifierSolidityBytes: statSync(verifierPath).size,
+  },
   setup: "development-only-groth16",
+  note: "Wall-clock values are CI-runner measurements, not protocol constants or production SLOs.",
 };
 
+writeFileSync(benchmarkPath, `${JSON.stringify(metrics, null, 2)}\n`);
 console.log(`THREADPROOF_ZK_SMOKE ${JSON.stringify(metrics)}`);
 console.log("Groth16 development proof generated and verified successfully.");
