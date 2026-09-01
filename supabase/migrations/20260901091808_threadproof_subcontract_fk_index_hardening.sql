@@ -1,0 +1,8 @@
+create index subcontract_jobs_parent_order_idx
+  on public.subcontract_authorization_jobs(parent_order_id);
+create index subcontract_jobs_compliance_credential_idx
+  on public.subcontract_authorization_jobs(compliance_credential_id);
+create index subcontract_jobs_process_credential_idx
+  on public.subcontract_authorization_jobs(process_credential_id);
+create index subcontract_jobs_created_by_idx
+  on public.subcontract_authorization_jobs(created_by);
