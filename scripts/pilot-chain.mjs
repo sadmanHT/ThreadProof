@@ -97,7 +97,9 @@ function besuPublicKey(keyPath, outputPath) {
 async function prepare() {
   ensureDocker();
   await rm(RUNTIME_DIR, { recursive: true, force: true });
-  await mkdir(RUNTIME_DIR, { recursive: true, mode: 0o700 });
+  // Runtime manifests and validator bind paths must be traversable by Besu's non-root
+  // container user. The funded deployer secret is isolated below in its own 0700 dir.
+  await mkdir(RUNTIME_DIR, { recursive: true, mode: 0o755 });
 
   run("docker", [
     "run", "--rm",
@@ -122,10 +124,10 @@ async function prepare() {
     const validatorDir = join(RUNTIME_DIR, `validator-${ordinal}`);
     const keyPath = join(validatorDir, "key");
     const publicKeyPath = join(validatorDir, "key.pub");
-    await mkdir(validatorDir, { recursive: true, mode: 0o700 });
+    await mkdir(validatorDir, { recursive: true, mode: 0o755 });
     await cp(generatedKeys[index], keyPath);
-    // The runtime directory itself is 0700. Read-only key mode lets the non-root Besu
-    // container consume the bind-mounted file without making the pilot directory public.
+    // Validator node identities are disposable pilot material and mounted read-only.
+    // 0444 avoids UID coupling between the host and the pinned non-root Besu image.
     await chmod(keyPath, 0o444);
     besuPublicKey(keyPath, publicKeyPath);
     const nodeId = normalizeNodeId(await readFile(publicKeyPath, "utf8"), `validator-${ordinal} public key`);
