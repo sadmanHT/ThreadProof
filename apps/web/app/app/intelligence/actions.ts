@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { createServiceClient } from "@/lib/supabase/service.server";
 import { getBlockchainStatus } from "@/lib/blockchain";
 import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
 import { analyzeOrderDocument } from "@/lib/ai/order-intelligence.server";
@@ -325,7 +324,7 @@ export async function runAuditCopilotAction(formData: FormData) {
   }
 
   revalidatePath("/app/intelligence");
-  redirect(`/app/intelligence?run=${runId}&message=${encodeURIComponent("Evidence Investigator completed. Claims are locked to supplied evidence IDs; critical decisions still require direct contract/proof validation.")}`);
+  redirect(`/app/intelligence?run=${runId}&message=${encodeURIComponent("Evidence Investigator completed. Claims are locked to supplied evidence IDs and verbatim evidence text; critical decisions still require direct contract/proof validation.")}`);
 }
 
 export async function reviewAiFindingAction(formData: FormData) {
@@ -347,28 +346,14 @@ export async function reviewAiFindingAction(formData: FormData) {
   const membership = selectedMembership(viewer, parsed.data.organizationId);
   if (!membership || !hasOperationalRole(membership)) failRedirect("An active operator/admin/signer membership is required to review AI findings.");
 
-  const service = createServiceClient();
-  const { data: finding, error: findingError } = await service
-    .from("ai_findings")
-    .select("id,organization_id")
-    .eq("id", parsed.data.findingId)
-    .maybeSingle();
-  if (findingError || !finding || finding.organization_id !== parsed.data.organizationId) {
-    failRedirect("The AI finding is not available for the selected organization.");
-  }
-
-  const reopening = parsed.data.status === "open";
-  const { error: updateError } = await service
-    .from("ai_findings")
-    .update({
-      status: parsed.data.status,
-      reviewed_by: reopening ? null : viewer.userId,
-      reviewed_at: reopening ? null : new Date().toISOString(),
-      review_note: reopening ? null : parsed.data.reviewNote ?? null,
-    })
-    .eq("id", parsed.data.findingId)
-    .eq("organization_id", parsed.data.organizationId);
-  if (updateError) failRedirect("Unable to update the AI finding review state.");
+  const supabase = await createClient();
+  const { error: reviewError } = await supabase.rpc("review_ai_finding", {
+    target_finding_id: parsed.data.findingId,
+    target_organization_id: parsed.data.organizationId,
+    new_status: parsed.data.status,
+    new_review_note: parsed.data.reviewNote ?? null,
+  });
+  if (reviewError) failRedirect("Unable to update the AI finding review state.");
 
   revalidatePath("/app/intelligence");
   const query = new URLSearchParams();
