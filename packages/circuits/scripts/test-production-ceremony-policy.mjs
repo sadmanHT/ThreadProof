@@ -11,6 +11,8 @@ const requiredFragments = [
   "contribution\\s+#(\\d+)",
   "phase2ContributionCount",
   "minimumPhase2ContributionCount",
+  "installedSnarkjsVersion",
+  'require.resolve("snarkjs/package.json")',
   "participantEntropyAcceptedByThisTool: false",
   "participantPrivateMaterialPersistedByThisTool: false",
   "finalZkeyCopiedByThisTool: false",
@@ -29,12 +31,13 @@ for (const prohibited of [
   "zkey contribute",
   "powersoftau contribute",
   '"zkey", "export", "json"',
+  'runSnarkjs(["--version"])',
   "-e=",
   "--entropy",
   "privateKey",
 ]) {
   if (source.includes(prohibited)) {
-    throw new Error(`Production ceremony verifier must not create ceremony secret material or expand the full proving key: ${prohibited}`);
+    throw new Error(`Production ceremony verifier must not create ceremony secret material or use unsupported metadata commands: ${prohibited}`);
   }
 }
 
