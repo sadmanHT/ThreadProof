@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from "motion/react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import clsx from "clsx";
 import {
+  Activity,
   ArrowRight,
   BadgeCheck,
   BrainCircuit,
@@ -38,6 +39,7 @@ type IconName =
   | "proofs"
   | "governance"
   | "chain"
+  | "operations"
   | "team"
   | "settings"
   | "subcontracts"
@@ -61,6 +63,7 @@ const iconMap: Record<IconName, LucideIcon> = {
   proofs: ShieldCheck,
   governance: Landmark,
   chain: Network,
+  operations: Activity,
   team: Users,
   settings: Settings,
   subcontracts: GitBranch,
@@ -80,6 +83,7 @@ const nav: readonly NavItem[] = [
   { href: "/app/governance", label: "Governance", description: "Charter proposals, thresholds and timelocks", icon: "governance", section: "workspace", roles: governanceRoles },
   { href: "/app/audit", label: "Audit trail", description: "Indexed canonical protocol evidence", icon: "audit", section: "workspace" },
   { href: "/app/chain", label: "Network", description: "Besu network and contract status", icon: "chain", section: "workspace" },
+  { href: "/app/operations", label: "Operations", description: "Worker liveness and execution-plane health", icon: "operations", section: "workspace" },
   { href: "/app/intelligence", label: "Intelligence", description: "Non-authoritative investigation assistance", icon: "intelligence", section: "workspace" },
   { href: "/app/team", label: "Team", description: "Organization membership and access", icon: "team", section: "organization" },
   { href: "/app/settings", label: "Settings", description: "Profile and workspace preferences", icon: "settings", section: "organization" },
@@ -282,7 +286,7 @@ export function AppShell({ children, organizationName, organizationRole, memberR
                         <ArrowRight size={15} />
                       </Link>
                     );
-                  }) : <div className="command-empty"><Search size={20} /><strong>No matching workspace</strong><span>Try an order, proof, credential, governance, or network term.</span></div>}
+                  }) : <div className="command-empty"><Search size={20} /><strong>No matching workspace</strong><span>Try an order, proof, credential, governance, network, or operations term.</span></div>}
                 </div>
                 <footer className="command-footer"><span><kbd>↑</kbd><kbd>↓</kbd> browse</span><span><kbd>↵</kbd> open</span><span>Authority remains enforced by RLS and chain state.</span></footer>
               </motion.section>

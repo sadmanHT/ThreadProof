@@ -46,6 +46,8 @@ jobs:
         run: node apps/web/scripts/test-subcontract-contract.mjs
       - name: Credential lifecycle regression checks
         run: node apps/web/scripts/test-credential-lifecycle.mjs
+      - name: Worker runtime observability regression checks
+        run: node apps/web/scripts/test-runtime-observability.mjs
       - name: Web production build
         run: pnpm --filter @threadproof/web build
 
