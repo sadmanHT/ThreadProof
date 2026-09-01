@@ -10,7 +10,12 @@ import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
 import { analyzeOrderDocument } from "@/lib/ai/order-intelligence.server";
 import { answerAuditQuestion } from "@/lib/ai/audit-copilot.server";
 import { buildAuditEvidenceBundle } from "@/lib/ai/evidence.server";
-import { assertAiDataClassAllowed, assertOrderDocumentAiAllowed, getAiModel } from "@/lib/ai/policy.server";
+import {
+  assertAiDataClassAllowed,
+  assertOrderDocumentAiAllowed,
+  getAiModel,
+  getAiThinkingLevel,
+} from "@/lib/ai/policy.server";
 import {
   assertAiRateLimit,
   completeAiRun,
@@ -105,6 +110,7 @@ export async function runOrderIntelligenceAction(formData: FormData) {
   }));
   const promptTemplateHash = sha256("threadproof:gemini:order-intelligence:v2:evidenced-pressure");
   const model = getAiModel();
+  const thinkingLevel = getAiThinkingLevel();
 
   let runId: string | null = null;
   try {
@@ -121,6 +127,7 @@ export async function runOrderIntelligenceAction(formData: FormData) {
       dataClass: "counterparty_confidential",
       metadata: {
         intelligence_version: 2,
+        thinking_level: thinkingLevel,
         synthetic_demo: syntheticDemo,
         source_text_present: Boolean(sourceText),
         file_name: file?.name ?? null,
@@ -250,6 +257,7 @@ export async function runAuditCopilotAction(formData: FormData) {
   const evidenceHashes = bundle.evidence.slice(0, 80).map((evidence) => sha256(JSON.stringify(evidence)));
   const promptTemplateHash = sha256("threadproof:gemini:audit-copilot:v2:evidence-locked");
   const model = getAiModel();
+  const thinkingLevel = getAiThinkingLevel();
   let runId: string | null = null;
 
   try {
@@ -264,6 +272,7 @@ export async function runAuditCopilotAction(formData: FormData) {
       dataClass: "consortium_visible",
       metadata: {
         context_version: 2,
+        thinking_level: thinkingLevel,
         evidence_count: bundle.evidence.length,
         deterministic_signal_count: bundle.deterministic_signals.length,
         chain_online: chainStatus.online,
@@ -362,6 +371,8 @@ export async function reviewAiFindingAction(formData: FormData) {
   if (updateError) failRedirect("Unable to update the AI finding review state.");
 
   revalidatePath("/app/intelligence");
-  const target = parsed.data.runId ? `/app/intelligence?run=${parsed.data.runId}` : "/app/intelligence";
-  redirect(`${target}&message=${encodeURIComponent(`AI finding marked ${parsed.data.status}. This review is operational only and does not authorize protocol state.`)}`);
+  const query = new URLSearchParams();
+  if (parsed.data.runId) query.set("run", parsed.data.runId);
+  query.set("message", `AI finding marked ${parsed.data.status}. This review is operational only and does not authorize protocol state.`);
+  redirect(`/app/intelligence?${query.toString()}`);
 }
