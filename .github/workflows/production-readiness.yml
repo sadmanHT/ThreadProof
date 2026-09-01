@@ -1,0 +1,75 @@
+name: ThreadProof Production Readiness
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: threadproof-production-readiness-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  production-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout release candidate with history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test release-readiness policy
+        run: node scripts/test-release-readiness.mjs
+      - name: Re-run production trust-boundary checks
+        run: |
+          node scripts/check-production-boundaries.mjs
+          node scripts/endgame-scorecard.mjs
+      - name: Require attested production release manifest
+        run: |
+          test -f release/production-release.json
+          node scripts/check-release-readiness.mjs
+      - name: Require release source to be tested develop history
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT="$(node -e "const m=require('./release/production-release.json'); process.stdout.write(m.release.sourceDevelopCommit)")"
+          git fetch origin develop --no-tags
+          git cat-file -e "${SOURCE_COMMIT}^{commit}"
+          git merge-base --is-ancestor "$SOURCE_COMMIT" HEAD
+          git merge-base --is-ancestor "$SOURCE_COMMIT" origin/develop
+      - name: Reject untested code changes after source develop commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT="$(node -e "const m=require('./release/production-release.json'); process.stdout.write(m.release.sourceDevelopCommit)")"
+          mapfile -t CHANGED < <(git diff --name-only "$SOURCE_COMMIT"..HEAD)
+          for file in "${CHANGED[@]}"; do
+            case "$file" in
+              release/production-release.json|CHANGELOG.md|docs/releases/*)
+                ;;
+              *)
+                echo "Untested production delta after ${SOURCE_COMMIT}: ${file}"
+                echo "Code/config changes must return to develop and pass the full exact-head matrix before main promotion."
+                exit 1
+                ;;
+            esac
+          done
+      - name: Summarize production source
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const manifest = require('./release/production-release.json');
+          console.log(`Release: ${manifest.release.version}`);
+          console.log(`Tested develop source: ${manifest.release.sourceDevelopCommit}`);
+          console.log(`Chain: ${manifest.chain.networkName} (${manifest.chain.chainId})`);
+          console.log(`Validators: ${manifest.chain.validatorCount}`);
+          console.log('External platform controls are attested in the release manifest; CI does not manufacture those attestations.');
+          NODE
