@@ -5,6 +5,7 @@ const read = (path) => fs.readFileSync(path, "utf8");
 const gemini = read("apps/web/lib/ai/gemini.server.ts");
 const policy = read("apps/web/lib/ai/policy.server.ts");
 const evidence = read("apps/web/lib/ai/evidence.server.ts");
+const evidenceLock = read("apps/web/lib/ai/evidence-lock.ts");
 const auditCopilot = read("apps/web/lib/ai/audit-copilot.server.ts");
 const orderIntelligence = read("apps/web/lib/ai/order-intelligence.server.ts");
 const actions = read("apps/web/app/app/intelligence/actions.ts");
@@ -12,6 +13,7 @@ const page = read("apps/web/app/app/intelligence/page.tsx");
 const resultPanel = read("apps/web/components/intelligence-result-panel.tsx");
 const databaseTypes = read("apps/web/lib/database.types.ts");
 const reviewMigration = read("supabase/migrations/20260901055000_threadproof_ai_finding_review_provenance.sql");
+const onboardingRlsMigration = read("supabase/migrations/20260901070000_threadproof_onboarding_read_policy_consolidation.sql");
 const envExample = read(".env.example");
 
 const checks = [];
@@ -72,8 +74,10 @@ check("audit investigator is evidence locked with verbatim support", () => {
   assert.match(auditCopilot, /Each factual claim must include one or more supports/);
   assert.match(auditCopilot, /VERBATIM quote copied from that evidence record's fact field/);
   assert.match(auditCopilot, /assertEvidenceLockedResult/);
-  assert.match(auditCopilot, /Gemini cited evidence that was not supplied by ThreadProof/);
-  assert.match(auditCopilot, /supporting quote that is not present in evidence/);
+  assert.match(auditCopilot, /@\/lib\/ai\/evidence-lock/);
+  assert.match(evidenceLock, /Gemini cited evidence that was not supplied by ThreadProof/);
+  assert.match(evidenceLock, /supporting quote that is not present in evidence/);
+  assert.match(evidenceLock, /duplicate evidence identifiers/);
   assert.match(actions, /buildAuditEvidenceBundle/);
   assert.match(actions, /inputReferenceHashes:\s*evidenceHashes/);
   assert.match(resultPanel, /Evidence-locked answer/);
@@ -125,6 +129,18 @@ check("AI finding review is atomic, attributable, and non-authoritative", () => 
   assert.doesNotMatch(actions, /createServiceClient/);
   assert.match(resultPanel, /Review is not authorization/);
   assert.match(resultPanel, /htmlFor=\{reviewNoteId\}/);
+});
+
+check("onboarding SELECT visibility is consolidated without broadening roles", () => {
+  assert.match(onboardingRlsMigration, /drop policy if exists onboarding_factory_reviewer_read/);
+  assert.match(onboardingRlsMigration, /drop policy if exists onboarding_request_self_read/);
+  assert.match(onboardingRlsMigration, /create policy onboarding_request_visible_read/);
+  assert.match(onboardingRlsMigration, /requested_by = \(select auth\.uid\(\)\)/);
+  assert.match(onboardingRlsMigration, /requested_role = 'factory'::organization_role/);
+  assert.match(onboardingRlsMigration, /'factory'::organization_role/);
+  assert.match(onboardingRlsMigration, /'industry'::organization_role/);
+  assert.match(onboardingRlsMigration, /'auditor'::organization_role/);
+  assert.match(onboardingRlsMigration, /'independent'::organization_role/);
 });
 
 check("provider failures are sanitized and operationally classified", () => {
