@@ -40,6 +40,8 @@ jobs:
         run: node --experimental-strip-types apps/web/scripts/test-ai-behavior.mjs
       - name: AI observability and evaluation checks
         run: node --experimental-strip-types apps/web/scripts/test-ai-observability.mjs
+      - name: AI review privilege-boundary checks
+        run: node apps/web/scripts/test-ai-review-security.mjs
       - name: Organization-context regression checks
         run: node apps/web/scripts/test-active-organization-scope.mjs
       - name: Subcontract trust-boundary regression checks
