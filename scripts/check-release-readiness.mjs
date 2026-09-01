@@ -89,6 +89,7 @@ requireValue(isRecord(release), "release section is required.");
 const releaseVersion = cleanText(release.version, "release.version");
 requireValue(VERSION.test(releaseVersion), "release.version must be a semantic version such as v1.0.0.");
 requireValue(typeof release.sourceDevelopCommit === "string" && GIT_SHA.test(release.sourceDevelopCommit), "release.sourceDevelopCommit must be a full 40-character Git SHA.");
+requireValue(!/^0{40}$/i.test(release.sourceDevelopCommit), "release.sourceDevelopCommit must not be the zero SHA.");
 isoDate(release.preparedAt, "release.preparedAt");
 cleanText(release.preparedBy, "release.preparedBy");
 
