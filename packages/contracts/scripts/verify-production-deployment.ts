@@ -15,6 +15,7 @@ type VerifierManifestEntry = {
   circuitArtifactHash: string;
   verificationKeyHash: string;
   runtimeCodeHash: string;
+  buildAttestationSha256: string;
   setup: string;
   ceremonyEvidenceSha256: string;
 };
@@ -54,7 +55,8 @@ const provenanceInterface = new ethers.Interface([
   "function getVerifierProvenance(uint32 circuitVersion) view returns (tuple(address verifier, bytes32 circuitArtifactHash, bytes32 verificationKeyHash, bytes32 verifierCodeHash, uint64 registeredAt))",
   "function getReleaseVerifierProvenance(uint32 circuitVersion) view returns (tuple(address verifier, bytes32 circuitArtifactHash, bytes32 verificationKeyHash, bytes32 verifierCodeHash, uint64 registeredAt))",
 ]);
-const ceremonyEvidenceInterface = new ethers.Interface([
+const verifierEvidenceInterface = new ethers.Interface([
+  "function buildAttestationSha256() view returns (bytes32)",
   "function ceremonyEvidenceSha256() view returns (bytes32)",
 ]);
 
@@ -67,9 +69,7 @@ function sameHex(left: string, right: string) {
 }
 
 function requireEqual(actual: string, expected: string, label: string) {
-  if (!sameHex(actual, expected)) {
-    fail(`${label} mismatch: expected ${expected}, got ${actual}`);
-  }
+  if (!sameHex(actual, expected)) fail(`${label} mismatch: expected ${expected}, got ${actual}`);
 }
 
 async function rpc<T>(method: string, params: unknown[] = []) {
@@ -82,12 +82,15 @@ async function runtimeCodeHash(address: string, label: string) {
   return ethers.keccak256(code);
 }
 
-async function verifierCeremonyEvidenceHash(address: string) {
-  const data = ceremonyEvidenceInterface.encodeFunctionData("ceremonyEvidenceSha256");
+async function verifierEvidenceHash(
+  address: string,
+  functionName: "buildAttestationSha256" | "ceremonyEvidenceSha256",
+) {
+  const data = verifierEvidenceInterface.encodeFunctionData(functionName);
   const result = await rpc<string>("eth_call", [{ to: address, data }, "latest"]);
-  const decoded = ceremonyEvidenceInterface.decodeFunctionResult("ceremonyEvidenceSha256", result);
+  const decoded = verifierEvidenceInterface.decodeFunctionResult(functionName, result);
   const value = decoded[0];
-  if (!value) fail(`verifier ${address} returned no ceremonyEvidenceSha256 value.`);
+  if (!value) fail(`verifier ${address} returned no ${functionName} value.`);
   return String(value);
 }
 
@@ -132,10 +135,11 @@ async function verifyVerifier(
   vaultAddress: string,
   functionName: "getVerifierProvenance" | "getReleaseVerifierProvenance",
 ) {
-  if (verifier.setup !== "production-ceremony") {
-    fail(`${kind} verifier is not marked as production-ceremony.`);
-  }
+  if (verifier.setup !== "production-ceremony") fail(`${kind} verifier is not marked as production-ceremony.`);
   if (!ethers.isAddress(verifier.address)) fail(`${kind} verifier address is invalid.`);
+  if (!/^0x[0-9a-f]{64}$/i.test(verifier.buildAttestationSha256)) {
+    fail(`${kind} build attestation SHA-256 is invalid.`);
+  }
   if (!/^0x[0-9a-f]{64}$/i.test(verifier.ceremonyEvidenceSha256)) {
     fail(`${kind} ceremony evidence SHA-256 is invalid.`);
   }
@@ -143,7 +147,14 @@ async function verifyVerifier(
   const actualVerifierCodeHash = await runtimeCodeHash(verifier.address, `${kind} verifier`);
   requireEqual(actualVerifierCodeHash, verifier.runtimeCodeHash, `${kind} verifier runtime code hash`);
 
-  const actualCeremonyEvidenceSha256 = await verifierCeremonyEvidenceHash(verifier.address);
+  const actualBuildAttestationSha256 = await verifierEvidenceHash(verifier.address, "buildAttestationSha256");
+  requireEqual(
+    actualBuildAttestationSha256,
+    verifier.buildAttestationSha256,
+    `${kind} build attestation SHA-256`,
+  );
+
+  const actualCeremonyEvidenceSha256 = await verifierEvidenceHash(verifier.address, "ceremonyEvidenceSha256");
   requireEqual(
     actualCeremonyEvidenceSha256,
     verifier.ceremonyEvidenceSha256,
@@ -162,6 +173,7 @@ async function verifyVerifier(
     runtimeCodeHash: actualVerifierCodeHash,
     circuitArtifactHash: provenance.circuitArtifactHash,
     verificationKeyHash: provenance.verificationKeyHash,
+    buildAttestationSha256: actualBuildAttestationSha256,
     ceremonyEvidenceSha256: actualCeremonyEvidenceSha256,
     registeredAt: provenance.registeredAt.toString(),
   };
