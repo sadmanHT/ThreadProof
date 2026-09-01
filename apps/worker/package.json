@@ -5,14 +5,17 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:signer-policy": "tsx scripts/test-signer-policy.ts && tsx scripts/test-runtime-readiness.ts && tsx scripts/test-canonical-proof-preflight.ts && tsx scripts/test-indexer-cursor.ts && tsx scripts/test-job-lease.ts",
+    "test:signer-policy": "tsx scripts/test-signer-policy.ts && tsx scripts/test-runtime-readiness.ts && tsx scripts/test-canonical-proof-preflight.ts && tsx scripts/test-indexer-cursor.ts && tsx scripts/test-job-lease.ts && tsx scripts/test-capacity-release-policy.ts",
     "test:runtime-readiness": "tsx scripts/test-runtime-readiness.ts",
     "test:canonical-proof-preflight": "tsx scripts/test-canonical-proof-preflight.ts",
     "test:indexer-cursor": "tsx scripts/test-indexer-cursor.ts",
     "test:job-lease": "tsx scripts/test-job-lease.ts",
+    "test:capacity-release-policy": "tsx scripts/test-capacity-release-policy.ts",
     "test:pilot-live": "tsx scripts/pilot-live-runtime.ts",
     "proof": "tsx src/run-proof-generator.ts",
     "submit:proofs": "tsx src/run-proof-submitter.ts",
+    "release:proof": "tsx src/run-capacity-release-generator.ts",
+    "submit:releases": "tsx src/run-capacity-release-submitter.ts",
     "index": "tsx src/run-indexer.ts",
     "relay:orders": "tsx src/run-order-relayer.ts",
     "relay:subcontracts": "tsx src/run-subcontract-relayer.ts"
