@@ -373,6 +373,17 @@ export type Database = {
         Returns: string;
       };
       delete_purchase_order_draft: { Args: { target_order_id: string }; Returns: undefined };
+      get_chain_indexer_health: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          chain_id: number;
+          last_block_number: number;
+          last_block_hash: string;
+          status: string;
+          error_code: string | null;
+          updated_at: string;
+        }[];
+      };
       queue_capacity_proof: { Args: { target_capacity_opening_id: string; target_order_version_id: string }; Returns: string };
       review_ai_finding: {
         Args: { new_review_note?: string | null; new_status: string; target_finding_id: string; target_organization_id: string };
