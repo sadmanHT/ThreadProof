@@ -122,13 +122,14 @@ const circuitArtifactHash = keccak256(r1csBytes);
 const verificationKeyHash = keccak256(verificationKeyBytes);
 const ceremonyEvidenceSha256 = sha256Bytes(evidenceBytes);
 const wrapperContract = `${circuit}VerifierWithProvenance`;
-const wrapperSource = `// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.28;\n\nimport {${generatedVerifierContract}} from "./${circuit}Verifier.sol";\n\n/// @notice Production Groth16 verifier wrapper bound to the exact ThreadProof circuit, verification key, and ceremony evidence.\n/// @dev The ceremony transcript is verified off-chain; these immutable hashes make the deployed verifier auditable against that public evidence.\ncontract ${wrapperContract} {\n    bytes32 public constant circuitArtifactHash = ${circuitArtifactHash};\n    bytes32 public constant verificationKeyHash = ${verificationKeyHash};\n    bytes32 public constant ceremonyEvidenceSha256 = ${ceremonyEvidenceSha256};\n\n    ${generatedVerifierContract} private immutable _verifier;\n\n    constructor() {\n        _verifier = new ${generatedVerifierContract}();\n    }\n\n    function verifyProof(\n        uint256[2] calldata a,\n        uint256[2][2] calldata b,\n        uint256[2] calldata c,\n        uint256[9] calldata publicSignals\n    ) external view returns (bool) {\n        return _verifier.verifyProof(a, b, c, publicSignals);\n    }\n}\n`;
+const wrapperSource = `// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.28;\n\nimport {${generatedVerifierContract}} from "./${circuit}Verifier.sol";\n\n/// @notice Production Groth16 verifier bound to the exact ThreadProof circuit, verification key, and ceremony evidence.\n/// @dev The proof verifier is inherited directly so the deployed runtime is self-contained and reproducible.\ncontract ${wrapperContract} is ${generatedVerifierContract} {\n    bytes32 public constant circuitArtifactHash = ${circuitArtifactHash};\n    bytes32 public constant verificationKeyHash = ${verificationKeyHash};\n    bytes32 public constant ceremonyEvidenceSha256 = ${ceremonyEvidenceSha256};\n}\n`;
 writeFileSync(wrapperOutputPath, wrapperSource, { mode: 0o644 });
 
 const provenance = {
   schemaVersion: 1,
   setup: "production-ceremony",
   productionTrustedSetup: true,
+  verifierComposition: "direct-inheritance",
   circuit,
   circuitVersion: 1,
   sourceCommit: evidence.sourceCommit,
@@ -162,6 +163,7 @@ console.log(
     circuitArtifactHash,
     verificationKeyHash,
     ceremonyEvidenceSha256,
+    verifierComposition: provenance.verifierComposition,
     verifierOutputPath,
     wrapperOutputPath,
     provenanceOutputPath,
