@@ -4,10 +4,14 @@
   "private": true,
   "scripts": {
     "compile": "mkdir -p artifacts && circom circuits/CapacitySpend.circom --r1cs --wasm --sym -o artifacts -l node_modules",
+    "compile:release": "mkdir -p artifacts && circom circuits/CapacityRelease.circom --r1cs --wasm --sym -o artifacts -l node_modules",
     "info": "snarkjs r1cs info artifacts/CapacitySpend.r1cs",
+    "info:release": "snarkjs r1cs info artifacts/CapacityRelease.r1cs",
     "test": "node scripts/check-circuit-shape.mjs",
     "test:witness": "node scripts/test-witnesses.mjs",
-    "test:groth16": "node scripts/groth16-smoke.mjs"
+    "test:groth16": "node scripts/groth16-smoke.mjs",
+    "test:release:witness": "node scripts/test-release-witnesses.mjs",
+    "test:release:groth16": "node scripts/groth16-release-smoke.mjs"
   },
   "dependencies": {
     "circomlib": "^2.0.5",
