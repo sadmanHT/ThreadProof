@@ -82,6 +82,16 @@ jobs:
           pnpm pilot:prepare
           pnpm pilot:up
           pnpm pilot:verify
+      - name: Deploy protocol and measure live QBFT worker inclusion
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          . infrastructure/besu/pilot/runtime/pilot.env
+          set +a
+          export THREADPROOF_DEPLOYMENT_OUTPUT_PATH="$GITHUB_WORKSPACE/infrastructure/besu/pilot/runtime/deployment.json"
+          pnpm --filter @threadproof/contracts deploy:local --network threadproofLocal
+          pnpm --filter @threadproof/worker test:pilot-live
       - name: Execute live PoFC-backed subcontract and capacity release
         shell: bash
         run: |
@@ -108,6 +118,10 @@ jobs:
           if-no-files-found: warn
           path: |
             artifacts/endgame-scorecard.json
+            artifacts/contract-gas-benchmark.json
+            artifacts/live-qbft-benchmark.json
+            packages/circuits/artifacts/CapacitySpend_benchmark.json
+            packages/circuits/artifacts/CapacityRelease_benchmark.json
             packages/circuits/artifacts/valid-input.json
             packages/circuits/artifacts/proof.json
             packages/circuits/artifacts/public.json
