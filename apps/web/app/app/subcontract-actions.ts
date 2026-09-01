@@ -330,7 +330,9 @@ export async function submitSubcontractSignatureAction(input: unknown): Promise<
     const parsed = signatureSchema.parse(input);
     const supabase = await createClient();
     const service = createServiceClient();
-    const { data: job, error: jobError } = await supabase.from("subcontract_authorization_jobs").select("*").eq("id", parsed.jobId).maybeSingle();
+    // The stored signature and worker lease fields are service-only after write. Resolve
+    // the full prepared row server-side, then independently re-check creator + membership.
+    const { data: job, error: jobError } = await service.from("subcontract_authorization_jobs").select("*").eq("id", parsed.jobId).maybeSingle();
     if (jobError) throw jobError;
     if (!job || job.status !== "prepared" || job.created_by !== viewer.userId) {
       return { ok: false, error: "Prepared subcontract authorization is no longer available to this signer." };
