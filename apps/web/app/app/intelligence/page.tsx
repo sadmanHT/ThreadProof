@@ -28,7 +28,6 @@ export default async function IntelligencePage({ searchParams }: Props) {
   const providerTier = getAiProviderTier();
   const geminiConfigured = Boolean(process.env.GEMINI_API_KEY?.trim());
   const supabase = await createClient();
-  const aiSupabase = supabase as any;
 
   const [{ data: orders }, { data: recentRuns }] = await Promise.all([
     supabase
@@ -36,7 +35,7 @@ export default async function IntelligencePage({ searchParams }: Props) {
       .select("id,external_reference,title,buyer_organization_id,factory_organization_id,status,updated_at")
       .order("updated_at", { ascending: false })
       .limit(50),
-    aiSupabase
+    supabase
       .from("ai_runs")
       .select("id,organization_id,task_type,model_provider,model_name,data_class,status,created_at,completed_at")
       .order("created_at", { ascending: false })
@@ -47,12 +46,12 @@ export default async function IntelligencePage({ searchParams }: Props) {
   let findings: AiFindingView[] = [];
   if (runId) {
     const [{ data: run }, { data: findingRows }] = await Promise.all([
-      aiSupabase
+      supabase
         .from("ai_runs")
         .select("id,organization_id,task_type,model_provider,model_name,data_class,status,prompt_template_hash,input_hash,input_reference_hashes,provider_response_id,metadata,output_json,error_code,error_detail,created_at,completed_at")
         .eq("id", runId)
         .maybeSingle(),
-      aiSupabase
+      supabase
         .from("ai_findings")
         .select("id,severity,finding_type,explanation,evidence_refs,status,reviewed_by,reviewed_at,review_note,created_at")
         .eq("ai_run_id", runId)
@@ -110,7 +109,7 @@ export default async function IntelligencePage({ searchParams }: Props) {
           <form className="stack-form" action={runAuditCopilotAction}>
             <label>Organization<select name="organizationId" required>{viewer.memberships.map((membership) => <option key={membership.organization_id} value={membership.organization_id}>{membership.organization.display_name} · {titleCase(membership.organization.role)}</option>)}</select></label>
             <label>Investigation question<textarea name="question" required rows={8} maxLength={2000} placeholder="What currently needs human attention before the next authorization? Why did a recent proof workflow fail? Which visible credentials require direct registry re-checking?" /></label>
-            <div className="callout"><strong>No free-form citations</strong><span>ThreadProof builds a minimized evidence manifest first. Gemini must cite exact evidence IDs from that manifest; invented IDs are rejected server-side. Direct RPC health and deterministic rule signals remain distinguishable from read-model observations.</span></div>
+            <div className="callout"><strong>No free-form citations</strong><span>ThreadProof builds a minimized evidence manifest first. Every Gemini factual claim must cite an exact evidence ID and include a verbatim supporting quote from that evidence record; unknown IDs or mismatched quotes are rejected server-side. Direct RPC health and deterministic rule signals remain distinguishable from read-model observations.</span></div>
             <button className="button primary" disabled={!geminiConfigured}>Run Evidence Investigator</button>
           </form>
         </article>
