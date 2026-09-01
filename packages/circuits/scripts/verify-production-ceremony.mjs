@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const require = createRequire(import.meta.url);
@@ -62,12 +62,28 @@ function runSnarkjs(args) {
 }
 
 function installedSnarkjsVersion() {
-  const packagePath = require.resolve("snarkjs/package.json");
-  const packageMetadata = JSON.parse(readFileSync(packagePath, "utf8"));
-  if (typeof packageMetadata.version !== "string" || !packageMetadata.version.trim()) {
-    throw new Error("Installed snarkjs package metadata does not contain a version");
+  const entryPath = require.resolve("snarkjs");
+  let cursor = dirname(entryPath);
+  while (true) {
+    const candidate = join(cursor, "package.json");
+    try {
+      const packageMetadata = JSON.parse(readFileSync(candidate, "utf8"));
+      if (packageMetadata.name === "snarkjs") {
+        if (typeof packageMetadata.version !== "string" || !packageMetadata.version.trim()) {
+          throw new Error("Installed snarkjs package metadata does not contain a version");
+        }
+        return packageMetadata.version.trim();
+      }
+    } catch (error) {
+      if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) {
+        throw error;
+      }
+    }
+    const parent = dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
   }
-  return packageMetadata.version.trim();
+  throw new Error("Could not locate installed snarkjs package metadata from its exported entrypoint");
 }
 
 function sha256File(path) {
