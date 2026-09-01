@@ -14,6 +14,7 @@ export const governanceProposalTypes = {
   emergencyUnpause: 11,
   credentialSuspension: 12,
   credentialRestore: 13,
+  releaseVerifierRegistration: 14,
 } as const;
 
 export const governanceEmergencyTargets = {
@@ -42,6 +43,7 @@ export const threadProofCharterAbi = parseAbi([
   "function executePolicyUpdate(bytes32 proposalId,uint8 targetProposalType,(uint8 threshold,uint8 eligibleMask,uint8 requiredMask,uint64 timelockSeconds,uint64 votingPeriodSeconds,bool exists) newPolicy)",
   "function executeProtocolRoleUpdate(bytes32 proposalId,address target,bytes32 role,address account,bool grant)",
   "function executeVerifierRegistration(bytes32 proposalId,uint32 circuitVersion,address verifierAddress,bytes32 circuitArtifactHash,bytes32 verificationKeyHash)",
+  "function executeReleaseVerifierRegistration(bytes32 proposalId,uint32 circuitVersion,address verifierAddress,bytes32 circuitArtifactHash,bytes32 verificationKeyHash)",
   "function executeSubcontractPolicyRegistration(bytes32 proposalId,bytes32 policyHash,uint8 maxDepth,bytes32 complianceCredentialType,bytes32 processCredentialType)",
   "function executeEmergencyControl(bytes32 proposalId,uint8 target)",
   "function executeCredentialStatus(bytes32 proposalId,bytes32 credentialId,uint8 newStatus)",
@@ -52,6 +54,7 @@ export const threadProofCharterAbi = parseAbi([
   "function hashPolicyUpdateAction(uint8 targetProposalType,uint8 threshold,uint8 eligibleMask,uint8 requiredMask,uint64 timelockSeconds,uint64 votingPeriodSeconds,uint64 expectedPolicyVersion) pure returns (bytes32)",
   "function hashProtocolRoleAction(address target,bytes32 role,address account,bool grant) pure returns (bytes32)",
   "function hashVerifierRegistrationAction(uint32 circuitVersion,address verifierAddress,bytes32 circuitArtifactHash,bytes32 verificationKeyHash) pure returns (bytes32)",
+  "function hashReleaseVerifierRegistrationAction(uint32 circuitVersion,address verifierAddress,bytes32 circuitArtifactHash,bytes32 verificationKeyHash) pure returns (bytes32)",
   "function hashSubcontractPolicyAction(bytes32 policyHash,uint8 maxDepth,bytes32 complianceCredentialType,bytes32 processCredentialType) pure returns (bytes32)",
   "function hashEmergencyControlAction(uint8 target,bool pauseState) pure returns (bytes32)",
   "function hashCredentialStatusAction(bytes32 credentialId,uint8 newStatus) pure returns (bytes32)",

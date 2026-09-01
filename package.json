@@ -13,6 +13,7 @@
     "contracts:test": "pnpm --filter @threadproof/contracts test",
     "circuits:compile": "pnpm --filter @threadproof/circuits compile",
     "circuits:test": "pnpm --filter @threadproof/circuits test",
+    "endgame:scorecard": "node scripts/endgame-scorecard.mjs",
     "infra:validate:consortium": "node scripts/validate-consortium-topology.mjs",
     "pilot:prepare": "node scripts/pilot-chain.mjs prepare",
     "pilot:up": "node scripts/pilot-chain.mjs up",

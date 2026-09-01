@@ -54,6 +54,14 @@ jobs:
           set +a
           export THREADPROOF_DEPLOYMENT_OUTPUT_PATH="$GITHUB_WORKSPACE/infrastructure/besu/pilot/runtime/deployment.json"
           pnpm --filter @threadproof/worker test:pilot-live
+      - name: Upload live QBFT benchmark
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: threadproof-live-qbft-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: artifacts/live-qbft-benchmark.json
       - name: Pilot diagnostics
         if: failure()
         run: docker compose -f infrastructure/besu/pilot/docker-compose.yml logs --no-color || true

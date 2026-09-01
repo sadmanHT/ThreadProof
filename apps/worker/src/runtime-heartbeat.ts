@@ -8,6 +8,8 @@ export const WORKER_RUNTIME_TYPES = [
   "subcontract_relayer",
   "proof_generator",
   "proof_submitter",
+  "capacity_release_generator",
+  "capacity_release_submitter",
 ] as const;
 
 export type WorkerRuntimeType = (typeof WORKER_RUNTIME_TYPES)[number];
