@@ -269,6 +269,13 @@ function decodeRlpItem(buffer, offset, label) {
   return { value: decodeList(start, end), next: end };
 }
 
+function isQbftNoVote(value) {
+  // Besu's canonical QBFT genesis currently encodes "No Vote" as an empty RLP
+  // list. Older/generated fixtures may encode the same semantic value as an empty
+  // RLP byte string. Both forms carry no vote payload; every non-empty form fails.
+  return (Array.isArray(value) && value.length === 0) || (Buffer.isBuffer(value) && value.length === 0);
+}
+
 export function decodeQbftGenesisValidators(extraData) {
   if (typeof extraData !== "string" || !/^0x(?:[0-9a-fA-F]{2})+$/.test(extraData)) {
     fail("QBFT genesis extraData must be even-length hex");
@@ -281,7 +288,7 @@ export function decodeQbftGenesisValidators(extraData) {
   const [vanity, validatorItems, vote, round, seals] = decoded.value;
   if (!Buffer.isBuffer(vanity) || vanity.length !== 32) fail("QBFT genesis vanity data must be exactly 32 bytes");
   if (!Array.isArray(validatorItems)) fail("QBFT genesis validator field must be an RLP list");
-  if (!Buffer.isBuffer(vote) || vote.length !== 0) fail("QBFT genesis must not contain an initial validator vote");
+  if (!isQbftNoVote(vote)) fail("QBFT genesis must not contain an initial validator vote");
   if (!Buffer.isBuffer(round) || round.length !== 0) fail("QBFT genesis round must be zero");
   if (!Array.isArray(seals) || seals.length !== 0) fail("QBFT genesis must not contain validator seals");
 

@@ -36,6 +36,7 @@ infrastructure/besu/**/data/
 infrastructure/besu/**/keys/
 infrastructure/besu/**/node-key*
 infrastructure/besu/**/besu-node-key*
+infrastructure/besu/pilot/runtime/
 
 # Supabase local state
 supabase/.branches/

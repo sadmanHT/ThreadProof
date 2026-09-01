@@ -13,7 +13,12 @@
     "contracts:test": "pnpm --filter @threadproof/contracts test",
     "circuits:compile": "pnpm --filter @threadproof/circuits compile",
     "circuits:test": "pnpm --filter @threadproof/circuits test",
-    "infra:validate:consortium": "node scripts/validate-consortium-topology.mjs"
+    "infra:validate:consortium": "node scripts/validate-consortium-topology.mjs",
+    "pilot:prepare": "node scripts/pilot-chain.mjs prepare",
+    "pilot:up": "node scripts/pilot-chain.mjs up",
+    "pilot:verify": "node scripts/pilot-chain.mjs verify",
+    "pilot:down": "node scripts/pilot-chain.mjs down",
+    "pilot:reset": "node scripts/pilot-chain.mjs reset"
   },
   "devDependencies": {
     "turbo": "^2.5.6",
