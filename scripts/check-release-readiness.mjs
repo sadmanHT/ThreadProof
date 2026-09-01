@@ -150,6 +150,8 @@ cleanText(signing.keyCustodyDescription, "signing.keyCustodyDescription");
 const evidence = manifest.evidence;
 requireValue(isRecord(evidence), "evidence section is required.");
 httpsUrl(evidence.cleanStateRunUrl, "evidence.cleanStateRunUrl");
+httpsUrl(evidence.qbftFaultRunUrl, "evidence.qbftFaultRunUrl");
+sha256(evidence.qbftFaultEvidenceSha256, "evidence.qbftFaultEvidenceSha256");
 sha256(evidence.benchmarkBundleSha256, "evidence.benchmarkBundleSha256");
 httpsUrl(evidence.benchmarkBundleUrl, "evidence.benchmarkBundleUrl");
 httpsUrl(evidence.deploymentEvidenceUrl, "evidence.deploymentEvidenceUrl");

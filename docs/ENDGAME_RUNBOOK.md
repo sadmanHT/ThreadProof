@@ -1,10 +1,10 @@
 # ThreadProof Endgame Runbook
 
-This runbook is the reproducibility contract for the ThreadProof endgame. It starts from a clean checkout, rebuilds both ZK circuits, boots a disposable five-validator Besu/QBFT consortium on chain `2026`, executes the live trust paths, and preserves measured evidence without relying on a developer laptop or persistent chain state.
+This runbook is the reproducibility contract for the ThreadProof endgame. It starts from a clean checkout, rebuilds both ZK circuits, boots a disposable five-validator Besu/QBFT consortium on chain `2026`, executes the live trust paths, injects validator failures, and preserves measured evidence without relying on a developer laptop or persistent chain state.
 
 ## What this proves
 
-A successful clean-state rehearsal demonstrates all of the following on the exact Git commit under test:
+A successful clean-state rehearsal plus fault-resilience run demonstrates all of the following on the exact Git commit under test:
 
 1. The web application typechecks and produces a production build.
 2. Worker signer policy and runtime trust-boundary tests pass.
@@ -17,18 +17,20 @@ A successful clean-state rehearsal demonstrates all of the following on the exac
 9. A worker-signed transaction is submitted to the five-validator network and its receipt latency/gas are measured.
 10. A PoFC-backed subcontract authorization completes on the live disposable chain.
 11. A PoFC spend, order cancellation, and cryptographic capacity release complete on the live disposable chain.
-12. The deterministic endgame trust-boundary scorecard passes.
-13. Measured gas, R1CS, proof-size, proving/verification-time and live-QBFT artifacts are preserved.
+12. Five-validator QBFT remains live with one validator unavailable, stops finalizing with two unavailable while RPC remains responsive, and resumes after quorum restoration.
+13. Workers fail closed when a canonical RPC responds but block height stops advancing beyond the configured stall threshold.
+14. The deterministic endgame trust-boundary scorecard passes.
+15. Measured gas, R1CS, proof-size, proving/verification-time, live-QBFT, and QBFT-fault artifacts are preserved.
 
 This rehearsal does **not** make application databases or AI outputs authoritative. Canonical protocol state remains signed/verified chain state. Supabase stores encrypted operational state, queues, read models, and canonical-event projections.
 
 ## CI path
 
-Use the GitHub Actions workflow **ThreadProof Clean-State Endgame**. It runs on pull requests to `develop` and can also be started manually with `workflow_dispatch`.
+Use the GitHub Actions workflows **ThreadProof Clean-State Endgame** and **ThreadProof QBFT Fault Resilience**. They run on pull requests to `develop`, on canonical `develop` pushes, and can also be started manually with `workflow_dispatch`.
 
-Treat the workflow's exact `github.sha` as the verification unit. Do not transfer a green result from a different commit.
+Treat the workflow's exact source SHA as the verification unit. Do not transfer a green result from a different commit.
 
-The endgame PR is considered technically mergeable only when all seven workflows for the same head SHA are green:
+A release-candidate source is considered technically attested only when all nine workflows for the same exact source SHA are green:
 
 - ThreadProof CI
 - ThreadProof Live PoFC
@@ -37,8 +39,10 @@ The endgame PR is considered technically mergeable only when all seven workflows
 - ThreadProof Live Pilot
 - ThreadProof Endgame Scorecard
 - ThreadProof Clean-State Endgame
+- ThreadProof Release Policy
+- ThreadProof QBFT Fault Resilience
 
-The clean-state workflow always destroys its disposable pilot network and uploads the scorecard, measured benchmark files, spend/release proofs, verification keys, and verifier-provenance artifacts.
+The clean-state workflow always destroys its disposable pilot network and uploads the scorecard, measured benchmark files, spend/release proofs, verification keys, and verifier-provenance artifacts. The fault-resilience workflow independently uploads a sanitized JSON observation record and SHA-256 checksum for the validator-loss/recovery experiment.
 
 ## Local reproduction
 
@@ -120,15 +124,27 @@ pnpm pilot:verify
 pnpm pilot:reset
 ```
 
+Run the independent QBFT liveness/fail-closed experiment from a fresh disposable network:
+
+```bash
+pnpm pilot:up
+pnpm --filter @threadproof/worker test:runtime-readiness
+pnpm pilot:fault-resilience
+pnpm pilot:reset
+```
+
+The fault harness deliberately keeps validator1 running as the observation RPC endpoint, stops validator5 and requires 4/5 finalization to continue, then stops validator4 and requires a settled no-progress window while `eth_chainId` still answers. Restoring validator4 must restore block progress; restoring validator5 must leave the full network advancing. See `docs/QBFT_FAULT_RESILIENCE.md`.
+
 ## Measured evaluation artifacts
 
-The clean-state evidence bundle contains measurements rather than inferred performance claims:
+The endgame evidence contains measurements rather than inferred performance claims:
 
 - `artifacts/contract-gas-benchmark.json` — representative contract gas on the in-process Hardhat network. The mock-verifier spend measurement is explicitly labeled and does not pretend to include real Groth16 verifier cost.
 - `packages/circuits/artifacts/CapacitySpend_benchmark.json` — R1CS counts, proof/VK/verifier sizes, proving time, verification time and development-ceremony time.
 - `packages/circuits/artifacts/CapacityRelease_benchmark.json` — the corresponding release-circuit measurements.
 - `artifacts/live-qbft-benchmark.json` — one-confirmation submission-to-receipt latency and gas for a worker-signed zero-value transaction on the disposable five-validator chain.
 - `artifacts/endgame-scorecard.json` — deterministic structural/trust-boundary checks. This is not a latency or throughput benchmark.
+- `infrastructure/besu/pilot/runtime/qbft-fault-resilience.json` plus `.sha256` — exact block-height/timing observations for 5/5, 4/5, no-quorum 3/5, and recovery states. It contains no validator keys or private protocol data.
 
 Wall-clock measurements vary with the CI runner and must not be presented as protocol constants or production SLOs.
 
@@ -199,9 +215,23 @@ Spend-verifier and release-verifier registration are distinct Charter actions. R
 
 Release-verifier installation requires the same supermajority shape as spend-verifier registration: four constituencies, mandatory Auditor + Regulator participation, exact artifact/VK action-hash binding and a one-day timelock. Direct deployer/bootstrap verifier-admin authority must be retired before production governance is considered established.
 
+## Recovery boundary
+
+Read models and job queues are operational state and may be rebuilt from canonical events. Private commitment openings are different: they contain witness material that cannot be reconstructed from public chain data.
+
+If a private capacity opening is lost or cannot open the current on-chain commitment:
+
+1. stop proof generation for that factory × period × process key;
+2. preserve the current on-chain commitment and event history;
+3. do not manufacture replacement `(R, ρ)` values in PostgreSQL;
+4. use the approved auditor/Charter recovery or recertification path to retire/freeze the affected state and initialize replacement capacity explicitly;
+5. resume only after the replacement state is canonically established.
+
+If Supabase/read models are lost while the chain remains healthy, restore encrypted organization-owned backups for non-public private documents and rebuild chain-derived projections from canonical events. A database restore must never overwrite newer canonical chain state.
+
 ## Release criteria
 
-A commit is a release candidate only when all seven mandatory GitHub workflows for that **exact SHA** are green, the hosted Supabase migration history matches Git, and the Supabase advisors show no new actionable database issues.
+A commit is a release candidate only when all nine mandatory GitHub workflows for that **exact SHA** are green, the hosted Supabase migration history matches Git, and the Supabase advisors show no new actionable database issues.
 
 Production release still has two platform controls that repository code cannot manufacture:
 

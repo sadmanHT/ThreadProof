@@ -49,6 +49,8 @@
   },
   "evidence": {
     "cleanStateRunUrl": "REPLACE_ME",
+    "qbftFaultRunUrl": "REPLACE_ME",
+    "qbftFaultEvidenceSha256": "REPLACE_ME_WITH_64_HEX_SHA256",
     "benchmarkBundleUrl": "REPLACE_ME",
     "benchmarkBundleSha256": "REPLACE_ME",
     "deploymentEvidenceUrl": "REPLACE_ME",

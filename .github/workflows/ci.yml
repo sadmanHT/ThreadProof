@@ -228,6 +228,8 @@ jobs:
         run: node scripts/check-production-boundaries.mjs
       - name: Test consortium topology fail-closed preflight
         run: node scripts/test-consortium-topology-preflight.mjs
+      - name: Guard QBFT fault-resilience evidence policy
+        run: node scripts/test-qbft-fault-resilience-policy.mjs
       - name: Enforce canonical capacity allocation binding
         run: node scripts/check-capacity-allocation-binding.mjs
       - name: Validate production Besu compose template
