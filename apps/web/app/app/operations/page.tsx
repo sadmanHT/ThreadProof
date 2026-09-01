@@ -56,6 +56,11 @@ function shortInstance(value: string) {
   return value.length > 12 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
 }
 
+function asBlockNumber(value: string | null) {
+  if (!value || !/^\d+$/.test(value)) return null;
+  return BigInt(value);
+}
+
 export default async function OperationsPage() {
   await requireConsortiumViewer();
   const supabase = await createClient();
@@ -91,7 +96,11 @@ export default async function OperationsPage() {
   const missingCount = rows.filter((row) => row.state === "missing").length;
   const degradedCount = rows.filter((row) => row.state === "degraded" || row.state === "stopping").length;
   const cursor = indexerHealth?.[0] ?? null;
-  const indexerLag = chain.online && cursor ? Math.max(0, chain.blockNumber - cursor.last_block_number) : null;
+  const chainHead = asBlockNumber(chain.blockNumber);
+  const cursorBlock = cursor ? BigInt(cursor.last_block_number) : null;
+  const indexerLag = chain.online && chainHead !== null && cursorBlock !== null
+    ? (chainHead >= cursorBlock ? chainHead - cursorBlock : 0n)
+    : null;
 
   return (
     <div className="workspace-page">
@@ -122,12 +131,12 @@ export default async function OperationsPage() {
           <article>
             <span className="kicker">BESU</span>
             <h3>{chain.online ? "Canonical RPC reachable" : "Canonical RPC unavailable"}</h3>
-            <p>{chain.online ? `Chain ${chain.chainId} · head block ${chain.blockNumber.toLocaleString()}.` : "Worker heartbeats cannot make protocol state valid while the canonical chain is unavailable."}</p>
+            <p>{chain.online ? `Chain ${chain.chainId} · head block ${chainHead?.toLocaleString() ?? "unknown"}.` : "Worker heartbeats cannot make protocol state valid while the canonical chain is unavailable."}</p>
             <StatusBadge value={chain.online ? "online" : "offline"} />
           </article>
           <article>
             <span className="kicker">INDEXER CURSOR</span>
-            <h3>{cursor ? `Block ${cursor.last_block_number.toLocaleString()}` : "Cursor unavailable"}</h3>
+            <h3>{cursor ? `Block ${BigInt(cursor.last_block_number).toLocaleString()}` : "Cursor unavailable"}</h3>
             <p>{cursor ? `${titleCase(cursor.status)} · ${indexerLag === null ? "lag unknown" : `${indexerLag.toLocaleString()} block lag`}.` : "The read-model cursor is separate from the indexer process heartbeat."}</p>
             <StatusBadge value={cursor?.status ?? "unknown"} />
           </article>
