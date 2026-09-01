@@ -1,4 +1,6 @@
 import { expect } from "chai";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { ethers } from "hardhat";
 
 const ZERO_A: [bigint, bigint] = [0n, 0n];
@@ -142,7 +144,7 @@ describe("ThreadProof gas baselines", function () {
       await vault.connect(factorySigner).spendCapacity(spend, ZERO_A, ZERO_B, ZERO_C)
     ).wait();
 
-    const snapshot = {
+    const gasUsed = {
       registerOrganization: registerReceipt!.gasUsed.toString(),
       issueCredential: credentialReceipt!.gasUsed.toString(),
       submitOrderVersion: orderReceipt!.gasUsed.toString(),
@@ -150,10 +152,20 @@ describe("ThreadProof gas baselines", function () {
       spendCapacityMockVerifier: spendReceipt!.gasUsed.toString(),
     };
 
-    for (const gas of Object.values(snapshot)) {
+    for (const gas of Object.values(gasUsed)) {
       expect(BigInt(gas)).to.be.greaterThan(0n);
     }
 
-    console.log(`THREADPROOF_GAS_SNAPSHOT ${JSON.stringify(snapshot)}`);
+    const benchmark = {
+      format: "threadproof-contract-gas-benchmark/v1",
+      network: "hardhat-in-process",
+      chainId: networkInfo.chainId.toString(),
+      gasUsed,
+      note: "Measured transaction gas on the in-process Hardhat network. Mock-verifier spend gas excludes real Groth16 verifier cost and is labeled accordingly.",
+    };
+    const artifactDir = path.resolve(process.cwd(), "../../artifacts");
+    mkdirSync(artifactDir, { recursive: true });
+    writeFileSync(path.join(artifactDir, "contract-gas-benchmark.json"), `${JSON.stringify(benchmark, null, 2)}\n`);
+    console.log(`THREADPROOF_GAS_SNAPSHOT ${JSON.stringify(benchmark)}`);
   });
 });
