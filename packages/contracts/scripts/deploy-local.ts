@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { ethers, network } from "hardhat";
 
 async function main() {
@@ -119,7 +120,13 @@ async function main() {
     },
   };
 
-  console.log(JSON.stringify(deployment, null, 2));
+  const deploymentJson = `${JSON.stringify(deployment, null, 2)}\n`;
+  const outputPath = process.env.THREADPROOF_DEPLOYMENT_OUTPUT_PATH?.trim();
+  if (outputPath) {
+    await writeFile(outputPath, deploymentJson, { mode: 0o600 });
+    console.log(`Deployment manifest: ${outputPath}`);
+  }
+  console.log(deploymentJson.trimEnd());
 }
 
 main().catch((error) => {
