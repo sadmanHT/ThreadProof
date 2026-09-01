@@ -100,24 +100,29 @@ check("order extraction requires source evidence and deterministic pressure scor
   assert.match(resultPanel, /Production-pressure index/);
 });
 
-check("AI audit tables are strongly typed in the web client", () => {
+check("AI audit tables and review RPC are strongly typed in the web client", () => {
   assert.match(databaseTypes, /ai_runs:\s*Table</);
   assert.match(databaseTypes, /ai_findings:\s*Table</);
   assert.match(databaseTypes, /reviewed_by:\s*string \| null/);
   assert.match(databaseTypes, /reviewed_at:\s*string \| null/);
   assert.match(databaseTypes, /review_note:\s*string \| null/);
+  assert.match(databaseTypes, /review_ai_finding:/);
   assert.doesNotMatch(page, /as any/);
   assert.doesNotMatch(page, /aiSupabase/);
 });
 
-check("AI finding review has attributable human provenance", () => {
-  assert.match(reviewMigration, /reviewed_by uuid references auth\.users/);
+check("AI finding review is atomic, attributable, and non-authoritative", () => {
+  assert.match(reviewMigration, /reviewed_by uuid references auth\.users\(id\) on delete restrict/);
   assert.match(reviewMigration, /reviewed_at timestamptz/);
   assert.match(reviewMigration, /review_note text/);
   assert.match(reviewMigration, /ai_findings_reviewed_by_idx/);
+  assert.match(reviewMigration, /create or replace function public\.review_ai_finding/);
+  assert.match(reviewMigration, /membership\.member_role in \('admin', 'operator', 'signer'\)/);
+  assert.match(reviewMigration, /grant execute on function public\.review_ai_finding[\s\S]*to authenticated/);
   assert.match(actions, /reviewAiFindingAction/);
   assert.match(actions, /hasOperationalRole\(membership\)/);
-  assert.match(actions, /reviewed_by:\s*reopening \? null : viewer\.userId/);
+  assert.match(actions, /supabase\.rpc\("review_ai_finding"/);
+  assert.doesNotMatch(actions, /createServiceClient/);
   assert.match(resultPanel, /Review is not authorization/);
   assert.match(resultPanel, /htmlFor=\{reviewNoteId\}/);
 });
