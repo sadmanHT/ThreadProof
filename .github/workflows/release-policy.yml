@@ -1,0 +1,38 @@
+name: ThreadProof Release Policy
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: threadproof-release-policy-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  release-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test production release manifest policy
+        run: node scripts/test-release-readiness.mjs
+      - name: Verify production manifest is not committed prematurely
+        if: github.ref_name != 'main' && github.event.pull_request.base.ref != 'main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f release/production-release.json; then
+            echo "A production release manifest is release-specific evidence and must be added only on a controlled main-promotion branch."
+            exit 1
+          fi

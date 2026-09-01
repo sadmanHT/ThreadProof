@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "version": "v1.0.0",
+    "sourceDevelopCommit": "REPLACE_ME_WITH_TESTED_DEVELOP_SHA",
+    "preparedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+    "preparedBy": "REPLACE_ME_WITH_OPERATOR_IDENTITY"
+  },
+  "chain": {
+    "networkName": "ThreadProof Production Consortium",
+    "chainId": 2026,
+    "genesisHash": "REPLACE_ME_WITH_0X_32_BYTE_GENESIS_HASH",
+    "validatorCount": 5
+  },
+  "contracts": [
+    { "name": "Registry", "address": "REPLACE_ME", "runtimeCodeHash": "REPLACE_ME" },
+    { "name": "CredentialRegistry", "address": "REPLACE_ME", "runtimeCodeHash": "REPLACE_ME" },
+    { "name": "OrderRegistry", "address": "REPLACE_ME", "runtimeCodeHash": "REPLACE_ME" },
+    { "name": "CapacityVault", "address": "REPLACE_ME", "runtimeCodeHash": "REPLACE_ME" },
+    { "name": "SubcontractGovernor", "address": "REPLACE_ME", "runtimeCodeHash": "REPLACE_ME" },
+    { "name": "ThreadProofCharter", "address": "REPLACE_ME", "runtimeCodeHash": "REPLACE_ME" }
+  ],
+  "verifiers": {
+    "capacitySpend": {
+      "circuitVersion": 1,
+      "address": "REPLACE_ME",
+      "circuitArtifactHash": "REPLACE_ME",
+      "verificationKeyHash": "REPLACE_ME",
+      "runtimeCodeHash": "REPLACE_ME",
+      "setup": "production-ceremony",
+      "ceremonyEvidenceUrl": "REPLACE_ME",
+      "ceremonyEvidenceSha256": "REPLACE_ME"
+    },
+    "capacityRelease": {
+      "circuitVersion": 1,
+      "address": "REPLACE_ME",
+      "circuitArtifactHash": "REPLACE_ME",
+      "verificationKeyHash": "REPLACE_ME",
+      "runtimeCodeHash": "REPLACE_ME",
+      "setup": "production-ceremony",
+      "ceremonyEvidenceUrl": "REPLACE_ME",
+      "ceremonyEvidenceSha256": "REPLACE_ME"
+    }
+  },
+  "signing": {
+    "mode": "remote-web3signer",
+    "kmsOrHsmBacked": false,
+    "keyCustodyDescription": "REPLACE_ME_WITH_NON_SECRET_CUSTODY_DESCRIPTION"
+  },
+  "evidence": {
+    "cleanStateRunUrl": "REPLACE_ME",
+    "benchmarkBundleUrl": "REPLACE_ME",
+    "benchmarkBundleSha256": "REPLACE_ME",
+    "deploymentEvidenceUrl": "REPLACE_ME",
+    "deploymentManifestSha256": "REPLACE_ME"
+  },
+  "externalControls": {
+    "developBranchProtectionVerified": false,
+    "mainBranchProtectionVerified": false,
+    "supabaseLeakedPasswordProtectionVerified": false,
+    "verifiedAt": "REPLACE_ME",
+    "verifiedBy": "REPLACE_ME"
+  },
+  "approval": {
+    "changeReference": "REPLACE_ME",
+    "productionReleaseApproved": false,
+    "approvedBy": "REPLACE_ME",
+    "approvedAt": "REPLACE_ME"
+  }
+}

@@ -11,7 +11,8 @@
     "verify:generated": "hardhat run scripts/generated-verifier-smoke.ts",
     "verify:live-pofc": "hardhat run scripts/live-pofc.ts",
     "verify:live-subcontract": "hardhat run scripts/live-subcontract.ts",
-    "verify:live-capacity-release": "hardhat run scripts/live-capacity-release.ts"
+    "verify:live-capacity-release": "hardhat run scripts/live-capacity-release.ts",
+    "verify:production-deployment": "hardhat run scripts/verify-production-deployment.ts --network threadproofLocal"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0"

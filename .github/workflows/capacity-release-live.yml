@@ -1,6 +1,8 @@
 name: ThreadProof Live Capacity Release
 
 on:
+  push:
+    branches: [develop]
   pull_request:
     branches: [develop]
   workflow_dispatch:
