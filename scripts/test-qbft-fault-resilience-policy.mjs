@@ -9,7 +9,11 @@ for (const fragment of [
   'compose("stop", "validator5")',
   'compose("stop", "validator4")',
   'compose("start", "validator4")',
+  'compose("restart", ...ACTIVE_QUORUM_VALIDATORS)',
   'compose("start", "validator5")',
+  'const ACTIVE_QUORUM_VALIDATORS = ["validator1", "validator2", "validator3", "validator4"]',
+  'waitForRpcReady(45_000, "QBFT active-validator restart")',
+  'timeoutResetValidators: ACTIVE_QUORUM_VALIDATORS',
   'rpc("eth_chainId")',
   'rpc("eth_blockNumber")',
   'qbft_getValidatorsByBlockNumber',
@@ -26,10 +30,13 @@ for (const fragment of [
 }
 
 if (harness.includes('compose("stop", "validator1")')) {
-  throw new Error("QBFT fault harness must not stop validator1 because it is the observation RPC endpoint");
+  throw new Error("QBFT fault harness must not remove validator1 during the fault observation because it is the RPC endpoint");
 }
 if (!harness.includes("observedAt !== stalledAt")) {
   throw new Error("QBFT fault harness must require exact no-progress evidence after quorum loss");
+}
+if (!harness.includes("QBFT doubles requesttimeoutseconds on every failed round")) {
+  throw new Error("QBFT recovery harness must document why active-validator timer reset is required after quorum loss");
 }
 
 for (const fragment of [
