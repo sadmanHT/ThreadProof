@@ -5,6 +5,7 @@ export type EvidenceRecord = {
 
 export type EvidenceLockedResult = {
   claims: Array<{
+    statement: string;
     supports: Array<{
       evidence_id: string;
       quote: string;
@@ -18,6 +19,21 @@ export type EvidenceLockedResult = {
 function normalized(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
+
+const FORBIDDEN_CLAIM_PATTERNS: Array<{ pattern: RegExp; message: string }> = [
+  {
+    pattern: /\b(?:remaining|available|unused)\s+capacity\b[\s\S]{0,48}\b(?:is|equals?|=|:)\s*[-+]?\d/i,
+    message: "AI must not infer or disclose exact remaining capacity.",
+  },
+  {
+    pattern: /\b(?:nullifier\s+secret|commitment\s+randomness|opening\s+randomness|encryption\s+key|private\s+zk\s+witness|protected\s+supplier\s+identity)\b[\s\S]{0,48}\b(?:is|equals?|=|:)\s*\S+/i,
+    message: "AI must not disclose ThreadProof private protocol secrets or protected identities.",
+  },
+  {
+    pattern: /\b(?:i|threadproof\s+ai|gemini|the\s+ai)\s+(?!(?:cannot|can't|do\s+not|don't|must\s+not|will\s+not|am\s+unable\s+to)\b)(?:(?:hereby|have|has|can)\s+)?(?:authoriz(?:e|es|ed|ing)|approv(?:e|es|ed|ing)|accept(?:s|ed|ing)?|confirm(?:s|ed|ing)?)\b/i,
+    message: "AI must not represent itself as protocol or business authority.",
+  },
+];
 
 export function assertEvidenceLockedResult(
   result: EvidenceLockedResult,
@@ -49,6 +65,12 @@ export function assertEvidenceLockedResult(
   }
 
   for (const claim of result.claims) {
+    for (const forbidden of FORBIDDEN_CLAIM_PATTERNS) {
+      if (forbidden.pattern.test(claim.statement)) {
+        throw new Error(forbidden.message);
+      }
+    }
+
     for (const support of claim.supports) {
       const evidenceItem = byId.get(support.evidence_id);
       if (!evidenceItem) continue;
@@ -61,4 +83,12 @@ export function assertEvidenceLockedResult(
       }
     }
   }
+}
+
+export function materializeEvidenceLockedAnswer(result: EvidenceLockedResult) {
+  const statements = result.claims.map((claim) => normalized(claim.statement)).filter(Boolean);
+  if (!statements.length) {
+    return "No evidence-backed factual claim can be made from the supplied ThreadProof evidence bundle.";
+  }
+  return statements.join(" ");
 }

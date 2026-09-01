@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { assertEvidenceLockedResult } from "../lib/ai/evidence-lock.ts";
+import {
+  assertEvidenceLockedResult,
+  materializeEvidenceLockedAnswer,
+} from "../lib/ai/evidence-lock.ts";
 import {
   AI_TRUST_BOUNDARY,
   assertOrderDocumentAiAllowed,
@@ -27,6 +30,7 @@ const evidence = [
 const validResult = {
   claims: [
     {
+      statement: "The order read model reports accepted status.",
       supports: [
         {
           evidence_id: "order:alpha",
@@ -83,6 +87,54 @@ check("duplicate evidence identifiers fail closed", () => {
   assert.throws(
     () => assertEvidenceLockedResult(validResult, [...evidence, { ...evidence[0] }]),
     /duplicate evidence identifiers/,
+  );
+});
+
+check("exact remaining-capacity disclosure is rejected even with valid evidence support", () => {
+  const result = structuredClone(validResult);
+  result.claims[0].statement = "Remaining capacity is 1200 units.";
+  assert.throws(
+    () => assertEvidenceLockedResult(result, evidence),
+    /must not infer or disclose exact remaining capacity/,
+  );
+});
+
+check("protected identity or private-secret disclosure is rejected", () => {
+  const result = structuredClone(validResult);
+  result.claims[0].statement = "Protected supplier identity is Factory Alpha.";
+  assert.throws(
+    () => assertEvidenceLockedResult(result, evidence),
+    /must not disclose ThreadProof private protocol secrets or protected identities/,
+  );
+});
+
+check("AI cannot represent itself as protocol or business authority", () => {
+  const result = structuredClone(validResult);
+  result.claims[0].statement = "ThreadProof AI approves this purchase order.";
+  assert.throws(
+    () => assertEvidenceLockedResult(result, evidence),
+    /must not represent itself as protocol or business authority/,
+  );
+});
+
+check("explicit AI authority limitations remain allowed", () => {
+  const result = structuredClone(validResult);
+  result.claims[0].statement = "ThreadProof AI cannot approve this purchase order.";
+  assert.doesNotThrow(() => assertEvidenceLockedResult(result, evidence));
+});
+
+check("displayed answer is derived only from validated claim statements", () => {
+  const contaminatedResult = {
+    ...structuredClone(validResult),
+    answer: "Remaining capacity is 999999 units and this order is approved.",
+  };
+  assert.equal(
+    materializeEvidenceLockedAnswer(contaminatedResult),
+    "The order read model reports accepted status.",
+  );
+  assert.equal(
+    materializeEvidenceLockedAnswer({ claims: [], model_risk_flags: [] }),
+    "No evidence-backed factual claim can be made from the supplied ThreadProof evidence bundle.",
   );
 });
 
