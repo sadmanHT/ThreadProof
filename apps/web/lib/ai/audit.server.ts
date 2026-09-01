@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/service.server";
 import { getAiProviderTier } from "@/lib/ai/policy.server";
+import { consumeGeminiObservability } from "@/lib/ai/gemini.server";
+import { buildAiRunObservability } from "@/lib/ai/observability";
 
 export function sha256(value: string | Uint8Array) {
   const hash = createHash("sha256");
@@ -63,24 +65,41 @@ export async function startAiRun(input: {
   return data.id as string;
 }
 
+function outputWithObservability(output: unknown, providerResponseId: string | null) {
+  const provider = consumeGeminiObservability(providerResponseId);
+  if (!provider) return output;
+  const base = output && typeof output === "object" && !Array.isArray(output)
+    ? output as Record<string, unknown>
+    : { result: output };
+  return {
+    ...base,
+    ai_observability: buildAiRunObservability(provider, output),
+  };
+}
+
 export async function completeAiRun(input: {
   runId: string;
   output: unknown;
   providerResponseId: string | null;
 }) {
   const service = createServiceClient();
-  const { error } = await service
+  const { data, error } = await service
     .from("ai_runs")
     .update({
       status: "completed",
-      output_json: input.output,
+      output_json: outputWithObservability(input.output, input.providerResponseId),
       provider_response_id: input.providerResponseId,
       completed_at: new Date().toISOString(),
       error_code: null,
       error_detail: null,
     })
-    .eq("id", input.runId);
-  if (error) throw new Error("AI completed but its audit record could not be finalized.");
+    .eq("id", input.runId)
+    .eq("status", "running")
+    .select("id")
+    .maybeSingle();
+  if (error || !data?.id) {
+    throw new Error("AI completed but its running audit record could not be finalized exactly once.");
+  }
 }
 
 export async function failAiRun(runId: string, code: string, detail: string) {
@@ -93,7 +112,8 @@ export async function failAiRun(runId: string, code: string, detail: string) {
       error_code: code.slice(0, 120),
       error_detail: detail.slice(0, 1000),
     })
-    .eq("id", runId);
+    .eq("id", runId)
+    .eq("status", "running");
 }
 
 export async function recordAiFindings(

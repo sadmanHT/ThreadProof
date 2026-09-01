@@ -38,6 +38,8 @@ jobs:
         run: node apps/web/scripts/test-ai-contract.mjs
       - name: AI adversarial behavior checks
         run: node --experimental-strip-types apps/web/scripts/test-ai-behavior.mjs
+      - name: AI observability and evaluation checks
+        run: node --experimental-strip-types apps/web/scripts/test-ai-observability.mjs
       - name: Organization-context regression checks
         run: node apps/web/scripts/test-active-organization-scope.mjs
       - name: Web production build

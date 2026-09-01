@@ -1,4 +1,8 @@
 import { getAiModel, getAiThinkingLevel, type AiThinkingLevel } from "@/lib/ai/policy.server";
+import {
+  normalizeGeminiUsage,
+  type GeminiObservability,
+} from "@/lib/ai/observability";
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -7,10 +11,20 @@ export type GeminiDocument = {
   mimeType: "application/pdf";
 };
 
+type GeminiUsageResponse = {
+  total_cached_tokens?: number;
+  total_input_tokens?: number;
+  total_output_tokens?: number;
+  total_thought_tokens?: number;
+  total_tokens?: number;
+  total_tool_use_tokens?: number;
+};
+
 type GeminiInteractionResponse = {
   id?: string;
   model?: string;
   status?: string;
+  usage?: GeminiUsageResponse;
   steps?: Array<{
     type?: string;
     content?: Array<{ type?: string; text?: string }>;
@@ -21,6 +35,7 @@ export type GeminiStructuredResult<T> = {
   id: string | null;
   model: string;
   thinkingLevel: AiThinkingLevel;
+  observability: GeminiObservability;
   value: T;
 };
 
@@ -45,6 +60,37 @@ export class GeminiProviderError extends Error {
     this.code = code;
     this.httpStatus = httpStatus;
   }
+}
+
+const observabilityByResponseId = new Map<string, { observedAt: number; value: GeminiObservability }>();
+const OBSERVABILITY_TTL_MS = 5 * 60_000;
+const OBSERVABILITY_MAX_ENTRIES = 100;
+
+function pruneObservability(now = Date.now()) {
+  for (const [id, entry] of observabilityByResponseId) {
+    if (now - entry.observedAt > OBSERVABILITY_TTL_MS) observabilityByResponseId.delete(id);
+  }
+  while (observabilityByResponseId.size > OBSERVABILITY_MAX_ENTRIES) {
+    const oldest = observabilityByResponseId.keys().next().value;
+    if (typeof oldest !== "string") break;
+    observabilityByResponseId.delete(oldest);
+  }
+}
+
+function rememberGeminiObservability(responseId: string | null, value: GeminiObservability) {
+  if (!responseId) return;
+  const now = Date.now();
+  pruneObservability(now);
+  observabilityByResponseId.set(responseId, { observedAt: now, value });
+}
+
+export function consumeGeminiObservability(responseId: string | null) {
+  if (!responseId) return null;
+  pruneObservability();
+  const entry = observabilityByResponseId.get(responseId);
+  if (!entry) return null;
+  observabilityByResponseId.delete(responseId);
+  return entry.value;
 }
 
 function geminiHttpError(status: number) {
@@ -119,6 +165,7 @@ export async function runGeminiStructured<T>({
     });
   }
 
+  const startedAt = Date.now();
   let response: Response;
   try {
     response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
@@ -169,10 +216,18 @@ export async function runGeminiStructured<T>({
     );
   }
 
+  const id = typeof payload.id === "string" ? payload.id : null;
+  const observability: GeminiObservability = {
+    providerLatencyMs: Math.max(0, Date.now() - startedAt),
+    usage: normalizeGeminiUsage(payload.usage),
+  };
+  rememberGeminiObservability(id, observability);
+
   return {
-    id: typeof payload.id === "string" ? payload.id : null,
+    id,
     model: typeof payload.model === "string" && payload.model ? payload.model : model,
     thinkingLevel,
+    observability,
     value,
   };
 }
