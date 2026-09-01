@@ -30,7 +30,7 @@ try {
   const r1cs = Buffer.from("threadproof-test-r1cs");
   const verificationKey = Buffer.from('{"protocol":"groth16"}\n');
   const verifier = Buffer.from(
-    "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.28;\ncontract Groth16Verifier { function verifyProof(uint256[2] calldata, uint256[2][2] calldata, uint256[2] calldata, uint256[9] calldata) external pure returns (bool) { return true; } }\n",
+    "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.28;\ncontract Groth16Verifier { function verifyProof(uint256[2] calldata, uint256[2][2] calldata, uint256[2] calldata, uint256[9] calldata) public pure returns (bool) { return true; } }\n",
   );
   writeFileSync(r1csPath, r1cs);
   writeFileSync(verificationKeyPath, verificationKey);
@@ -73,14 +73,29 @@ try {
     throw new Error("Production wrapper generator did not emit provenance summary");
   }
   const wrapper = readFileSync(join(outDir, "CapacitySpendVerifierWithProvenance.sol"), "utf8");
-  if (!wrapper.includes("ceremonyEvidenceSha256") || !wrapper.includes("CapacitySpendGroth16Verifier")) {
-    throw new Error("Production wrapper is not bound to ceremony evidence or normalized verifier identity");
+  if (!wrapper.includes("ceremonyEvidenceSha256")) {
+    throw new Error("Production verifier is not bound to ceremony evidence");
   }
+  if (!wrapper.includes("contract CapacitySpendVerifierWithProvenance is CapacitySpendGroth16Verifier")) {
+    throw new Error("Production verifier must inherit the generated Groth16 verifier directly");
+  }
+  if (wrapper.includes("new CapacitySpendGroth16Verifier") || wrapper.includes("_verifier")) {
+    throw new Error("Production verifier must not deploy or forward to a hidden child verifier");
+  }
+
+  const normalizedVerifier = readFileSync(join(outDir, "CapacitySpendVerifier.sol"), "utf8");
+  if (!normalizedVerifier.includes("contract CapacitySpendGroth16Verifier")) {
+    throw new Error("Generated verifier identity was not normalized deterministically");
+  }
+
   const provenance = JSON.parse(
     readFileSync(join(outDir, "CapacitySpend_production_verifier_provenance.json"), "utf8"),
   );
   if (provenance.setup !== "production-ceremony" || provenance.productionTrustedSetup !== true) {
     throw new Error("Production provenance manifest does not identify production ceremony setup");
+  }
+  if (provenance.verifierComposition !== "direct-inheritance") {
+    throw new Error("Production provenance must record the self-contained verifier composition");
   }
   if (provenance.phase2ContributionCount !== 2 || provenance.sourceCommit !== evidence.sourceCommit) {
     throw new Error("Production provenance manifest lost ceremony contribution/source binding");
