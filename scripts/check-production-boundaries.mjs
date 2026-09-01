@@ -60,6 +60,9 @@ for (const required of [
   "127.0.0.1:8545:8545",
   "127.0.0.1:8546:8546",
   "127.0.0.1:9000:9000",
+  "-Djna.tmpdir=/opt/besu/native",
+  "-Dio.netty.native.workdir=/opt/besu/native",
+  "/opt/besu/native:rw,exec,nosuid,nodev,size=64m,mode=1777",
 ]) {
   if (!compose.includes(required)) throw new Error(`Production Compose boundary is missing ${required}`);
 }
@@ -83,6 +86,9 @@ for (const required of [
   'permissions-nodes-config-file="/etc/besu/permissions_config.toml"',
 ]) {
   if (!besuConfig.includes(required)) throw new Error(`Besu peer-admission boundary is missing ${required}`);
+}
+if (besuConfig.includes("rpc-http-cors-origins=[]")) {
+  throw new Error("Besu must use its default deny-by-absence CORS behavior instead of an invalid empty domain entry");
 }
 
 const topologyValidator = await readFile("scripts/validate-consortium-topology.mjs", "utf8");
