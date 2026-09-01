@@ -72,6 +72,37 @@ export class GeminiProviderError extends Error {
   }
 }
 
+const observabilityByResponseId = new Map<string, { observedAt: number; value: GeminiObservability }>();
+const OBSERVABILITY_TTL_MS = 5 * 60_000;
+const OBSERVABILITY_MAX_ENTRIES = 100;
+
+function pruneObservability(now = Date.now()) {
+  for (const [id, entry] of observabilityByResponseId) {
+    if (now - entry.observedAt > OBSERVABILITY_TTL_MS) observabilityByResponseId.delete(id);
+  }
+  while (observabilityByResponseId.size > OBSERVABILITY_MAX_ENTRIES) {
+    const oldest = observabilityByResponseId.keys().next().value;
+    if (typeof oldest !== "string") break;
+    observabilityByResponseId.delete(oldest);
+  }
+}
+
+function rememberGeminiObservability(responseId: string | null, value: GeminiObservability) {
+  if (!responseId) return;
+  const now = Date.now();
+  pruneObservability(now);
+  observabilityByResponseId.set(responseId, { observedAt: now, value });
+}
+
+export function consumeGeminiObservability(responseId: string | null) {
+  if (!responseId) return null;
+  pruneObservability();
+  const entry = observabilityByResponseId.get(responseId);
+  if (!entry) return null;
+  observabilityByResponseId.delete(responseId);
+  return entry.value;
+}
+
 function geminiHttpError(status: number) {
   if (status === 401 || status === 403) {
     return new GeminiProviderError(
@@ -210,14 +241,18 @@ export async function runGeminiStructured<T>({
     );
   }
 
+  const id = typeof payload.id === "string" ? payload.id : null;
+  const observability: GeminiObservability = {
+    providerLatencyMs: Math.max(0, Date.now() - startedAt),
+    usage: normalizeGeminiUsage(payload.usage),
+  };
+  rememberGeminiObservability(id, observability);
+
   return {
-    id: typeof payload.id === "string" ? payload.id : null,
+    id,
     model: typeof payload.model === "string" && payload.model ? payload.model : model,
     thinkingLevel,
-    observability: {
-      providerLatencyMs: Math.max(0, Date.now() - startedAt),
-      usage: normalizeGeminiUsage(payload.usage),
-    },
+    observability,
     value,
   };
 }
