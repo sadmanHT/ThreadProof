@@ -119,6 +119,10 @@ try {
   unprotectedDevelop.externalControls.developBranchProtectionVerified = false;
   expectFail(unprotectedDevelop, "unprotected develop branch");
 
+  const zeroSourceCommit = structuredClone(baseManifest);
+  zeroSourceCommit.release.sourceDevelopCommit = "0".repeat(40);
+  expectFail(zeroSourceCommit, "zero source develop commit");
+
   const developmentSetup = structuredClone(baseManifest);
   developmentSetup.verifiers.capacitySpend.setup = "development";
   expectFail(developmentSetup, "development Groth16 setup");
