@@ -1,4 +1,16 @@
-import type { GeminiObservability } from "@/lib/ai/gemini.server";
+export type GeminiUsage = {
+  cachedTokens: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  thoughtTokens: number | null;
+  toolUseTokens: number | null;
+  totalTokens: number | null;
+};
+
+export type GeminiObservability = {
+  providerLatencyMs: number;
+  usage: GeminiUsage;
+};
 
 export type AiRunObservability = {
   version: 1;
@@ -13,6 +25,28 @@ export type AiRunObservability = {
   };
   evaluation: Record<string, number | boolean | string | null>;
 };
+
+export function normalizeGeminiTokenCount(value: unknown) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+export function normalizeGeminiUsage(usage: {
+  total_cached_tokens?: unknown;
+  total_input_tokens?: unknown;
+  total_output_tokens?: unknown;
+  total_thought_tokens?: unknown;
+  total_tokens?: unknown;
+  total_tool_use_tokens?: unknown;
+} | undefined): GeminiUsage {
+  return {
+    cachedTokens: normalizeGeminiTokenCount(usage?.total_cached_tokens),
+    inputTokens: normalizeGeminiTokenCount(usage?.total_input_tokens),
+    outputTokens: normalizeGeminiTokenCount(usage?.total_output_tokens),
+    thoughtTokens: normalizeGeminiTokenCount(usage?.total_thought_tokens),
+    toolUseTokens: normalizeGeminiTokenCount(usage?.total_tool_use_tokens),
+    totalTokens: normalizeGeminiTokenCount(usage?.total_tokens),
+  };
+}
 
 function asObject(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
