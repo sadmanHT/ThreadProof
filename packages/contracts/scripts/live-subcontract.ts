@@ -24,7 +24,7 @@ const SUBCONTRACT_TYPES = {
     { name: "nonce", type: "uint256" },
     { name: "deadline", type: "uint64" },
   ],
-} as const;
+};
 
 async function main() {
   const pofc = await executeLivePofc();
