@@ -37,6 +37,7 @@ const chainRuntime = read("apps/worker/src/chain-runtime.ts");
 const liveStallProbe = read("apps/worker/scripts/live-stalled-chain-readiness.ts");
 const qbftFaultHarness = read("scripts/pilot-fault-resilience.mjs");
 const qbftFaultWorkflow = read(".github/workflows/qbft-fault-resilience.yml");
+const cleanStateWorkflow = read(".github/workflows/clean-state-endgame.yml");
 const circuitBuildVerifier = read("packages/circuits/scripts/verify-circuit-build.mjs");
 const ceremonyVerifier = read("packages/circuits/scripts/verify-production-ceremony.mjs");
 const productionVerifierWrapper = read("packages/contracts/scripts/generate-production-verifier-wrapper.mjs");
@@ -158,6 +159,9 @@ check("zk-source-build-provenance", "Production ceremony evidence is bound to a 
   assert.match(productionVerifierWrapper, /clean-source circuit recompilation/);
   assert.match(releaseReadiness, /buildAttestationSha256/);
   assert.match(productionDeploymentVerifier, /buildAttestationSha256\(\)/);
+  assert.match(cleanStateWorkflow, /git restore --source=HEAD --worktree -- apps\/web\/tsconfig\.json/);
+  assert.match(cleanStateWorkflow, /git status --porcelain --untracked-files=no/);
+  assert.match(cleanStateWorkflow, /Tracked source checkout is not clean before ZK provenance rebuild/);
 });
 
 check("ai-advisory-only", "AI remains outside authoritative protocol transitions", () => {
