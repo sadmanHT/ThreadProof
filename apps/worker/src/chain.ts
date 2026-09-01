@@ -3,6 +3,8 @@ import { parseAbi } from "viem";
 export const capacityVaultAbi = parseAbi([
   "function spendCapacity((bytes32 factoryOrganizationId,bytes32 periodId,bytes32 processId,bytes32 orderId,bytes32 policyHash,uint256 oldCapacityCommitment,uint256 newCapacityCommitment,uint256 orderCommitment,uint256 nullifier,uint32 circuitVersion) request,uint256[2] a,uint256[2][2] b,uint256[2] c)",
   "function getCapacityState(bytes32 factoryOrganizationId,bytes32 periodId,bytes32 processId) view returns ((uint256 activeCommitment,bytes32 capacityCredentialId,bytes32 policyHash,uint32 circuitVersion,uint64 updatedAt,bool active))",
+  "function getCapacityAllocation(bytes32 allocationId) view returns ((bytes32 stateKey,bytes32 orderId,bytes32 factoryOrganizationId,bytes32 periodId,bytes32 processId,bytes32 capacityCredentialId,uint256 orderCommitment,bytes32 policyHash,uint256 nullifier,uint32 circuitVersion,uint64 authorizedAt,bool exists))",
+  "function isCapacityAllocationAuthorized(bytes32 allocationId,bytes32 orderId,bytes32 factoryOrganizationId,bytes32 periodId,bytes32 processId,uint256 orderCommitment,bytes32 policyHash) view returns (bool)",
   "event CapacityCertified(bytes32 indexed stateKey,bytes32 indexed factoryOrganizationId,bytes32 indexed capacityCredentialId,bytes32 periodId,bytes32 processId,uint256 commitment,bytes32 policyHash,uint32 circuitVersion)",
   "event CapacitySpent(bytes32 indexed stateKey,bytes32 indexed orderId,uint256 indexed nullifier,uint256 oldCommitment,uint256 newCommitment,uint256 orderCommitment,uint32 circuitVersion)",
   "event CapacityAllocationRecorded(bytes32 indexed allocationId,bytes32 indexed orderId,bytes32 indexed factoryOrganizationId,bytes32 stateKey,uint256 nullifier)",
@@ -19,7 +21,18 @@ export const orderRegistryAbi = parseAbi([
   "event OrderCancelled(bytes32 indexed orderId,bytes32 indexed buyerOrganizationId,uint32 indexed version,uint256 nonce,address buyerSigner)",
 ]);
 
+export const credentialRegistryReadAbi = parseAbi([
+  "function isCredentialValidFor(bytes32 credentialId,bytes32 subjectOrganizationId,bytes32 credentialType,bytes32 scopeHash) view returns (bool)",
+]);
+
 export const subcontractGovernorAbi = parseAbi([
+  "function authorizeSubcontract((bytes32 parentOrderId,bytes32 childOrderId,bytes32 parentFactoryOrganizationId,bytes32 subcontractorOrganizationId,bytes32 periodId,bytes32 processId,bytes32 policyHash,bytes32 parentVersionHash,bytes32 childVersionHash,bytes32 complianceCredentialId,bytes32 processCredentialId,bytes32 capacityAllocationId,uint32 sequence,uint256 nonce,uint64 deadline) authorization,bytes parentFactorySignature)",
+  "function nonces(bytes32 parentFactoryOrganizationId) view returns (uint256)",
+  "function getPolicy(bytes32 policyHash) view returns ((uint8 maxDepth,bytes32 complianceCredentialType,bytes32 processCredentialType,bool exists))",
+  "function getSubcontractAuthorization(bytes32 childOrderId) view returns ((bytes32 parentOrderId,bytes32 childOrderId,bytes32 buyerOrganizationId,bytes32 parentFactoryOrganizationId,bytes32 subcontractorOrganizationId,bytes32 periodId,bytes32 processId,bytes32 policyHash,bytes32 parentVersionHash,bytes32 childVersionHash,bytes32 complianceCredentialId,bytes32 processCredentialId,bytes32 capacityAllocationId,bytes32 capacityStateKey,uint256 childOrderCommitment,uint256 capacityNullifier,uint32 sequence,uint8 depth,address parentSigner,uint64 authorizedAt,bool exists))",
+  "function complianceCredentialScopeHash(bytes32 subcontractorOrganizationId,bytes32 policyHash) pure returns (bytes32)",
+  "function processCredentialScopeHash(bytes32 subcontractorOrganizationId,bytes32 processId,bytes32 policyHash) pure returns (bytes32)",
+  "function isSubcontractAuthorizationActive(bytes32 childOrderId) view returns (bool)",
   "event SubcontractPolicyRegistered(bytes32 indexed policyHash,uint8 maxDepth,bytes32 complianceCredentialType,bytes32 processCredentialType)",
   "event SubcontractAuthorized(bytes32 indexed childOrderId,bytes32 indexed parentOrderId,bytes32 indexed subcontractorOrganizationId,bytes32 buyerOrganizationId,bytes32 parentFactoryOrganizationId,uint8 depth,uint32 sequence,bytes32 capacityAllocationId,address parentSigner)",
 ]);
