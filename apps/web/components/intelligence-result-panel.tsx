@@ -63,6 +63,7 @@ function ReviewableFindings({ run, findings }: { run: AiRunView; findings: AiFin
       <div className="record-list">
         {findings.map((finding) => {
           const evidenceRefs = Array.isArray(finding.evidence_refs) ? finding.evidence_refs : [];
+          const reviewNoteId = `review-note-${finding.id}`;
           return (
             <div className="record-row" key={finding.id}>
               <div style={{ flex: 1 }}>
@@ -74,7 +75,12 @@ function ReviewableFindings({ run, findings }: { run: AiRunView; findings: AiFin
                   <input type="hidden" name="findingId" value={finding.id} />
                   <input type="hidden" name="organizationId" value={run.organization_id} />
                   <input type="hidden" name="runId" value={run.id} />
-                  {finding.status === "open" ? <input name="reviewNote" maxLength={2000} placeholder="Optional review note" /> : null}
+                  {finding.status === "open" ? (
+                    <label htmlFor={reviewNoteId}>
+                      Review note <span className="optional">optional</span>
+                      <input id={reviewNoteId} name="reviewNote" maxLength={2000} placeholder="Record why this finding was acknowledged, dismissed, or resolved." />
+                    </label>
+                  ) : null}
                   <div className="button-row">
                     {finding.status === "open" ? (
                       <>
@@ -142,10 +148,26 @@ function AuditResult({ run }: { run: AiRunView }) {
       <div className="callout"><strong>Evidence-locked answer</strong><span>{String(output.answer ?? "")}</span></div>
 
       {claims.length ? <div className="record-list">{claims.map((claim, index) => {
-        const evidenceIds = stringArray(claim.evidence_ids);
+        const supports = objectArray(claim.supports);
         return (
           <div className="record-row" key={`${index}-${String(claim.statement ?? "claim")}`}>
-            <div><strong>Claim {index + 1} · {titleCase(String(claim.confidence ?? "unknown"))}</strong><span>{String(claim.statement ?? "")}</span><small className="mono">{evidenceIds.join(" · ")}</small></div>
+            <div style={{ flex: 1 }}>
+              <strong>Claim {index + 1} · {titleCase(String(claim.confidence ?? "unknown"))}</strong>
+              <span>{String(claim.statement ?? "")}</span>
+              {supports.length ? (
+                <div className="record-list" style={{ marginTop: 10 }}>
+                  {supports.map((support, supportIndex) => (
+                    <div className="record-row" key={`${supportIndex}-${String(support.evidence_id ?? "evidence")}`}>
+                      <div>
+                        <strong>Verbatim support</strong>
+                        <span>“{String(support.quote ?? "")}”</span>
+                        <small className="mono">{String(support.evidence_id ?? "Unknown evidence")}</small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : <small>No verified support was returned.</small>}
+            </div>
           </div>
         );
       })}</div> : <div className="empty-state"><strong>No supported factual claims</strong><span>The supplied evidence was insufficient for a supported conclusion.</span></div>}
@@ -158,7 +180,7 @@ function AuditResult({ run }: { run: AiRunView }) {
       ) : null}
       {limitations.length ? <div className="callout"><strong>Limitations</strong><span>{limitations.join(" · ")}</span></div> : null}
       {nextChecks.length ? <div className="callout"><strong>Authoritative next checks</strong><span>{nextChecks.join(" · ")}</span></div> : null}
-      <div className="callout"><strong>Evidence manifest</strong><span>{manifest.length} sanitized evidence record(s) were available to this run. Gemini is rejected server-side if it cites an ID outside that manifest.</span></div>
+      <div className="callout"><strong>Evidence manifest</strong><span>{manifest.length} sanitized evidence record(s) were available to this run. Every factual claim must cite a supplied evidence ID and quote text that ThreadProof verifies against the corresponding evidence fact before display.</span></div>
     </section>
   );
 }
