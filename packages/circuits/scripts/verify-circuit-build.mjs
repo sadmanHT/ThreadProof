@@ -10,7 +10,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, delimiter, dirname, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -80,7 +80,7 @@ function artifact(path) {
 }
 
 function resolveExecutable(name) {
-  for (const entry of (process.env.PATH ?? "").split(sep)) {
+  for (const entry of (process.env.PATH ?? "").split(delimiter)) {
     if (!entry) continue;
     const candidate = join(entry, name);
     try {
