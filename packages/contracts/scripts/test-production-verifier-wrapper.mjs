@@ -4,17 +4,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
+const PINNED_CIRCOM_REVISION = "9fd40a34f42912ee52230f8b6a114d78f6df1a48";
+
 function sha256(bytes) {
   return `0x${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
 function run(args, expectedStatus = 0) {
-  const result = spawnSync(process.execPath, [new URL("./generate-production-verifier-wrapper.mjs", import.meta.url).pathname, ...args], {
-    encoding: "utf8",
-    stdio: "pipe",
-  });
+  const result = spawnSync(
+    process.execPath,
+    [new URL("./generate-production-verifier-wrapper.mjs", import.meta.url).pathname, ...args],
+    { encoding: "utf8", stdio: "pipe" },
+  );
   if (result.status !== expectedStatus) {
-    throw new Error(`Unexpected wrapper-generator exit ${result.status}; expected ${expectedStatus}\n${result.stdout}${result.stderr}`);
+    throw new Error(
+      `Unexpected wrapper-generator exit ${result.status}; expected ${expectedStatus}\n${result.stdout}${result.stderr}`,
+    );
   }
   return `${result.stdout}${result.stderr}`;
 }
@@ -45,9 +50,19 @@ try {
     ceremonyId: "test-ceremony",
     sourceCommit: "1111111111111111111111111111111111111111",
     verification: {
+      circuitBuildRecompiled: true,
+      sourceCommitMatchedCleanGitHead: true,
       phase2ContributionCount: 2,
     },
+    build: {
+      gitTree: "2222222222222222222222222222222222222222",
+      compilerVersion: "2.2.0",
+      compilerPinnedSourceRevision: PINNED_CIRCOM_REVISION,
+      compilerBinarySha256: `0x${"12".repeat(32)}`,
+      dependencyFileCount: 7,
+    },
     artifacts: {
+      buildAttestation: { sha256: `0x${"34".repeat(32)}` },
       r1cs: { sha256: sha256(r1cs) },
       verificationKey: { sha256: sha256(verificationKey) },
       solidityVerifier: { sha256: sha256(verifier) },
@@ -57,7 +72,8 @@ try {
       participantPrivateMaterialPersistedByThisTool: false,
     },
   };
-  writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+  const writeEvidence = () => writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+  writeEvidence();
 
   const commonArgs = [
     "--circuit", "CapacitySpend",
@@ -73,8 +89,8 @@ try {
     throw new Error("Production wrapper generator did not emit provenance summary");
   }
   const wrapper = readFileSync(join(outDir, "CapacitySpendVerifierWithProvenance.sol"), "utf8");
-  if (!wrapper.includes("ceremonyEvidenceSha256")) {
-    throw new Error("Production verifier is not bound to ceremony evidence");
+  if (!wrapper.includes("ceremonyEvidenceSha256") || !wrapper.includes("buildAttestationSha256")) {
+    throw new Error("Production verifier is not bound to ceremony and circuit-build evidence");
   }
   if (!wrapper.includes("contract CapacitySpendVerifierWithProvenance is CapacitySpendGroth16Verifier")) {
     throw new Error("Production verifier must inherit the generated Groth16 verifier directly");
@@ -91,8 +107,12 @@ try {
   const provenance = JSON.parse(
     readFileSync(join(outDir, "CapacitySpend_production_verifier_provenance.json"), "utf8"),
   );
-  if (provenance.setup !== "production-ceremony" || provenance.productionTrustedSetup !== true) {
-    throw new Error("Production provenance manifest does not identify production ceremony setup");
+  if (
+    provenance.setup !== "production-ceremony" ||
+    provenance.productionTrustedSetup !== true ||
+    provenance.circuitBuildRecompiled !== true
+  ) {
+    throw new Error("Production provenance manifest lost production/build-verification identity");
   }
   if (provenance.verifierComposition !== "direct-inheritance") {
     throw new Error("Production provenance must record the self-contained verifier composition");
@@ -100,9 +120,20 @@ try {
   if (provenance.phase2ContributionCount !== 2 || provenance.sourceCommit !== evidence.sourceCommit) {
     throw new Error("Production provenance manifest lost ceremony contribution/source binding");
   }
+  if (provenance.build?.attestationSha256 !== evidence.artifacts.buildAttestation.sha256.toLowerCase()) {
+    throw new Error("Production provenance lost the circuit build-attestation digest");
+  }
 
+  evidence.verification.circuitBuildRecompiled = false;
+  writeEvidence();
+  const rejectedLegacyBuild = run(commonArgs, 1);
+  if (!rejectedLegacyBuild.includes("clean-source circuit recompilation")) {
+    throw new Error("Legacy ceremony evidence without circuit recompilation was not rejected");
+  }
+
+  evidence.verification.circuitBuildRecompiled = true;
   evidence.mode = "ci-validation";
-  writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+  writeEvidence();
   const rejectedMode = run(commonArgs, 1);
   if (!rejectedMode.includes("mode=production")) {
     throw new Error("CI-validation evidence was not rejected for a production wrapper");
@@ -110,7 +141,7 @@ try {
 
   evidence.mode = "production";
   evidence.artifacts.verificationKey.sha256 = `0x${"00".repeat(32)}`;
-  writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+  writeEvidence();
   const rejectedHash = run(commonArgs, 1);
   if (!rejectedHash.includes("verification key SHA-256")) {
     throw new Error("Mismatched verification-key evidence was not rejected");
