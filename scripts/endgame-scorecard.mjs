@@ -19,8 +19,8 @@ const capacityVault = read("packages/contracts/contracts/CapacityVault.sol");
 const releaseCircuit = read("packages/circuits/circuits/CapacityRelease.circom");
 const releaseGenerator = read("apps/worker/src/capacity-release-generator.ts");
 const releaseSubmitter = read("apps/worker/src/capacity-release-submitter.ts");
-const releaseMigration = read("supabase/migrations/20260901142000_threadproof_capacity_release_operations.sql");
-const disclosureMigration = read("supabase/migrations/20260901150000_threadproof_due_process_disclosure.sql");
+const releaseMigration = read("supabase/migrations/20260901141230_threadproof_capacity_release_operations.sql");
+const disclosureMigration = read("supabase/migrations/20260901142051_threadproof_due_process_disclosure.sql");
 const disclosureExporter = read("apps/worker/src/due-process-disclosure.ts");
 const credentialPackage = read("apps/worker/src/credential-package.ts");
 const charter = read("packages/contracts/contracts/ThreadProofCharter.sol");
@@ -51,6 +51,13 @@ check("capacity-release-canonical-materialization", "Only canonical CapacityRele
   assert.match(releaseMigration, /event_name <> 'CapacityReleased'/);
   assert.match(releaseMigration, /next_capacity_ciphertext/);
   assert.match(releaseMigration, /recertification_required/);
+});
+
+check("capacity-release-governance", "Release verifier installation is a distinct high-threshold Charter action", () => {
+  assert.match(charter, /ReleaseVerifierRegistration/);
+  assert.match(charter, /RELEASE_VERIFIER_REGISTRATION_DOMAIN/);
+  assert.match(charter, /executeReleaseVerifierRegistration/);
+  assert.match(charter, /registerReleaseVerifierWithProvenance/);
 });
 
 check("disclosure-governance-binding", "Protected identity disclosure is bound to the exact Charter action and canonical event", () => {
@@ -90,7 +97,7 @@ const scorecard = {
   generatedAt: new Date().toISOString(),
   summary: { pass, fail, total: results.length, scorePercent: Math.round((pass / results.length) * 100) },
   results,
-  note: "This deterministic scorecard supplements, but does not replace, real Groth16, contract, browser, worker, and live-chain CI jobs.",
+  note: "This deterministic scorecard supplements, but does not replace, measured benchmark output, real Groth16, contract, browser, worker, and live-chain CI jobs.",
 };
 
 const artifactDir = path.join(root, "artifacts");
