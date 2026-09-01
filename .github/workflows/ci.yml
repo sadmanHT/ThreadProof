@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: threadproof-ci-${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  group: threadproof-ci-${{ github.event_name }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 
 jobs:
