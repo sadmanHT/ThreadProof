@@ -20,6 +20,12 @@ const ORDER_TYPES = {
   ],
 };
 
+const provenanceVerifierAbi = [
+  "function circuitArtifactHash() view returns (bytes32)",
+  "function verificationKeyHash() view returns (bytes32)",
+  "function verifyProof(uint256[2] a, uint256[2][2] b, uint256[2] c, uint256[9] publicSignals) view returns (bool)",
+] as const;
+
 function readJson(filePath: string): unknown {
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
@@ -120,21 +126,27 @@ async function main() {
     await (await admin.sendTransaction({ to: wallet.address, value: ethers.parseEther("2") })).wait();
   }
 
+  // The provenance wrapper is generated during the live workflow, so it intentionally has no
+  // checked-in TypeChain binding. Use an explicit ABI instead of weakening normal typechecking.
   const GeneratedVerifier = await ethers.getContractFactory("CapacitySpendVerifierWithProvenance", admin);
-  const generatedVerifier = await GeneratedVerifier.deploy();
-  await generatedVerifier.waitForDeployment();
-  const verifierAddress = await generatedVerifier.getAddress();
-  assert.equal(await generatedVerifier.circuitArtifactHash(), expectedCircuitHash);
-  assert.equal(await generatedVerifier.verificationKeyHash(), expectedVerificationKeyHash);
+  const generatedVerifierDeployment = await GeneratedVerifier.deploy();
+  await generatedVerifierDeployment.waitForDeployment();
+  const verifierAddress = await generatedVerifierDeployment.getAddress();
+  const generatedVerifier = new ethers.Contract(verifierAddress, provenanceVerifierAbi, provider);
+  const circuitArtifactHash = generatedVerifier.getFunction("circuitArtifactHash");
+  const verificationKeyHash = generatedVerifier.getFunction("verificationKeyHash");
+  const verifyProof = generatedVerifier.getFunction("verifyProof");
+  assert.equal(await circuitArtifactHash.staticCall(), expectedCircuitHash);
+  assert.equal(await verificationKeyHash.staticCall(), expectedVerificationKeyHash);
   assert.equal(
-    await generatedVerifier.verifyProof.staticCall(proof.a, proof.b, proof.c, publicSignals),
+    await verifyProof.staticCall(proof.a, proof.b, proof.c, publicSignals),
     true,
     "Provenance-bound verifier rejected its matching proof on chain 2026",
   );
   const tamperedSignals = [...publicSignals] as typeof publicSignals;
   tamperedSignals[8] = (tamperedSignals[8] + 1n) % SNARK_SCALAR_FIELD;
   assert.equal(
-    await generatedVerifier.verifyProof.staticCall(proof.a, proof.b, proof.c, tamperedSignals),
+    await verifyProof.staticCall(proof.a, proof.b, proof.c, tamperedSignals),
     false,
     "Provenance-bound verifier accepted a tampered nullifier signal",
   );
