@@ -63,23 +63,24 @@ export default async function OperationsPage() {
   const heartbeatMs = configuredHeartbeatMs();
   const staleAfterMs = Math.max(60_000, Math.ceil(heartbeatMs * 4.5));
 
-  const [{ data: heartbeats, error: heartbeatError }, { data: indexerHealth }, chain] = await Promise.all([
-    supabase
-      .from("worker_runtime_heartbeats")
-      .select("instance_id,worker_type,status,chain_id,build_commit,started_at,last_heartbeat_at,last_success_at,error_code")
-      .order("last_heartbeat_at", { ascending: false })
-      .limit(100),
+  const [heartbeatResults, { data: indexerHealth }, chain] = await Promise.all([
+    Promise.all(WORKERS.map(({ type }) =>
+      supabase
+        .from("worker_runtime_heartbeats")
+        .select("instance_id,worker_type,status,chain_id,build_commit,started_at,last_heartbeat_at,last_success_at,error_code")
+        .eq("worker_type", type)
+        .order("last_heartbeat_at", { ascending: false })
+        .limit(1),
+    )),
     supabase.rpc("get_chain_indexer_health"),
     getBlockchainStatus(),
   ]);
 
-  const freshestByType = new Map<WorkerType, Heartbeat>();
-  for (const heartbeat of heartbeats ?? []) {
-    const workerType = heartbeat.worker_type as WorkerType;
-    if (WORKERS.some((worker) => worker.type === workerType) && !freshestByType.has(workerType)) {
-      freshestByType.set(workerType, heartbeat);
-    }
-  }
+  const heartbeatReadFailed = heartbeatResults.some((result) => Boolean(result.error));
+  const freshestByType = new Map<WorkerType, Heartbeat | null>();
+  WORKERS.forEach((worker, index) => {
+    freshestByType.set(worker.type, heartbeatResults[index]?.data?.[0] ?? null);
+  });
 
   const rows = WORKERS.map((worker) => {
     const heartbeat = freshestByType.get(worker.type) ?? null;
@@ -98,7 +99,7 @@ export default async function OperationsPage() {
         <div>
           <span className="kicker">RUNTIME OPERATIONS</span>
           <h1>Worker liveness</h1>
-          <p>Observe whether ThreadProof's execution processes are alive without confusing process telemetry with canonical protocol state.</p>
+          <p>Observe whether ThreadProof&apos;s execution processes are alive without confusing process telemetry with canonical protocol state.</p>
         </div>
         <div className="page-header-actions">
           <Link className="button secondary" href="/app/chain">Open canonical network</Link>
@@ -106,7 +107,7 @@ export default async function OperationsPage() {
         </div>
       </header>
 
-      {heartbeatError ? <div className="alert alert-error">Worker liveness telemetry could not be read. Protocol state must still be verified through the canonical network views.</div> : null}
+      {heartbeatReadFailed ? <div className="alert alert-error">Worker liveness telemetry could not be read. Protocol state must still be verified through the canonical network views.</div> : null}
 
       <section className="subcontract-principles">
         <article><span>Healthy workers</span><strong>{healthyCount} / {WORKERS.length}</strong><small>fresh process self-reports</small></article>
