@@ -29,6 +29,8 @@ jobs:
         run: node scripts/test-release-readiness.mjs
       - name: Verify canonical evidence workflow concurrency
         run: node scripts/test-workflow-evidence-concurrency.mjs
+      - name: Guard supported GitHub Action runtimes
+        run: node scripts/test-github-action-runtime-policy.mjs
       - name: Verify production manifest is not committed prematurely
         if: github.ref_name != 'main' && github.event.pull_request.base.ref != 'main'
         shell: bash
