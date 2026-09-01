@@ -20,6 +20,13 @@ interface IThreadProofCapacityGovernance {
         bytes32 verificationKeyHash
     ) external;
 
+    function registerReleaseVerifierWithProvenance(
+        uint32 circuitVersion,
+        address verifierAddress,
+        bytes32 circuitArtifactHash,
+        bytes32 verificationKeyHash
+    ) external;
+
     function pause() external;
     function unpause() external;
 }
@@ -62,6 +69,8 @@ contract ThreadProofCharter {
     bytes32 private constant SUBCONTRACT_POLICY_DOMAIN = keccak256("THREADPROOF_CHARTER_SUBCONTRACT_POLICY_V1");
     bytes32 private constant EMERGENCY_CONTROL_DOMAIN = keccak256("THREADPROOF_CHARTER_EMERGENCY_CONTROL_V1");
     bytes32 private constant CREDENTIAL_STATUS_DOMAIN = keccak256("THREADPROOF_CHARTER_CREDENTIAL_STATUS_V1");
+    bytes32 private constant RELEASE_VERIFIER_REGISTRATION_DOMAIN =
+        keccak256("THREADPROOF_CHARTER_RELEASE_VERIFIER_REGISTRATION_V1");
 
     enum ProposalType {
         Unknown,
@@ -77,7 +86,8 @@ contract ThreadProofCharter {
         EmergencyPause,
         EmergencyUnpause,
         CredentialSuspension,
-        CredentialRestore
+        CredentialRestore,
+        ReleaseVerifierRegistration
     }
 
     enum ProposalState {
@@ -214,6 +224,13 @@ contract ThreadProofCharter {
         bool granted
     );
     event VerifierRegistrationAuthorized(
+        bytes32 indexed proposalId,
+        uint32 indexed circuitVersion,
+        address indexed verifier,
+        bytes32 circuitArtifactHash,
+        bytes32 verificationKeyHash
+    );
+    event ReleaseVerifierRegistrationAuthorized(
         bytes32 indexed proposalId,
         uint32 indexed circuitVersion,
         address indexed verifier,
@@ -399,6 +416,17 @@ contract ThreadProofCharter {
                 eligibleMask: ALL_CONSTITUENCIES_MASK,
                 requiredMask: AUDITOR_MASK | REGULATOR_MASK,
                 timelockSeconds: 6 hours,
+                votingPeriodSeconds: 7 days,
+                exists: true
+            })
+        );
+        _setPolicy(
+            ProposalType.ReleaseVerifierRegistration,
+            Policy({
+                threshold: 4,
+                eligibleMask: ALL_CONSTITUENCIES_MASK,
+                requiredMask: AUDITOR_MASK | REGULATOR_MASK,
+                timelockSeconds: 1 days,
                 votingPeriodSeconds: 7 days,
                 exists: true
             })
@@ -646,13 +674,7 @@ contract ThreadProofCharter {
         bytes32 circuitArtifactHash,
         bytes32 verificationKeyHash
     ) external {
-        if (
-            circuitVersion == 0 ||
-            verifierAddress == address(0) ||
-            circuitArtifactHash == bytes32(0) ||
-            verificationKeyHash == bytes32(0)
-        ) revert InvalidExecutionParameters();
-
+        _validateVerifierRegistration(circuitVersion, verifierAddress, circuitArtifactHash, verificationKeyHash);
         Proposal storage proposal = _requireExecutable(proposalId);
         if (proposal.proposalType != ProposalType.VerifierRegistration) revert InvalidExecutionParameters();
         bytes32 actual = hashVerifierRegistrationAction(
@@ -671,6 +693,41 @@ contract ThreadProofCharter {
         );
 
         emit VerifierRegistrationAuthorized(
+            proposalId,
+            circuitVersion,
+            verifierAddress,
+            circuitArtifactHash,
+            verificationKeyHash
+        );
+        emit ProposalExecuted(proposalId, proposal.proposalType, msg.sender);
+    }
+
+    function executeReleaseVerifierRegistration(
+        bytes32 proposalId,
+        uint32 circuitVersion,
+        address verifierAddress,
+        bytes32 circuitArtifactHash,
+        bytes32 verificationKeyHash
+    ) external {
+        _validateVerifierRegistration(circuitVersion, verifierAddress, circuitArtifactHash, verificationKeyHash);
+        Proposal storage proposal = _requireExecutable(proposalId);
+        if (proposal.proposalType != ProposalType.ReleaseVerifierRegistration) revert InvalidExecutionParameters();
+        bytes32 actual = hashReleaseVerifierRegistrationAction(
+            circuitVersion,
+            verifierAddress,
+            circuitArtifactHash,
+            verificationKeyHash
+        );
+        _consumeAction(proposal, actual);
+
+        IThreadProofCapacityGovernance(capacityVault).registerReleaseVerifierWithProvenance(
+            circuitVersion,
+            verifierAddress,
+            circuitArtifactHash,
+            verificationKeyHash
+        );
+
+        emit ReleaseVerifierRegistrationAuthorized(
             proposalId,
             circuitVersion,
             verifierAddress,
@@ -874,6 +931,23 @@ contract ThreadProofCharter {
         );
     }
 
+    function hashReleaseVerifierRegistrationAction(
+        uint32 circuitVersion,
+        address verifierAddress,
+        bytes32 circuitArtifactHash,
+        bytes32 verificationKeyHash
+    ) public pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                RELEASE_VERIFIER_REGISTRATION_DOMAIN,
+                circuitVersion,
+                verifierAddress,
+                circuitArtifactHash,
+                verificationKeyHash
+            )
+        );
+    }
+
     function hashSubcontractPolicyAction(
         bytes32 policyHash,
         uint8 maxDepth,
@@ -944,6 +1018,20 @@ contract ThreadProofCharter {
             revert ActionHashMismatch(proposal.actionHash, actualActionHash);
         }
         proposal.executed = true;
+    }
+
+    function _validateVerifierRegistration(
+        uint32 circuitVersion,
+        address verifierAddress,
+        bytes32 circuitArtifactHash,
+        bytes32 verificationKeyHash
+    ) internal pure {
+        if (
+            circuitVersion == 0 ||
+            verifierAddress == address(0) ||
+            circuitArtifactHash == bytes32(0) ||
+            verificationKeyHash == bytes32(0)
+        ) revert InvalidExecutionParameters();
     }
 
     function _validateProtocolRoleAction(
