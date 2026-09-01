@@ -10,6 +10,7 @@ const disclosure = read("apps/worker/src/due-process-disclosure.ts");
 const credentialPackage = read("apps/worker/src/credential-package.ts");
 const identityPrivileges = read("supabase/migrations/20260901144232_threadproof_protected_identity_service_privileges.sql");
 const disclosureMigration = read("supabase/migrations/20260901142051_threadproof_due_process_disclosure.sql");
+const privateCredentialMigration = read("supabase/migrations/20260901145022_threadproof_private_credential_packages.sql");
 
 assert.match(protectedIdentity, /encryptDetached/);
 assert.match(protectedIdentity, /hashProtectedIdentityDisclosureAction/);
@@ -30,10 +31,18 @@ assert.match(disclosure, /ProtectedIdentityDisclosureAuthorized/);
 assert.match(disclosure, /AES-256-GCM\+RSA-OAEP-SHA256/);
 assert.match(disclosure, /mode: 0o600/);
 
+assert.match(privateCredentialMigration, /credential_private_packages/);
+assert.match(privateCredentialMigration, /revoke all on table public\.credential_private_packages from public, anon, authenticated/);
+assert.match(privateCredentialMigration, /grant select, insert, update on table public\.credential_private_packages to service_role/);
+assert.match(credentialPackage, /threadproof-private-credential\/v1/);
+assert.match(credentialPackage, /encryptEmbedded/);
+assert.match(credentialPackage, /decryptEmbedded/);
+assert.match(credentialPackage, /assertedBodyDigest/);
 assert.match(credentialPackage, /getCredential/);
 assert.match(credentialPackage, /isCredentialActive/);
 assert.match(credentialPackage, /CredentialIssued/);
+assert.match(credentialPackage, /getTransactionReceipt/);
 assert.match(credentialPackage, /packageSha256/);
-assert.match(credentialPackage, /no longer matches canonical CredentialRegistry state/);
+assert.match(credentialPackage, /does not match canonical CredentialRegistry state/);
 
 console.log("ThreadProof endgame service-boundary checks passed.");
