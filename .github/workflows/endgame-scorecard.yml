@@ -1,0 +1,35 @@
+name: ThreadProof Endgame Scorecard
+
+on:
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: threadproof-endgame-scorecard-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  scorecard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run deterministic endgame scorecard
+        run: node scripts/endgame-scorecard.mjs
+      - name: Upload endgame scorecard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: threadproof-endgame-scorecard-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: error
+          path: artifacts/endgame-scorecard.json
