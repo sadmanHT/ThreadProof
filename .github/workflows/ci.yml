@@ -238,3 +238,34 @@ jobs:
             --env-file .env.example \
             -f infrastructure/besu/production/docker-compose.yml \
             config >/dev/null
+
+  pilot-chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Generate disposable five-validator QBFT topology
+        run: node scripts/pilot-chain.mjs prepare
+      - name: Revalidate generated chain-2026 topology
+        env:
+          THREADPROOF_CHAIN_ID: "2026"
+          THREADPROOF_CONSORTIUM_TOPOLOGY_PATH: infrastructure/besu/pilot/runtime/consortium-topology.json
+          THREADPROOF_BESU_GENESIS_PATH: infrastructure/besu/pilot/runtime/genesis.json
+          THREADPROOF_BESU_STATIC_NODES_PATH: infrastructure/besu/pilot/runtime/static-nodes.json
+          THREADPROOF_BESU_PERMISSIONS_PATH: infrastructure/besu/pilot/runtime/permissions_config.toml
+        run: node scripts/validate-consortium-topology.mjs
+      - name: Validate pilot Compose graph
+        run: docker compose -f infrastructure/besu/pilot/docker-compose.yml config >/dev/null
+      - name: Boot and verify five-validator chain 2026
+        run: node scripts/pilot-chain.mjs up
+      - name: Pilot diagnostics
+        if: failure()
+        run: docker compose -f infrastructure/besu/pilot/docker-compose.yml logs --no-color || true
+      - name: Destroy disposable pilot network
+        if: always()
+        run: node scripts/pilot-chain.mjs reset
