@@ -16,6 +16,7 @@ type VerifierManifestEntry = {
   verificationKeyHash: string;
   runtimeCodeHash: string;
   setup: string;
+  ceremonyEvidenceSha256: string;
 };
 
 type ReleaseManifest = {
@@ -53,6 +54,9 @@ const provenanceInterface = new ethers.Interface([
   "function getVerifierProvenance(uint32 circuitVersion) view returns (tuple(address verifier, bytes32 circuitArtifactHash, bytes32 verificationKeyHash, bytes32 verifierCodeHash, uint64 registeredAt))",
   "function getReleaseVerifierProvenance(uint32 circuitVersion) view returns (tuple(address verifier, bytes32 circuitArtifactHash, bytes32 verificationKeyHash, bytes32 verifierCodeHash, uint64 registeredAt))",
 ]);
+const ceremonyEvidenceInterface = new ethers.Interface([
+  "function ceremonyEvidenceSha256() view returns (bytes32)",
+]);
 
 function fail(message: string): never {
   throw new Error(`Production deployment verification failed: ${message}`);
@@ -76,6 +80,15 @@ async function runtimeCodeHash(address: string, label: string) {
   const code = await rpc<string>("eth_getCode", [address, "latest"]);
   if (!code || code === "0x") fail(`${label} has no deployed runtime bytecode at ${address}`);
   return ethers.keccak256(code);
+}
+
+async function verifierCeremonyEvidenceHash(address: string) {
+  const data = ceremonyEvidenceInterface.encodeFunctionData("ceremonyEvidenceSha256");
+  const result = await rpc<string>("eth_call", [{ to: address, data }, "latest"]);
+  const decoded = ceremonyEvidenceInterface.decodeFunctionResult("ceremonyEvidenceSha256", result);
+  const value = decoded[0];
+  if (!value) fail(`verifier ${address} returned no ceremonyEvidenceSha256 value.`);
+  return String(value);
 }
 
 async function verifierProvenance(
@@ -123,9 +136,19 @@ async function verifyVerifier(
     fail(`${kind} verifier is not marked as production-ceremony.`);
   }
   if (!ethers.isAddress(verifier.address)) fail(`${kind} verifier address is invalid.`);
+  if (!/^0x[0-9a-f]{64}$/i.test(verifier.ceremonyEvidenceSha256)) {
+    fail(`${kind} ceremony evidence SHA-256 is invalid.`);
+  }
 
   const actualVerifierCodeHash = await runtimeCodeHash(verifier.address, `${kind} verifier`);
   requireEqual(actualVerifierCodeHash, verifier.runtimeCodeHash, `${kind} verifier runtime code hash`);
+
+  const actualCeremonyEvidenceSha256 = await verifierCeremonyEvidenceHash(verifier.address);
+  requireEqual(
+    actualCeremonyEvidenceSha256,
+    verifier.ceremonyEvidenceSha256,
+    `${kind} ceremony evidence SHA-256`,
+  );
 
   const provenance = await verifierProvenance(vaultAddress, functionName, verifier.circuitVersion);
   requireEqual(provenance.verifier, verifier.address, `${kind} provenance verifier address`);
@@ -139,6 +162,7 @@ async function verifyVerifier(
     runtimeCodeHash: actualVerifierCodeHash,
     circuitArtifactHash: provenance.circuitArtifactHash,
     verificationKeyHash: provenance.verificationKeyHash,
+    ceremonyEvidenceSha256: actualCeremonyEvidenceSha256,
     registeredAt: provenance.registeredAt.toString(),
   };
 }
