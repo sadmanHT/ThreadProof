@@ -5,7 +5,12 @@ import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
 import { formatDate, shortHash, titleCase } from "@/lib/format";
 import { StatusBadge } from "@/components/status-badge";
 import { CredentialLifecycleConsole } from "@/components/credential-lifecycle-console";
-import type { CredentialLifecycleItem } from "@/lib/credential-lifecycle-chain";
+import type {
+  CredentialLifecycleItem,
+  CredentialSubjectItem,
+  SubcontractCredentialPolicyItem,
+} from "@/lib/credential-lifecycle-chain";
+import type { Json } from "@/lib/database.types";
 
 export const dynamic = "force-dynamic";
 
@@ -13,18 +18,27 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const HEX_32 = /^0x[0-9a-fA-F]{64}$/;
 const LIFECYCLE_ROLES = new Set(["auditor", "independent", "regulator"]);
 
+function eventField(data: Json, key: string) {
+  if (!data || Array.isArray(data) || typeof data !== "object") return null;
+  const value = data[key];
+  return typeof value === "string" || typeof value === "number" ? String(value) : null;
+}
+
 export default async function CredentialsPage() {
   const viewer = await requireConsortiumViewer();
   const supabase = await createClient();
-  const [{ data: credentials }, { data: organizations }] = await Promise.all([
+  const [{ data: credentials }, { data: organizations }, { data: policyEvents }] = await Promise.all([
     supabase.from("credentials").select("id,chain_credential_id,subject_organization_id,issuer_organization_id,credential_type,digest,scope_hash,status,valid_from,valid_until,chain_tx_hash,created_at").order("created_at", { ascending: false }),
-    supabase.from("organizations").select("id,display_name,role,status"),
+    supabase.from("organizations").select("id,display_name,role,status,chain_organization_id"),
+    supabase.from("chain_events").select("id,data,block_number").eq("event_name", "SubcontractPolicyRegistered").order("block_number", { ascending: false }).limit(100),
   ]);
   const orgMap = new Map((organizations ?? []).map((org) => [org.id, org]));
   const credentialRegistryRaw = process.env.THREADPROOF_CREDENTIAL_REGISTRY_ADDRESS?.trim() ?? "";
+  const subcontractGovernorRaw = process.env.THREADPROOF_SUBCONTRACT_GOVERNOR_ADDRESS?.trim() ?? "";
   const chainIdRaw = process.env.NEXT_PUBLIC_THREADPROOF_CHAIN_ID ?? process.env.THREADPROOF_CHAIN_ID ?? "";
   const chainId = Number(chainIdRaw);
   const registryConfigured = ADDRESS.test(credentialRegistryRaw) && Number.isSafeInteger(chainId) && chainId > 0;
+  const governorConfigured = ADDRESS.test(subcontractGovernorRaw);
   const canManageLifecycle = viewer.memberships.some((membership) =>
     membership.active &&
     membership.organization.status === "active" &&
@@ -41,6 +55,37 @@ export default async function CredentialsPage() {
       issuerName: orgMap.get(credential.issuer_organization_id)?.display_name ?? "Unknown issuer",
       status: credential.status === "active" && Date.parse(credential.valid_until) < now ? "expired" : credential.status,
     }));
+  const subjects: CredentialSubjectItem[] = (organizations ?? [])
+    .filter((organization) => organization.role === "factory" && organization.status === "active" && HEX_32.test(organization.chain_organization_id))
+    .map((organization) => ({
+      organizationId: organization.id,
+      chainOrganizationId: organization.chain_organization_id as Hex,
+      name: organization.display_name,
+    }));
+
+  const policyMap = new Map<string, SubcontractCredentialPolicyItem>();
+  for (const event of policyEvents ?? []) {
+    const policyHash = eventField(event.data, "policyHash");
+    const complianceCredentialType = eventField(event.data, "complianceCredentialType");
+    const processCredentialType = eventField(event.data, "processCredentialType");
+    const maxDepthRaw = eventField(event.data, "maxDepth");
+    const maxDepth = Number(maxDepthRaw);
+    if (
+      !policyHash || !HEX_32.test(policyHash)
+      || !complianceCredentialType || !HEX_32.test(complianceCredentialType)
+      || !processCredentialType || !HEX_32.test(processCredentialType)
+      || !Number.isSafeInteger(maxDepth) || maxDepth <= 0
+    ) continue;
+    if (!policyMap.has(policyHash.toLowerCase())) {
+      policyMap.set(policyHash.toLowerCase(), {
+        policyHash: policyHash as Hex,
+        maxDepth,
+        complianceCredentialType: complianceCredentialType as Hex,
+        processCredentialType: processCredentialType as Hex,
+      });
+    }
+  }
+  const subcontractPolicies = [...policyMap.values()];
 
   return (
     <div className="workspace-page">
@@ -49,8 +94,11 @@ export default async function CredentialsPage() {
       {registryConfigured && canManageLifecycle ? (
         <CredentialLifecycleConsole
           credentialRegistryAddress={credentialRegistryRaw as Address}
+          subcontractGovernorAddress={governorConfigured ? subcontractGovernorRaw as Address : null}
           chainId={chainId}
           credentials={lifecycleItems}
+          subjects={subjects}
+          subcontractPolicies={subcontractPolicies}
         />
       ) : registryConfigured ? (
         <section className="panel"><div className="empty-state"><strong>Read-only credential session</strong><span>Lifecycle controls are shown to operational auditor, independent-auditor and regulator memberships. The contract still makes the final authority decision from the connected wallet.</span></div></section>
@@ -64,7 +112,7 @@ export default async function CredentialsPage() {
         const effectiveStatus = credential.status === "active" && Date.parse(credential.valid_until) < now ? "expired" : credential.status;
         return <Link className="table-row table-row-link" href={`/app/credentials/${credential.id}`} key={credential.id}><span><strong>{titleCase(credential.credential_type)}</strong><small className="mono">{shortHash(credential.chain_credential_id)}</small></span><span>{orgMap.get(credential.subject_organization_id)?.display_name ?? "Unknown"}</span><span>{orgMap.get(credential.issuer_organization_id)?.display_name ?? "Unknown"}</span><span><StatusBadge value={effectiveStatus} /></span><span><strong>{formatDate(credential.valid_until)}</strong><small>from {formatDate(credential.valid_from)}</small></span></Link>;
       })}</div> : <div className="empty-state large"><strong>No credentials indexed yet</strong><span>Credential records appear here only after authorized issuers anchor them to CredentialRegistry and the indexer observes the event.</span></div>}</section>
-      <p className="footnote">Open a credential to inspect its digest, scope, parties, validity, issuance transaction and any capacity state visible to your current RLS session. ThreadProof proves digital authorization, not the truth of the original physical-world assessment.</p>
+      <p className="footnote">Open a credential to inspect its digest, scope, parties, validity, issuance transaction and live canonical registry state. ThreadProof proves digital authorization, not the truth of the original physical-world assessment.</p>
     </div>
   );
 }

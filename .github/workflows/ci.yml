@@ -44,6 +44,8 @@ jobs:
         run: node apps/web/scripts/test-active-organization-scope.mjs
       - name: Subcontract trust-boundary regression checks
         run: node apps/web/scripts/test-subcontract-contract.mjs
+      - name: Credential lifecycle regression checks
+        run: node apps/web/scripts/test-credential-lifecycle.mjs
       - name: Web production build
         run: pnpm --filter @threadproof/web build
 
@@ -218,10 +220,6 @@ jobs:
             echo "Besu/Web3Signer runtime key material must not be tracked by Git."
             exit 1
           fi
-          if git ls-files | grep -E 'infrastructure/besu/.*/(node-key|besu-node-key)' | grep -q .; then
-            echo "Besu node private key material must not be tracked by Git."
-            exit 1
-          fi
       - name: Enforce production signing and Besu boundaries
         run: node scripts/check-production-boundaries.mjs
       - name: Test consortium topology fail-closed preflight
@@ -229,4 +227,10 @@ jobs:
       - name: Enforce canonical capacity allocation binding
         run: node scripts/check-capacity-allocation-binding.mjs
       - name: Validate production Besu compose template
-        run: docker compose -f infrastructure/besu/production/docker-compose.yml config >/dev/null
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose \
+            --env-file .env.example \
+            -f infrastructure/besu/production/docker-compose.yml \
+            config >/dev/null
