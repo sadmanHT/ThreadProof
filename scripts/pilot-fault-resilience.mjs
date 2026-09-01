@@ -14,6 +14,7 @@ const EVIDENCE_CHECKSUM_PATH = `${EVIDENCE_PATH}.sha256`;
 const RPC_URL = "http://127.0.0.1:8545";
 const EXPECTED_CHAIN_ID = 2026;
 const EXPECTED_VALIDATORS = 5;
+const ACTIVE_QUORUM_VALIDATORS = ["validator1", "validator2", "validator3", "validator4"];
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -69,6 +70,28 @@ async function assertPilotIdentity() {
     );
   }
   return { chainId, validatorCount: validators.length };
+}
+
+async function waitForRpcReady(timeoutMs, label) {
+  const startedAt = Date.now();
+  let lastError = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const chainId = Number(BigInt(await rpc("eth_chainId")));
+      if (chainId !== EXPECTED_CHAIN_ID) {
+        throw new Error(`RPC reports chain ${chainId}; expected ${EXPECTED_CHAIN_ID}.`);
+      }
+      const latestBlock = await blockNumber();
+      return { latestBlock, elapsedMs: Date.now() - startedAt };
+    } catch (error) {
+      lastError = error;
+      await sleep(1_000);
+    }
+  }
+  throw new Error(
+    `${label} did not restore chain ${EXPECTED_CHAIN_ID} RPC readiness within ${timeoutMs}ms` +
+      `${lastError instanceof Error ? `; last error: ${lastError.message}` : "."}`,
+  );
 }
 
 async function waitForAdvance(fromBlock, minimumDelta, timeoutMs, label) {
@@ -131,7 +154,8 @@ async function main() {
     faultModel: {
       oneValidatorUnavailable: "network must remain live with 4/5 validators",
       twoValidatorsUnavailable: "network must fail closed with 3/5 validators while RPC may remain responsive",
-      recovery: "restoring quorum must resume canonical block finalization",
+      recovery:
+        "restore 4/5 quorum, reset the active validators' backed-off QBFT round timers, and resume canonical finalization",
     },
     observations: {},
   };
@@ -158,12 +182,20 @@ async function main() {
       throw new Error("Expected validator1 JSON-RPC to remain responsive during the no-quorum observation.");
     }
 
+    // QBFT doubles requesttimeoutseconds on every failed round. After >1/3 of validators
+    // stop participating, restoring quorum alone can therefore leave the network waiting on
+    // an exponentially backed-off round timer. Reset the active validators after validator4
+    // returns so recovery is deterministic and mirrors Besu's documented incident procedure.
     compose("start", "validator4");
     stopped.delete("validator4");
     const recoveryStart = await blockNumber();
+    compose("restart", ...ACTIVE_QUORUM_VALIDATORS);
+    const rpcRecovery = await waitForRpcReady(45_000, "QBFT active-validator restart");
     evidence.observations.quorumRestored = {
       restarted: ["validator4"],
-      ...(await waitForAdvance(recoveryStart, 2, 60_000, "QBFT recovery after quorum restoration")),
+      timeoutResetValidators: ACTIVE_QUORUM_VALIDATORS,
+      rpcRecovery,
+      ...(await waitForAdvance(recoveryStart, 2, 45_000, "QBFT recovery after quorum restoration and timer reset")),
     };
 
     compose("start", "validator5");
