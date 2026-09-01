@@ -107,7 +107,7 @@ check("worker-service-privileges", "Service workers receive only the table opera
   assert.match(workerPrivileges, /grant select, insert, update on table public\.chain_events to service_role/);
   assert.match(workerPrivileges, /grant select, insert, update on table public\.credentials to service_role/);
   assert.match(workerPrivileges, /grant select, insert, update on table public\.private_capacity_openings to service_role/);
-  assert.match(workerPrivileges, /revoke insert, update, delete, truncate on table public\.chain_events from anon, authenticated/);
+  assert.match(workerPrivileges, /revoke delete, truncate on table public\.chain_events from service_role/);
 });
 
 check("measured-benchmark-output", "Evaluation emits measured ZK, gas and live-QBFT benchmark artifacts instead of structural scores alone", () => {
