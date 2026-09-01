@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AI_TRUST_BOUNDARY } from "@/lib/ai/policy.server";
 import { runGeminiStructured } from "@/lib/ai/gemini.server";
+import { assertEvidenceLockedResult } from "@/lib/ai/evidence-lock";
 import type { AuditEvidence, DeterministicInvestigationSignal } from "@/lib/ai/evidence.server";
 
 const evidenceSupportSchema = z.object({
@@ -85,34 +86,6 @@ const auditJsonSchema = {
   },
   required: ["answer", "claims", "model_risk_flags", "confidence", "limitations", "recommended_next_checks"],
 } as const;
-
-function normalized(value: string) {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-export function assertEvidenceLockedResult(result: AuditCopilotResult, evidence: AuditEvidence[]) {
-  const byId = new Map(evidence.map((item) => [item.id, item]));
-  const cited = [
-    ...result.claims.flatMap((claim) => claim.supports.map((support) => support.evidence_id)),
-    ...result.model_risk_flags.flatMap((flag) => flag.evidence_ids),
-  ];
-  const unknown = [...new Set(cited.filter((id) => !byId.has(id)))];
-  if (unknown.length) {
-    throw new Error(`Gemini cited evidence that was not supplied by ThreadProof: ${unknown.slice(0, 5).join(", ")}`);
-  }
-
-  for (const claim of result.claims) {
-    for (const support of claim.supports) {
-      const evidenceItem = byId.get(support.evidence_id);
-      if (!evidenceItem) continue;
-      const fact = normalized(evidenceItem.fact);
-      const quote = normalized(support.quote);
-      if (!quote || !fact.includes(quote)) {
-        throw new Error(`Gemini returned a supporting quote that is not present in evidence ${support.evidence_id}.`);
-      }
-    }
-  }
-}
 
 export async function answerAuditQuestion(input: {
   question: string;
