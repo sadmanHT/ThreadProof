@@ -10,6 +10,7 @@ The bootstrap PR itself is **not** protected by the guard it installs. Before me
 
 - `.github/workflows/release-candidate-guard.yml`
 - `scripts/trusted-main-release-guard.mjs`
+- `scripts/trusted-main-target-history-guard.mjs`
 - this bootstrap note
 
 Do not combine application, contract, circuit, dependency, infrastructure, or release-manifest changes into the bootstrap PR.
@@ -28,11 +29,16 @@ The guard requires a production release PR to:
 - name a non-zero canonical `develop` source SHA;
 - prove that source is an ancestor of current `develop` and of the release head;
 - contain no untested post-source delta except `release/production-release.json`, `CHANGELOG.md`, and files under `docs/releases/`;
+- prove that target-only `main` history contains no application, contract, circuit, dependency, or infrastructure delta outside the trusted guard files and prior release metadata;
 - bind clean-state and QBFT evidence URLs to successful canonical GitHub Actions runs;
 - have all nine required ThreadProof workflows completed successfully as `push` runs on `develop` for exactly the manifest source SHA;
 - retain production ceremony, remote Web3Signer/KMS-HSM, external-control, and release-approval attestations required by the manifest schema.
 
-The guard also re-reads the PR and current `main` tip before succeeding so a moved head or target requires a fresh run.
+The guard re-reads the current `main` tip before succeeding so a moved target requires a fresh run. The candidate guard also re-reads the PR head/base before success.
+
+## Why target-only history is checked
+
+A tested `develop` source and `main` can be intentionally diverged. Without a target-history check, application code committed only to `main` could enter the final merge even though it never passed the exact-source ThreadProof matrix. The target-history guard resolves the common merge base and permits only the trusted main release-guard files plus prior release metadata (`release/production-release.json`, `CHANGELOG.md`, and `docs/releases/*`). Any other target-only path fails closed.
 
 ## What this does not prove
 
