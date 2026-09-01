@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { basename, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+
+const require = createRequire(import.meta.url);
 
 const ALLOWED_ARGUMENTS = new Set([
   "mode",
@@ -56,6 +59,15 @@ function runSnarkjs(args) {
     throw new Error(`snarkjs ${args.join(" ")} failed:\n${output}`);
   }
   return output;
+}
+
+function installedSnarkjsVersion() {
+  const packagePath = require.resolve("snarkjs/package.json");
+  const packageMetadata = JSON.parse(readFileSync(packagePath, "utf8"));
+  if (typeof packageMetadata.version !== "string" || !packageMetadata.version.trim()) {
+    throw new Error("Installed snarkjs package metadata does not contain a version");
+  }
+  return packageMetadata.version.trim();
 }
 
 function sha256File(path) {
@@ -137,7 +149,7 @@ if (contributionCount < minimumContributionCount) {
 
 runSnarkjs(["zkey", "export", "verificationkey", zkeyPath, verificationKeyPath]);
 runSnarkjs(["zkey", "export", "solidityverifier", zkeyPath, solidityVerifierPath]);
-const snarkjsVersion = runSnarkjs(["--version"]).trim().split(/\r?\n/).at(-1) || "unknown";
+const snarkjsVersion = installedSnarkjsVersion();
 
 const evidence = {
   schemaVersion: 1,
