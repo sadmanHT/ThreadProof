@@ -1,4 +1,4 @@
-import { getAiModel } from "@/lib/ai/policy.server";
+import { getAiModel, getAiThinkingLevel, type AiThinkingLevel } from "@/lib/ai/policy.server";
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -20,6 +20,7 @@ type GeminiInteractionResponse = {
 export type GeminiStructuredResult<T> = {
   id: string | null;
   model: string;
+  thinkingLevel: AiThinkingLevel;
   value: T;
 };
 
@@ -108,6 +109,7 @@ export async function runGeminiStructured<T>({
   }
 
   const model = getAiModel();
+  const thinkingLevel = getAiThinkingLevel();
   const input: Array<Record<string, unknown>> = [{ type: "text", text: prompt }];
   if (document) {
     input.unshift({
@@ -128,6 +130,9 @@ export async function runGeminiStructured<T>({
       body: JSON.stringify({
         model,
         input,
+        generation_config: {
+          thinking_level: thinkingLevel,
+        },
         response_format: {
           type: "text",
           mime_type: "application/json",
@@ -167,6 +172,7 @@ export async function runGeminiStructured<T>({
   return {
     id: typeof payload.id === "string" ? payload.id : null,
     model: typeof payload.model === "string" && payload.model ? payload.model : model,
+    thinkingLevel,
     value,
   };
 }
