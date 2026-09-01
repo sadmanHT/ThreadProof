@@ -42,6 +42,7 @@ const baseManifest = {
       circuitArtifactHash: h("8"),
       verificationKeyHash: h("9"),
       runtimeCodeHash: h("a"),
+      buildAttestationSha256: h("1"),
       setup: "production-ceremony",
       ceremonyEvidenceUrl: "https://evidence.threadproof.invalid/capacity-spend",
       ceremonyEvidenceSha256: h("b"),
@@ -52,6 +53,7 @@ const baseManifest = {
       circuitArtifactHash: h("c"),
       verificationKeyHash: h("d"),
       runtimeCodeHash: h("e"),
+      buildAttestationSha256: h("2"),
       setup: "production-ceremony",
       ceremonyEvidenceUrl: "https://evidence.threadproof.invalid/capacity-release",
       ceremonyEvidenceSha256: h("f"),
@@ -105,13 +107,19 @@ function expectPass(manifest, label) {
 
 function expectFail(manifest, label) {
   const result = run(manifest);
-  if (result.status === 0) {
-    throw new Error(`${label} should fail.`);
-  }
+  if (result.status === 0) throw new Error(`${label} should fail.`);
 }
 
 try {
   expectPass(structuredClone(baseManifest), "fully attested production release");
+
+  const missingBuildAttestation = structuredClone(baseManifest);
+  delete missingBuildAttestation.verifiers.capacitySpend.buildAttestationSha256;
+  expectFail(missingBuildAttestation, "missing build-attestation digest");
+
+  const zeroBuildAttestation = structuredClone(baseManifest);
+  zeroBuildAttestation.verifiers.capacityRelease.buildAttestationSha256 = `0x${"0".repeat(64)}`;
+  expectFail(zeroBuildAttestation, "zero build-attestation digest");
 
   const leakedPasswordDisabled = structuredClone(baseManifest);
   leakedPasswordDisabled.externalControls.supabaseLeakedPasswordProtectionVerified = false;
