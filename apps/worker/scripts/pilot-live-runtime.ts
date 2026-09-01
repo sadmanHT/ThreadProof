@@ -85,7 +85,9 @@ const { client, chainId: liveChainId } = await createVerifiedPublicClient(
 assert.equal(liveChainId, 2026);
 
 const signer = await createRelayerWallet(orderRelayerEnv, liveChainId);
-assert.equal(signer.mode, "local-dev");
+if (signer.mode !== "local-dev") {
+  throw new Error(`Pilot worker smoke requires local-dev signer mode; received ${signer.mode}`);
+}
 assert.equal(signer.account.address.toLowerCase(), deployer.toLowerCase());
 
 const balanceBefore = await client.getBalance({ address: signer.account.address });
