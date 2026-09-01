@@ -6,7 +6,7 @@
     "compile": "hardhat compile",
     "test": "hardhat test",
     "clean": "hardhat clean",
-    "typecheck": "hardhat compile && tsc --noEmit",
+    "typecheck": "hardhat compile && tsc --noEmit && node scripts/test-production-verifier-wrapper.mjs",
     "deploy:local": "hardhat run scripts/deploy-local.ts",
     "verify:generated": "hardhat run scripts/generated-verifier-smoke.ts",
     "verify:live-pofc": "hardhat run scripts/live-pofc.ts",
