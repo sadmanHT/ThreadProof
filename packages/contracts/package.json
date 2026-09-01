@@ -9,7 +9,8 @@
     "typecheck": "hardhat compile && tsc --noEmit",
     "deploy:local": "hardhat run scripts/deploy-local.ts",
     "verify:generated": "hardhat run scripts/generated-verifier-smoke.ts",
-    "verify:live-pofc": "hardhat run scripts/live-pofc.ts"
+    "verify:live-pofc": "hardhat run scripts/live-pofc.ts",
+    "verify:live-subcontract": "hardhat run scripts/live-subcontract.ts"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0"
@@ -21,6 +22,6 @@
     "ethers": "^6.17.0",
     "hardhat": "^2.26.3",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.2"
+    "typescript": "5.9.2"
   }
 }
