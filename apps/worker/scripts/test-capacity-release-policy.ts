@@ -5,7 +5,7 @@ import path from "node:path";
 const root = path.resolve(import.meta.dirname, "../../..");
 const generator = readFileSync(path.join(root, "apps/worker/src/capacity-release-generator.ts"), "utf8");
 const submitter = readFileSync(path.join(root, "apps/worker/src/capacity-release-submitter.ts"), "utf8");
-const migration = readFileSync(path.join(root, "supabase/migrations/20260901142000_threadproof_capacity_release_operations.sql"), "utf8");
+const migration = readFileSync(path.join(root, "supabase/migrations/20260901141230_threadproof_capacity_release_operations.sql"), "utf8");
 
 assert.match(generator, /THREADPROOF_SIGNER_MODE !== "disabled"/, "release prover must reject transaction-signing capability");
 assert.match(generator, /getCapacityAllocation/, "release prover must read the canonical allocation receipt");
