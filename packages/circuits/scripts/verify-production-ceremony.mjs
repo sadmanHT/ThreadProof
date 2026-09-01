@@ -119,8 +119,8 @@ if (mode === "production") {
   if (!ceremonyId || ceremonyId === "REPLACE_ME") {
     throw new Error("Production verification requires a non-placeholder --ceremony-id");
   }
-  if (!/^[0-9a-f]{40}$/i.test(sourceCommit)) {
-    throw new Error("Production verification requires --source-commit as an exact 40-hex canonical commit SHA");
+  if (!/^[0-9a-f]{40}$/i.test(sourceCommit) || /^0{40}$/i.test(sourceCommit)) {
+    throw new Error("Production verification requires --source-commit as a non-zero exact 40-hex canonical commit SHA");
   }
 }
 
@@ -135,7 +135,7 @@ const tempDir = mkdtempSync(join(tmpdir(), "threadproof-ceremony-"));
 const zkeyJsonPath = join(tempDir, `${circuit}.zkey.json`);
 
 try {
-  const powersOfTauOutput = runSnarkjs(["powersoftau", "verify", ptauPath]);
+  runSnarkjs(["powersoftau", "verify", ptauPath]);
   const zkeyVerifyOutput = runSnarkjs(["zkey", "verify", r1csPath, ptauPath, zkeyPath]);
   if (!/ZKey Ok!/i.test(zkeyVerifyOutput)) {
     throw new Error("snarkjs zkey verify exited successfully but did not report ZKey Ok!");
@@ -166,7 +166,7 @@ try {
     ceremonyId,
     sourceCommit,
     verification: {
-      powersOfTauVerified: powersOfTauOutput.length > 0,
+      powersOfTauVerified: true,
       finalZkeyVerified: true,
       phase2ContributionCount: contributions.length,
       minimumPhase2ContributionCount: minimumContributionCount,
