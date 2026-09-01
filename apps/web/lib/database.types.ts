@@ -17,6 +17,44 @@ export type Database = {
   __InternalSupabase: { PostgrestVersion: "14.5" };
   public: {
     Tables: {
+      ai_findings: Table<{
+        ai_run_id: string;
+        created_at: string;
+        evidence_refs: Json;
+        explanation: string;
+        finding_type: string;
+        id: string;
+        organization_id: string;
+        review_note: string | null;
+        reviewed_at: string | null;
+        reviewed_by: string | null;
+        severity: string;
+        status: string;
+        subject_id: string | null;
+        subject_type: string | null;
+      }>;
+      ai_runs: Table<{
+        completed_at: string | null;
+        created_at: string;
+        created_by: string;
+        data_class: string;
+        error_code: string | null;
+        error_detail: string | null;
+        id: string;
+        input_hash: string;
+        input_reference_hashes: Json;
+        metadata: Json;
+        model_name: string;
+        model_provider: string;
+        organization_id: string;
+        output_json: Json | null;
+        prompt_template_hash: string;
+        provider_response_id: string | null;
+        status: string;
+        subject_id: string | null;
+        subject_type: string | null;
+        task_type: string;
+      }>;
       capacity_allocations: Table<{
         capacity_opening_id: string;
         chain_allocation_id: string | null;
@@ -336,6 +374,10 @@ export type Database = {
       };
       delete_purchase_order_draft: { Args: { target_order_id: string }; Returns: undefined };
       queue_capacity_proof: { Args: { target_capacity_opening_id: string; target_order_version_id: string }; Returns: string };
+      review_ai_finding: {
+        Args: { new_review_note?: string | null; new_status: string; target_finding_id: string; target_organization_id: string };
+        Returns: undefined;
+      };
       update_purchase_order_draft: {
         Args: { new_external_reference: string; new_product_category: string; new_quantity: number; new_requested_delivery_date?: string; new_title: string; new_unit: string; target_order_id: string };
         Returns: undefined };
