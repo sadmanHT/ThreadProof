@@ -17,6 +17,9 @@ const hostedPassword = ciWorkflow.match(/^\s*THREADPROOF_E2E_DEMO_PASSWORD:\s*(.
 if (hostedPassword && !/^\$\{\{\s*secrets\.[A-Z0-9_]+\s*\}\}$/.test(hostedPassword)) {
   throw new Error("Hosted authenticated E2E passwords must be supplied through GitHub Actions secrets, never workflow literals");
 }
+if (!ciWorkflow.includes("node scripts/test-consortium-topology-preflight.mjs")) {
+  throw new Error("Security CI must execute the consortium topology preflight regression suite");
+}
 
 const envSource = await readFile("apps/worker/src/env.ts", "utf8");
 for (const required of [
@@ -47,8 +50,13 @@ if (!proofSubmitterSource.includes("waiting for canonical event indexing")) {
 
 const compose = await readFile("infrastructure/besu/production/docker-compose.yml", "utf8");
 for (const required of [
+  "node:22.19.0-alpine3.22",
   "hyperledger/besu:26.8.0",
   "consensys/web3signer:26.4.2-distroless",
+  "topology-preflight:",
+  "condition: service_completed_successfully",
+  "network_mode: none",
+  "THREADPROOF_CONSORTIUM_TOPOLOGY_PATH",
   "127.0.0.1:8545:8545",
   "127.0.0.1:8546:8546",
   "127.0.0.1:9000:9000",
@@ -69,11 +77,44 @@ if (/image:\s*[^\n]+:latest\b/.test(compose)) {
 
 const besuConfig = await readFile("infrastructure/besu/production/besu-config.toml", "utf8");
 for (const required of [
+  "network-id=2026",
   "discovery-enabled=false",
   "permissions-nodes-config-file-enabled=true",
   'permissions-nodes-config-file="/etc/besu/permissions_config.toml"',
 ]) {
   if (!besuConfig.includes(required)) throw new Error(`Besu peer-admission boundary is missing ${required}`);
+}
+
+const topologyValidator = await readFile("scripts/validate-consortium-topology.mjs", "utf8");
+for (const required of [
+  "validators.length < 4",
+  "toleratedFaults",
+  "genesisSha256",
+  "Remote validator",
+  "nodes-allowlist",
+]) {
+  if (!topologyValidator.includes(required)) {
+    throw new Error(`Consortium topology preflight is missing required fail-closed boundary: ${required}`);
+  }
+}
+
+const productionReadme = await readFile("infrastructure/besu/production/README.md", "utf8");
+for (const required of [
+  "pnpm infra:validate:consortium",
+  "at least four validator enodes",
+  "not a resilient consortium deployment",
+]) {
+  if (!productionReadme.includes(required)) {
+    throw new Error(`Production Besu runbook is missing required topology guidance: ${required}`);
+  }
+}
+
+const topologyExample = JSON.parse(await readFile(
+  "infrastructure/besu/production/consortium-topology.example.json",
+  "utf8",
+));
+if (topologyExample.chainId !== 2026 || topologyExample.consensus !== "qbft" || topologyExample.validators?.length < 4) {
+  throw new Error("Consortium topology example must describe a four-validator-or-greater QBFT chain 2026 deployment");
 }
 
 const kmsExample = await readFile(
@@ -92,6 +133,7 @@ const infraFiles = [
   "infrastructure/besu/production/besu-config.toml",
   "infrastructure/besu/production/static-nodes.json",
   "infrastructure/besu/production/permissions_config.toml",
+  "infrastructure/besu/production/consortium-topology.example.json",
   "infrastructure/besu/production/web3signer/aws-kms-key.example.yaml",
 ];
 for (const path of infraFiles) {
@@ -101,4 +143,4 @@ for (const path of infraFiles) {
   }
 }
 
-console.log("Production signing, spend recovery, Besu, and hosted E2E boundary checks passed");
+console.log("Production signing, spend recovery, quorum topology, Besu, and hosted E2E boundary checks passed");

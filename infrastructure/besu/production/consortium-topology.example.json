@@ -1,0 +1,29 @@
+{
+  "chainId": 2026,
+  "consensus": "qbft",
+  "genesisSha256": "REPLACE_WITH_APPROVED_GENESIS_SHA256",
+  "localNode": "validator-a",
+  "validators": [
+    {
+      "name": "validator-a",
+      "address": "REPLACE_WITH_VALIDATOR_A_ADDRESS",
+      "enode": "REPLACE_WITH_VALIDATOR_A_ENODE"
+    },
+    {
+      "name": "validator-b",
+      "address": "REPLACE_WITH_VALIDATOR_B_ADDRESS",
+      "enode": "REPLACE_WITH_VALIDATOR_B_ENODE"
+    },
+    {
+      "name": "validator-c",
+      "address": "REPLACE_WITH_VALIDATOR_C_ADDRESS",
+      "enode": "REPLACE_WITH_VALIDATOR_C_ENODE"
+    },
+    {
+      "name": "validator-d",
+      "address": "REPLACE_WITH_VALIDATOR_D_ADDRESS",
+      "enode": "REPLACE_WITH_VALIDATOR_D_ENODE"
+    }
+  ],
+  "observers": []
+}

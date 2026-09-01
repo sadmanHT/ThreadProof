@@ -12,7 +12,8 @@
     "contracts:compile": "pnpm --filter @threadproof/contracts compile",
     "contracts:test": "pnpm --filter @threadproof/contracts test",
     "circuits:compile": "pnpm --filter @threadproof/circuits compile",
-    "circuits:test": "pnpm --filter @threadproof/circuits test"
+    "circuits:test": "pnpm --filter @threadproof/circuits test",
+    "infra:validate:consortium": "node scripts/validate-consortium-topology.mjs"
   },
   "devDependencies": {
     "turbo": "^2.5.6",
