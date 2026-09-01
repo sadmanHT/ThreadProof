@@ -117,6 +117,12 @@ check("AI cannot represent itself as protocol or business authority", () => {
   );
 });
 
+check("explicit AI authority limitations remain allowed", () => {
+  const result = structuredClone(validResult);
+  result.claims[0].statement = "ThreadProof AI cannot approve this purchase order.";
+  assert.doesNotThrow(() => assertEvidenceLockedResult(result, evidence));
+});
+
 check("displayed answer is derived only from validated claim statements", () => {
   const contaminatedResult = {
     ...structuredClone(validResult),
