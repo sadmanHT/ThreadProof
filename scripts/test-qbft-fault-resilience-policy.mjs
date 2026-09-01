@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 const harness = readFileSync(new URL("./pilot-fault-resilience.mjs", import.meta.url), "utf8");
 const workflow = readFileSync(new URL("../.github/workflows/qbft-fault-resilience.yml", import.meta.url), "utf8");
 const runtime = readFileSync(new URL("../apps/worker/src/chain-runtime.ts", import.meta.url), "utf8");
+const liveStallProbe = readFileSync(new URL("../apps/worker/scripts/live-stalled-chain-readiness.ts", import.meta.url), "utf8");
 
 for (const fragment of [
   'compose("stop", "validator5")',
@@ -14,7 +15,8 @@ for (const fragment of [
   'qbft_getValidatorsByBlockNumber',
   'configuredValidatorCount: identity.validatorCount',
   'rpcResponsive',
-  'qbft-fault-resilience.json.sha256',
+  'const EVIDENCE_CHECKSUM_PATH = `${EVIDENCE_PATH}.sha256`',
+  'writeFile(EVIDENCE_CHECKSUM_PATH',
   'result = "pass"',
   'result = "fail"',
 ]) {
@@ -43,10 +45,24 @@ for (const fragment of [
 }
 
 for (const fragment of [
+  "CanonicalBlockProgressMonitor",
+  "getChainId()",
+  "getBlockNumber()",
+  "THREADPROOF_LIVE_STALLED_CHAIN_FAIL_CLOSED",
+  "workerReadinessRejected: true",
+  "rpcResponsive: true",
+]) {
+  if (!liveStallProbe.includes(fragment)) {
+    throw new Error(`Live stalled-chain worker probe is missing required fail-closed evidence: ${fragment}`);
+  }
+}
+
+for (const fragment of [
   "push:\n    branches: [develop]",
   "pull_request:\n    branches: [develop]",
   "github.event.pull_request.head.sha || github.sha",
   "pnpm --filter @threadproof/worker test:runtime-readiness",
+  "live-stalled-chain-readiness.ts",
   "pnpm pilot:fault-resilience",
   "qbft-fault-resilience.json.sha256",
   "if: always()",
