@@ -5,6 +5,7 @@ import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
 import { formatDate, shortHash, titleCase } from "@/lib/format";
 import { StatusBadge } from "@/components/status-badge";
 import { GovernanceConsole } from "@/components/governance-console";
+import { ReleaseVerifierGovernanceConsole } from "@/components/release-verifier-governance-console";
 import { FactoryOnboardingConsole, type FactoryOnboardingReview } from "@/components/factory-onboarding-console";
 import type { GovernanceTargetOrganization } from "@/lib/governance-chain";
 
@@ -136,12 +137,18 @@ export default async function GovernancePage() {
       ) : null}
 
       {charterConfigured && canUseGovernanceConsole ? (
-        <GovernanceConsole
-          charterAddress={charterAddressRaw as Address}
-          chainId={chainId}
-          organizations={targetOrganizations}
-          proposalIds={rows.map((proposal) => proposal.chain_proposal_id)}
-        />
+        <>
+          <ReleaseVerifierGovernanceConsole
+            charterAddress={charterAddressRaw as Address}
+            chainId={chainId}
+          />
+          <GovernanceConsole
+            charterAddress={charterAddressRaw as Address}
+            chainId={chainId}
+            organizations={targetOrganizations}
+            proposalIds={rows.map((proposal) => proposal.chain_proposal_id)}
+          />
+        </>
       ) : charterConfigured ? (
         <section className="panel"><div className="empty-state"><strong>Read-only governance session</strong><span>Your current application memberships do not expose the governance transaction console. On-chain authority still depends on the wallet's active Registry organization and constituency.</span></div></section>
       ) : (
