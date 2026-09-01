@@ -60,8 +60,10 @@ for (const required of [
   "127.0.0.1:8545:8545",
   "127.0.0.1:8546:8546",
   "127.0.0.1:9000:9000",
+  "-Djava.io.tmpdir=/opt/besu/native",
   "-Djna.tmpdir=/opt/besu/native",
   "-Dio.netty.native.workdir=/opt/besu/native",
+  "ROCKSDB_SHAREDLIB_DIR: /opt/besu/native",
   "/opt/besu/native:rw,exec,nosuid,nodev,size=64m,mode=1777",
 ]) {
   if (!compose.includes(required)) throw new Error(`Production Compose boundary is missing ${required}`);
