@@ -6,6 +6,7 @@ const ALLOWED_MAIN_ONLY_DELTA = [
   /^\.github\/workflows\/release-candidate-guard\.yml$/,
   /^scripts\/trusted-main-release-guard\.mjs$/,
   /^scripts\/trusted-main-target-history-guard\.mjs$/,
+  /^scripts\/trusted-main-build-evidence-guard\.mjs$/,
   /^docs\/MAIN_RELEASE_GUARD_BOOTSTRAP\.md$/,
   /^release\/production-release\.json$/,
   /^CHANGELOG\.md$/,
