@@ -218,7 +218,7 @@ function capacityDigest(body: z.infer<typeof capacityCredentialBodySchema>, reco
 function assertedBodyDigest(body: PrivateCredentialBody, record: CanonicalRecord): Hex {
   assertAnchorMatchesCanonical(body, record);
   const digest = body.digestBinding.method === "threadproof-capacity-credential-v1"
-    ? capacityDigest(body, record)
+    ? capacityDigest(capacityCredentialBodySchema.parse(body), record)
     : keccak256(toBytes(stableCanonical(body)));
   if (!sameHex(digest, record.digest)) {
     throw new Error(`Private credential body digest ${digest} does not match canonical digest ${record.digest}.`);
