@@ -18,7 +18,7 @@ export const ORDER_TYPES = {
     { name: "nonce", type: "uint256" },
     { name: "deadline", type: "uint64" },
   ],
-} as const;
+};
 
 const provenanceVerifierAbi = [
   "function circuitArtifactHash() view returns (bytes32)",
