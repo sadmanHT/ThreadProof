@@ -398,6 +398,17 @@ export type Database = {
         verifier_address: string;
         verifier_code_hash: string;
       }>;
+      worker_runtime_heartbeats: Table<{
+        build_commit: string | null;
+        chain_id: number | null;
+        error_code: string | null;
+        instance_id: string;
+        last_heartbeat_at: string;
+        last_success_at: string | null;
+        started_at: string;
+        status: string;
+        worker_type: string;
+      }>;
     };
     Views: { [_ in never]: never };
     Functions: {
