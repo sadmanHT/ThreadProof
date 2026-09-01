@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const require = createRequire(import.meta.url);
+const scriptDir = dirname(fileURLToPath(import.meta.url));
 
 const ALLOWED_ARGUMENTS = new Set([
   "mode",
@@ -23,9 +25,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === "--") continue;
-    if (!token.startsWith("--")) {
-      throw new Error(`Unexpected positional argument: ${token}`);
-    }
+    if (!token.startsWith("--")) throw new Error(`Unexpected positional argument: ${token}`);
     const key = token.slice(2);
     if (!ALLOWED_ARGUMENTS.has(key)) {
       throw new Error(
@@ -33,9 +33,7 @@ function parseArgs(argv) {
       );
     }
     const value = argv[i + 1];
-    if (!value || value.startsWith("--")) {
-      throw new Error(`Missing value for --${key}`);
-    }
+    if (!value || value.startsWith("--")) throw new Error(`Missing value for --${key}`);
     parsed.set(key, value);
     i += 1;
   }
@@ -48,17 +46,20 @@ function required(args, key) {
   return value;
 }
 
-function runSnarkjs(args) {
-  const result = spawnSync("snarkjs", args, {
+function run(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    cwd: options.cwd,
     encoding: "utf8",
     stdio: "pipe",
     env: process.env,
   });
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
-  if (result.status !== 0) {
-    throw new Error(`snarkjs ${args.join(" ")} failed:\n${output}`);
-  }
+  if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed:\n${output}`);
   return output;
+}
+
+function runSnarkjs(args) {
+  return run("snarkjs", args);
 }
 
 function installedSnarkjsVersion() {
@@ -75,9 +76,7 @@ function installedSnarkjsVersion() {
         return packageMetadata.version.trim();
       }
     } catch (error) {
-      if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) {
-        throw error;
-      }
+      if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
     }
     const parent = dirname(cursor);
     if (parent === cursor) break;
@@ -93,26 +92,64 @@ function sha256File(path) {
 function artifact(path) {
   const stat = statSync(path);
   if (!stat.isFile()) throw new Error(`Expected a regular file: ${path}`);
-  return {
-    filename: basename(path),
-    sizeBytes: stat.size,
-    sha256: sha256File(path),
-  };
+  return { filename: basename(path), sizeBytes: stat.size, sha256: sha256File(path) };
 }
 
 function verifiedContributionCount(zkeyVerifyOutput) {
-  const numbers = [
-    ...zkeyVerifyOutput.matchAll(/\bcontribution\s+#(\d+)\b/gi),
-  ].map((match) => Number(match[1]));
-  const unique = new Set(numbers.filter((value) => Number.isSafeInteger(value) && value > 0));
-  return unique.size;
+  const numbers = [...zkeyVerifyOutput.matchAll(/\bcontribution\s+#(\d+)\b/gi)].map((match) => Number(match[1]));
+  return new Set(numbers.filter((value) => Number.isSafeInteger(value) && value > 0)).size;
+}
+
+function currentGitHead() {
+  return run("git", ["rev-parse", "HEAD"], { cwd: scriptDir }).trim().toLowerCase();
+}
+
+function verifyBuildAttestation({ mode, circuit, r1csPath, outDir, sourceCommit }) {
+  const buildOutDir = join(outDir, "build-verification");
+  mkdirSync(buildOutDir, { recursive: true });
+  const verifierPath = join(scriptDir, "verify-circuit-build.mjs");
+  run(process.execPath, [
+    verifierPath,
+    "--mode",
+    mode,
+    "--circuit",
+    circuit,
+    "--r1cs",
+    r1csPath,
+    "--out-dir",
+    buildOutDir,
+    "--source-commit",
+    sourceCommit,
+  ]);
+
+  const attestationPath = join(buildOutDir, `${circuit}_build_attestation.json`);
+  const attestation = JSON.parse(readFileSync(attestationPath, "utf8"));
+  if (attestation.format !== "threadproof-circuit-build-attestation/v1" || attestation.schemaVersion !== 1) {
+    throw new Error("Circuit build verifier produced an unsupported attestation format");
+  }
+  if (attestation.mode !== mode || attestation.circuit !== circuit || attestation.circuitVersion !== 1) {
+    throw new Error("Circuit build attestation identity does not match the ceremony request");
+  }
+  if (attestation.sourceCommit?.toLowerCase() !== sourceCommit.toLowerCase()) {
+    throw new Error("Circuit build attestation source commit does not match the ceremony source commit");
+  }
+  if (
+    attestation.trackedCheckoutClean !== true ||
+    attestation.buildVerification?.recompiledR1csMatched !== true ||
+    attestation.buildVerification?.sourceCommitMatchedHead !== true ||
+    attestation.buildVerification?.dependencyClosureHashed !== true
+  ) {
+    throw new Error("Circuit build attestation did not prove the required clean exact-source recompilation boundary");
+  }
+  if (attestation.artifacts?.suppliedR1cs?.sha256?.toLowerCase() !== sha256File(r1csPath).toLowerCase()) {
+    throw new Error("Circuit build attestation R1CS hash does not match the ceremony R1CS");
+  }
+  return { attestationPath, attestation };
 }
 
 const args = parseArgs(process.argv.slice(2));
 const mode = required(args, "mode");
-if (mode !== "production" && mode !== "ci-validation") {
-  throw new Error("--mode must be production or ci-validation");
-}
+if (mode !== "production" && mode !== "ci-validation") throw new Error("--mode must be production or ci-validation");
 
 const circuit = required(args, "circuit");
 if (circuit !== "CapacitySpend" && circuit !== "CapacityRelease") {
@@ -129,21 +166,32 @@ if (!Number.isSafeInteger(minimumContributionCount) || minimumContributionCount 
 }
 
 const ceremonyId = args.get("ceremony-id")?.trim() || (mode === "ci-validation" ? "ci-validation" : "");
-const sourceCommit =
-  args.get("source-commit")?.trim() ||
-  (mode === "ci-validation" ? process.env.GITHUB_SHA?.trim() || "local-ci-validation" : "");
-
+const sourceCommit = (args.get("source-commit")?.trim() || currentGitHead()).toLowerCase();
+if (!/^[0-9a-f]{40}$/i.test(sourceCommit) || /^0{40}$/i.test(sourceCommit)) {
+  throw new Error("Ceremony verification requires a non-zero exact 40-hex source commit SHA");
+}
 if (mode === "production") {
   if (!ceremonyId || ceremonyId === "REPLACE_ME") {
     throw new Error("Production verification requires a non-placeholder --ceremony-id");
   }
-  if (!/^[0-9a-f]{40}$/i.test(sourceCommit) || /^0{40}$/i.test(sourceCommit)) {
-    throw new Error("Production verification requires --source-commit as a non-zero exact 40-hex canonical commit SHA");
+  if (!args.has("source-commit")) {
+    throw new Error("Production verification requires explicit --source-commit");
   }
 }
 
 for (const path of [r1csPath, ptauPath, zkeyPath]) artifact(path);
 mkdirSync(outDir, { recursive: true });
+
+// This is the key source-to-ceremony boundary: before accepting a finalized zkey,
+// recompile the exact clean Git source with the pinned Circom toolchain and require
+// byte-identical R1CS output. The resulting attestation is hashed into ceremony evidence.
+const { attestationPath: buildAttestationPath, attestation: buildAttestation } = verifyBuildAttestation({
+  mode,
+  circuit,
+  r1csPath,
+  outDir,
+  sourceCommit,
+});
 
 const verificationKeyPath = join(outDir, `${circuit}_verification_key.json`);
 const solidityVerifierPath = join(outDir, `${circuit}Verifier.sol`);
@@ -176,43 +224,52 @@ const evidence = {
   ceremonyId,
   sourceCommit,
   verification: {
+    circuitBuildRecompiled: true,
+    sourceCommitMatchedCleanGitHead: true,
     powersOfTauVerified: true,
     finalZkeyVerified: true,
     phase2ContributionCount: contributionCount,
     minimumPhase2ContributionCount: minimumContributionCount,
   },
+  build: {
+    format: buildAttestation.format,
+    gitTree: buildAttestation.gitTree,
+    compilerVersion: buildAttestation.compiler?.requiredVersion,
+    compilerPinnedSourceRevision: buildAttestation.compiler?.pinnedSourceRevision,
+    compilerBinarySha256: buildAttestation.compiler?.executable?.sha256,
+    dependencyFileCount: buildAttestation.inputs?.circuitClosure?.length,
+  },
   artifacts: {
+    buildAttestation: artifact(buildAttestationPath),
     r1cs: artifact(r1csPath),
     powersOfTau: artifact(ptauPath),
     finalZkey: artifact(zkeyPath),
     verificationKey: artifact(verificationKeyPath),
     solidityVerifier: artifact(solidityVerifierPath),
   },
-  tooling: {
-    snarkjsVersion,
-  },
+  tooling: { snarkjsVersion },
   generatedAt: new Date().toISOString(),
   handling: {
     participantEntropyAcceptedByThisTool: false,
     participantPrivateMaterialPersistedByThisTool: false,
     finalZkeyCopiedByThisTool: false,
-    note: "This verifier consumes finalized ceremony artifacts only. Ceremony contributions and participant entropy must be created outside this repository workflow.",
+    note: "This verifier consumes finalized ceremony artifacts only. It independently recompiles the exact circuit source before accepting the finalized zkey. Ceremony contributions and participant entropy must be created outside this repository workflow.",
   },
 };
 
 const evidenceBytes = Buffer.from(`${JSON.stringify(evidence, null, 2)}\n`, "utf8");
 writeFileSync(evidencePath, evidenceBytes, { mode: 0o644 });
 const evidenceSha256 = `0x${createHash("sha256").update(evidenceBytes).digest("hex")}`;
-writeFileSync(
-  evidenceChecksumPath,
-  `${evidenceSha256.slice(2)}  ${basename(evidencePath)}\n`,
-  { mode: 0o644 },
-);
+writeFileSync(evidenceChecksumPath, `${evidenceSha256.slice(2)}  ${basename(evidencePath)}\n`, { mode: 0o644 });
 
 console.log(
   `THREADPROOF_PRODUCTION_CEREMONY_EVIDENCE ${JSON.stringify({
     circuit,
     mode,
+    sourceCommit,
+    circuitBuildRecompiled: true,
+    buildAttestationPath,
+    buildAttestationSha256: artifact(buildAttestationPath).sha256,
     phase2ContributionCount: contributionCount,
     evidencePath,
     evidenceSha256,
