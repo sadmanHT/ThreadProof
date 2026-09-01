@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { getCommonEnv } from "./env.js";
 import { createServiceClient } from "./supabase.js";
 
 export const WORKER_RUNTIME_TYPES = [
@@ -14,6 +15,7 @@ export type WorkerRuntimeType = (typeof WORKER_RUNTIME_TYPES)[number];
 const DEFAULT_HEARTBEAT_MS = 20_000;
 const MIN_HEARTBEAT_MS = 5_000;
 const MAX_HEARTBEAT_MS = 300_000;
+const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 function heartbeatIntervalMs() {
   const raw = process.env.THREADPROOF_WORKER_HEARTBEAT_INTERVAL_MS;
@@ -33,18 +35,37 @@ function buildCommit() {
 export async function startWorkerRuntimeHeartbeat(workerType: WorkerRuntimeType, chainId: number) {
   if (!Number.isSafeInteger(chainId) || chainId <= 0) throw new Error("Worker heartbeat requires a positive canonical chain id.");
 
+  const env = getCommonEnv();
   const instanceId = randomUUID();
   const startedAt = new Date().toISOString();
   const intervalMs = heartbeatIntervalMs();
-  const supabase = createServiceClient();
+  const supabase = createServiceClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
   let writing = false;
   let registered = false;
+  let cleanupAttempted = false;
+
+  async function cleanupExpiredInstances() {
+    if (cleanupAttempted) return;
+    cleanupAttempted = true;
+    const cutoff = new Date(Date.now() - RETENTION_MS).toISOString();
+    try {
+      const { error } = await supabase
+        .from("worker_runtime_heartbeats")
+        .delete()
+        .eq("worker_type", workerType)
+        .lt("last_heartbeat_at", cutoff);
+      if (error) console.error(`ThreadProof ${workerType} heartbeat retention cleanup failed with code ${error.code ?? "UNKNOWN"}.`);
+    } catch {
+      console.error(`ThreadProof ${workerType} heartbeat retention cleanup failed.`);
+    }
+  }
 
   async function writeHeartbeat() {
     if (writing) return;
     writing = true;
     const now = new Date().toISOString();
     try {
+      await cleanupExpiredInstances();
       const payload = {
         instance_id: instanceId,
         worker_type: workerType,
