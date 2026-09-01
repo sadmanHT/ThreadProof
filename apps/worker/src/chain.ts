@@ -2,14 +2,21 @@ import { parseAbi } from "viem";
 
 export const capacityVaultAbi = parseAbi([
   "function spendCapacity((bytes32 factoryOrganizationId,bytes32 periodId,bytes32 processId,bytes32 orderId,bytes32 policyHash,uint256 oldCapacityCommitment,uint256 newCapacityCommitment,uint256 orderCommitment,uint256 nullifier,uint32 circuitVersion) request,uint256[2] a,uint256[2][2] b,uint256[2] c)",
+  "function releaseCapacity((bytes32 allocationId,uint256 oldCapacityCommitment,uint256 newCapacityCommitment,uint256 releaseNullifier,uint32 releaseCircuitVersion) request,uint256[2] a,uint256[2][2] b,uint256[2] c)",
   "function getCapacityState(bytes32 factoryOrganizationId,bytes32 periodId,bytes32 processId) view returns ((uint256 activeCommitment,bytes32 capacityCredentialId,bytes32 policyHash,uint32 circuitVersion,uint64 updatedAt,bool active))",
   "function getCapacityAllocation(bytes32 allocationId) view returns ((bytes32 stateKey,bytes32 orderId,bytes32 factoryOrganizationId,bytes32 periodId,bytes32 processId,bytes32 capacityCredentialId,uint256 orderCommitment,bytes32 policyHash,uint256 nullifier,uint32 circuitVersion,uint64 authorizedAt,bool exists))",
+  "function getCapacityRelease(bytes32 allocationId) view returns ((bytes32 allocationId,bytes32 stateKey,uint256 previousCommitment,uint256 restoredCommitment,uint256 releaseNullifier,uint32 releaseCircuitVersion,uint64 releasedAt,bool exists))",
+  "function releasedAllocations(bytes32 allocationId) view returns (bool)",
+  "function usedReleaseNullifiers(uint256 nullifier) view returns (bool)",
   "function isCapacityAllocationAuthorized(bytes32 allocationId,bytes32 orderId,bytes32 factoryOrganizationId,bytes32 periodId,bytes32 processId,uint256 orderCommitment,bytes32 policyHash) view returns (bool)",
   "event CapacityCertified(bytes32 indexed stateKey,bytes32 indexed factoryOrganizationId,bytes32 indexed capacityCredentialId,bytes32 periodId,bytes32 processId,uint256 commitment,bytes32 policyHash,uint32 circuitVersion)",
   "event CapacitySpent(bytes32 indexed stateKey,bytes32 indexed orderId,uint256 indexed nullifier,uint256 oldCommitment,uint256 newCommitment,uint256 orderCommitment,uint32 circuitVersion)",
   "event CapacityAllocationRecorded(bytes32 indexed allocationId,bytes32 indexed orderId,bytes32 indexed factoryOrganizationId,bytes32 stateKey,uint256 nullifier)",
+  "event CapacityReleased(bytes32 indexed allocationId,bytes32 indexed stateKey,bytes32 indexed orderId,uint256 releaseNullifier,uint256 oldCommitment,uint256 restoredCommitment,uint32 releaseCircuitVersion)",
   "event VerifierRegistered(uint32 indexed circuitVersion,address indexed verifier)",
   "event VerifierProvenanceRegistered(uint32 indexed circuitVersion,address indexed verifier,bytes32 indexed circuitArtifactHash,bytes32 verificationKeyHash,bytes32 verifierCodeHash)",
+  "event ReleaseVerifierRegistered(uint32 indexed circuitVersion,address indexed verifier)",
+  "event ReleaseVerifierProvenanceRegistered(uint32 indexed circuitVersion,address indexed verifier,bytes32 indexed circuitArtifactHash,bytes32 verificationKeyHash,bytes32 verifierCodeHash)",
 ]);
 
 export const orderRegistryAbi = parseAbi([

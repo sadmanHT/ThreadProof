@@ -4,13 +4,14 @@ pragma solidity ^0.8.28;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ICapacitySpendVerifier} from "./interfaces/ICapacitySpendVerifier.sol";
+import {ICapacityReleaseVerifier} from "./interfaces/ICapacityReleaseVerifier.sol";
 import {ICredentialRegistry} from "./interfaces/ICredentialRegistry.sol";
 import {IOrderRegistry} from "./interfaces/IOrderRegistry.sol";
 import {IThreadProofRegistry} from "./interfaces/IThreadProofRegistry.sol";
 
 /// @dev Optional metadata interface for verifier contracts that carry their own immutable provenance.
-///      Production ceremony tooling may instead use the explicit provenance registration function.
-interface ICapacitySpendVerifierProvenance {
+///      Production ceremony tooling may instead use the explicit provenance registration functions.
+interface ICapacityVerifierProvenance {
     function circuitArtifactHash() external view returns (bytes32);
     function verificationKeyHash() external view returns (bytes32);
 }
@@ -25,7 +26,6 @@ contract CapacityVault is AccessControl, Pausable {
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant CAPACITY_CREDENTIAL_TYPE = keccak256("CAPACITY_CREDENTIAL");
 
-    // BN254 scalar field used by Groth16/Circom public signals.
     uint256 public constant SNARK_SCALAR_FIELD =
         21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
@@ -51,6 +51,16 @@ contract CapacityVault is AccessControl, Pausable {
         uint32 circuitVersion;
     }
 
+    /// @notice Request to restore a historical allocation after its exact buyer-authorized order context is no longer current.
+    /// @dev Business identifiers and the historical order commitment are taken from the immutable allocation receipt.
+    struct ReleaseRequest {
+        bytes32 allocationId;
+        uint256 oldCapacityCommitment;
+        uint256 newCapacityCommitment;
+        uint256 releaseNullifier;
+        uint32 releaseCircuitVersion;
+    }
+
     /// @notice Immutable receipt that a specific order consumed one canonical capacity state.
     /// @dev It stores commitments/IDs only; exact workload and remaining capacity remain private.
     struct CapacityAllocation {
@@ -68,8 +78,20 @@ contract CapacityVault is AccessControl, Pausable {
         bool exists;
     }
 
+    /// @notice Immutable receipt for a capacity-restoration transition.
+    struct CapacityReleaseReceipt {
+        bytes32 allocationId;
+        bytes32 stateKey;
+        uint256 previousCommitment;
+        uint256 restoredCommitment;
+        uint256 releaseNullifier;
+        uint32 releaseCircuitVersion;
+        uint64 releasedAt;
+        bool exists;
+    }
+
     /// @notice Immutable provenance bound to one circuit version.
-    /// @dev A new circuit, verification key or deployed verifier must use a new circuitVersion.
+    /// @dev Spend and release verifier namespaces are deliberately separate even if version numbers overlap.
     struct VerifierProvenance {
         address verifier;
         bytes32 circuitArtifactHash;
@@ -84,9 +106,16 @@ contract CapacityVault is AccessControl, Pausable {
 
     mapping(bytes32 stateKey => CapacityState state) private _capacityStates;
     mapping(bytes32 allocationId => CapacityAllocation allocation) private _capacityAllocations;
+    mapping(bytes32 allocationId => CapacityReleaseReceipt receipt) private _capacityReleaseReceipts;
+    mapping(bytes32 allocationId => bool released) public releasedAllocations;
+
     mapping(uint256 nullifier => bool used) public usedNullifiers;
+    mapping(uint256 nullifier => bool used) public usedReleaseNullifiers;
+
     mapping(uint32 circuitVersion => ICapacitySpendVerifier verifier) public verifiers;
     mapping(uint32 circuitVersion => VerifierProvenance provenance) private _verifierProvenance;
+    mapping(uint32 circuitVersion => ICapacityReleaseVerifier verifier) public releaseVerifiers;
+    mapping(uint32 circuitVersion => VerifierProvenance provenance) private _releaseVerifierProvenance;
 
     error InvalidAddress();
     error InvalidCommitment();
@@ -94,8 +123,12 @@ contract CapacityVault is AccessControl, Pausable {
     error CapacityStateAlreadyExists(bytes32 stateKey);
     error UnknownCapacityState(bytes32 stateKey);
     error UnknownCapacityAllocation(bytes32 allocationId);
+    error UnknownCapacityRelease(bytes32 allocationId);
     error StaleCapacityState(uint256 expected, uint256 supplied);
     error NullifierAlreadyUsed(uint256 nullifier);
+    error ReleaseNullifierAlreadyUsed(uint256 nullifier);
+    error AllocationAlreadyReleased(bytes32 allocationId);
+    error AllocationStillAuthorized(bytes32 allocationId);
     error InvalidCredential(bytes32 credentialId);
     error InvalidCredentialBinding(bytes32 credentialId, bytes32 expectedScopeHash);
     error InvalidOrderAuthorization(bytes32 orderId);
@@ -103,14 +136,19 @@ contract CapacityVault is AccessControl, Pausable {
     error CircuitVersionMismatch(uint32 expected, uint32 supplied);
     error InvalidCircuitVersion(uint32 circuitVersion);
     error UnknownVerifier(uint32 circuitVersion);
+    error UnknownReleaseVerifier(uint32 circuitVersion);
     error InvalidVerifier(address verifier);
     error VerifierAlreadyRegistered(uint32 circuitVersion);
+    error ReleaseVerifierAlreadyRegistered(uint32 circuitVersion);
     error VerifierMetadataUnavailable(address verifier);
     error InvalidVerifierProvenance(bytes32 circuitArtifactHash, bytes32 verificationKeyHash);
     error VerifierCodeHashMismatch(uint32 circuitVersion, bytes32 expectedCodeHash, bytes32 actualCodeHash);
+    error ReleaseVerifierCodeHashMismatch(uint32 circuitVersion, bytes32 expectedCodeHash, bytes32 actualCodeHash);
     error InvalidProof();
+    error InvalidReleaseProof();
     error UnauthorizedFactoryCaller(bytes32 factoryOrganizationId, address caller);
     error InactiveFactory(bytes32 factoryOrganizationId);
+    error AllocationStateMismatch(bytes32 allocationId);
 
     event CapacityCertified(
         bytes32 indexed stateKey,
@@ -141,8 +179,27 @@ contract CapacityVault is AccessControl, Pausable {
         uint256 nullifier
     );
 
+    event CapacityReleased(
+        bytes32 indexed allocationId,
+        bytes32 indexed stateKey,
+        bytes32 indexed orderId,
+        uint256 releaseNullifier,
+        uint256 oldCommitment,
+        uint256 restoredCommitment,
+        uint32 releaseCircuitVersion
+    );
+
     event VerifierRegistered(uint32 indexed circuitVersion, address indexed verifier);
     event VerifierProvenanceRegistered(
+        uint32 indexed circuitVersion,
+        address indexed verifier,
+        bytes32 indexed circuitArtifactHash,
+        bytes32 verificationKeyHash,
+        bytes32 verifierCodeHash
+    );
+
+    event ReleaseVerifierRegistered(uint32 indexed circuitVersion, address indexed verifier);
+    event ReleaseVerifierProvenanceRegistered(
         uint32 indexed circuitVersion,
         address indexed verifier,
         bytes32 indexed circuitArtifactHash,
@@ -173,29 +230,13 @@ contract CapacityVault is AccessControl, Pausable {
         _grantRole(PAUSER_ROLE, initialAdmin);
     }
 
-    /// @notice Registers a verifier that exposes immutable provenance metadata itself.
-    /// @dev This preserves convenient development/test deployment without permitting untracked verifiers.
+    /// @notice Registers a spend verifier that exposes immutable provenance metadata itself.
     function registerVerifier(uint32 circuitVersion, address verifierAddress) external onlyRole(VERIFIER_ADMIN_ROLE) {
-        if (verifierAddress == address(0) || verifierAddress.code.length == 0) revert InvalidVerifier(verifierAddress);
-
-        bytes32 circuitArtifactHash;
-        bytes32 verificationKeyHash;
-        try ICapacitySpendVerifierProvenance(verifierAddress).circuitArtifactHash() returns (bytes32 value) {
-            circuitArtifactHash = value;
-        } catch {
-            revert VerifierMetadataUnavailable(verifierAddress);
-        }
-        try ICapacitySpendVerifierProvenance(verifierAddress).verificationKeyHash() returns (bytes32 value) {
-            verificationKeyHash = value;
-        } catch {
-            revert VerifierMetadataUnavailable(verifierAddress);
-        }
-
+        (bytes32 circuitArtifactHash, bytes32 verificationKeyHash) = _readVerifierMetadata(verifierAddress);
         _registerVerifier(circuitVersion, verifierAddress, circuitArtifactHash, verificationKeyHash);
     }
 
-    /// @notice Registers an immutable verifier/circuit/VK tuple for a new circuit version.
-    /// @dev Production ceremony tooling should calculate the artifact hashes independently and use this path.
+    /// @notice Registers an immutable spend-verifier/circuit/VK tuple for a new spend circuit version.
     function registerVerifierWithProvenance(
         uint32 circuitVersion,
         address verifierAddress,
@@ -208,6 +249,30 @@ contract CapacityVault is AccessControl, Pausable {
     function getVerifierProvenance(uint32 circuitVersion) external view returns (VerifierProvenance memory) {
         if (address(verifiers[circuitVersion]) == address(0)) revert UnknownVerifier(circuitVersion);
         return _verifierProvenance[circuitVersion];
+    }
+
+    /// @notice Registers a release verifier that exposes immutable provenance metadata itself.
+    function registerReleaseVerifier(
+        uint32 circuitVersion,
+        address verifierAddress
+    ) external onlyRole(VERIFIER_ADMIN_ROLE) {
+        (bytes32 circuitArtifactHash, bytes32 verificationKeyHash) = _readVerifierMetadata(verifierAddress);
+        _registerReleaseVerifier(circuitVersion, verifierAddress, circuitArtifactHash, verificationKeyHash);
+    }
+
+    /// @notice Registers an immutable release-verifier/circuit/VK tuple.
+    function registerReleaseVerifierWithProvenance(
+        uint32 circuitVersion,
+        address verifierAddress,
+        bytes32 circuitArtifactHash,
+        bytes32 verificationKeyHash
+    ) external onlyRole(VERIFIER_ADMIN_ROLE) {
+        _registerReleaseVerifier(circuitVersion, verifierAddress, circuitArtifactHash, verificationKeyHash);
+    }
+
+    function getReleaseVerifierProvenance(uint32 circuitVersion) external view returns (VerifierProvenance memory) {
+        if (address(releaseVerifiers[circuitVersion]) == address(0)) revert UnknownReleaseVerifier(circuitVersion);
+        return _releaseVerifierProvenance[circuitVersion];
     }
 
     function certifyCapacity(
@@ -274,13 +339,7 @@ contract CapacityVault is AccessControl, Pausable {
         uint256[2][2] calldata b,
         uint256[2] calldata c
     ) external whenNotPaused {
-        bytes32 callerOrganizationId = organizationRegistry.organizationOfAccount(msg.sender);
-        if (callerOrganizationId != request.factoryOrganizationId && !hasRole(RELAYER_ROLE, msg.sender)) {
-            revert UnauthorizedFactoryCaller(request.factoryOrganizationId, msg.sender);
-        }
-        if (!organizationRegistry.isActive(request.factoryOrganizationId)) {
-            revert InactiveFactory(request.factoryOrganizationId);
-        }
+        _requireFactoryOrRelayer(request.factoryOrganizationId);
 
         bytes32 key = capacityStateKey(request.factoryOrganizationId, request.periodId, request.processId);
         CapacityState storage state = _capacityStates[key];
@@ -314,7 +373,6 @@ contract CapacityVault is AccessControl, Pausable {
         if (request.newCapacityCommitment == 0) revert InvalidCommitment();
 
         ICapacitySpendVerifier verifier = _verifiedVerifier(request.circuitVersion);
-
         uint256[9] memory signals = [
             _toField(request.factoryOrganizationId),
             _toField(request.periodId),
@@ -329,7 +387,6 @@ contract CapacityVault is AccessControl, Pausable {
 
         if (!verifier.verifyProof(a, b, c, signals)) revert InvalidProof();
 
-        // Canonical compare-and-swap: this update and nullifier consumption happen in the same transaction.
         usedNullifiers[request.nullifier] = true;
         uint256 previousCommitment = state.activeCommitment;
         bytes32 capacityCredentialId = state.capacityCredentialId;
@@ -370,6 +427,94 @@ contract CapacityVault is AccessControl, Pausable {
         );
     }
 
+    /// @notice Restores the exact confidential workload of a historical PoFC allocation once its order authorization is stale.
+    /// @dev The historical allocation remains immutable. A separate release receipt prevents replay with another release secret.
+    function releaseCapacity(
+        ReleaseRequest calldata request,
+        uint256[2] calldata a,
+        uint256[2][2] calldata b,
+        uint256[2] calldata c
+    ) external whenNotPaused {
+        CapacityAllocation storage allocation = _capacityAllocations[request.allocationId];
+        if (!allocation.exists) revert UnknownCapacityAllocation(request.allocationId);
+        if (releasedAllocations[request.allocationId]) revert AllocationAlreadyReleased(request.allocationId);
+
+        _requireFactoryOrRelayer(allocation.factoryOrganizationId);
+
+        CapacityState storage state = _capacityStates[allocation.stateKey];
+        if (!state.active) revert UnknownCapacityState(allocation.stateKey);
+        if (state.activeCommitment != request.oldCapacityCommitment) {
+            revert StaleCapacityState(state.activeCommitment, request.oldCapacityCommitment);
+        }
+        if (state.policyHash != allocation.policyHash || state.capacityCredentialId != allocation.capacityCredentialId) {
+            revert AllocationStateMismatch(request.allocationId);
+        }
+        if (!usedNullifiers[allocation.nullifier]) revert AllocationStateMismatch(request.allocationId);
+        if (!credentialRegistry.isCredentialActive(state.capacityCredentialId)) {
+            revert InvalidCredential(state.capacityCredentialId);
+        }
+        if (
+            orderRegistry.isCurrentOrderAuthorization(
+                allocation.orderId,
+                allocation.factoryOrganizationId,
+                allocation.orderCommitment,
+                allocation.policyHash
+            )
+        ) {
+            revert AllocationStillAuthorized(request.allocationId);
+        }
+        if (usedReleaseNullifiers[request.releaseNullifier]) {
+            revert ReleaseNullifierAlreadyUsed(request.releaseNullifier);
+        }
+
+        _requireFieldElement(request.oldCapacityCommitment);
+        _requireFieldElement(request.newCapacityCommitment);
+        _requireFieldElement(allocation.orderCommitment);
+        _requireFieldElement(request.releaseNullifier);
+        if (request.newCapacityCommitment == 0) revert InvalidCommitment();
+
+        ICapacityReleaseVerifier verifier = _verifiedReleaseVerifier(request.releaseCircuitVersion);
+        uint256[9] memory signals = [
+            _toField(allocation.factoryOrganizationId),
+            _toField(allocation.periodId),
+            _toField(allocation.processId),
+            _toField(allocation.orderId),
+            _toField(allocation.policyHash),
+            request.oldCapacityCommitment,
+            request.newCapacityCommitment,
+            allocation.orderCommitment,
+            request.releaseNullifier
+        ];
+        if (!verifier.verifyProof(a, b, c, signals)) revert InvalidReleaseProof();
+
+        uint256 previousCommitment = state.activeCommitment;
+        state.activeCommitment = request.newCapacityCommitment;
+        state.updatedAt = uint64(block.timestamp);
+
+        releasedAllocations[request.allocationId] = true;
+        usedReleaseNullifiers[request.releaseNullifier] = true;
+        _capacityReleaseReceipts[request.allocationId] = CapacityReleaseReceipt({
+            allocationId: request.allocationId,
+            stateKey: allocation.stateKey,
+            previousCommitment: previousCommitment,
+            restoredCommitment: request.newCapacityCommitment,
+            releaseNullifier: request.releaseNullifier,
+            releaseCircuitVersion: request.releaseCircuitVersion,
+            releasedAt: uint64(block.timestamp),
+            exists: true
+        });
+
+        emit CapacityReleased(
+            request.allocationId,
+            allocation.stateKey,
+            allocation.orderId,
+            request.releaseNullifier,
+            previousCommitment,
+            request.newCapacityCommitment,
+            request.releaseCircuitVersion
+        );
+    }
+
     function getCapacityState(
         bytes32 factoryOrganizationId,
         bytes32 periodId,
@@ -387,8 +532,14 @@ contract CapacityVault is AccessControl, Pausable {
         return allocation;
     }
 
+    function getCapacityRelease(bytes32 allocationId) external view returns (CapacityReleaseReceipt memory) {
+        CapacityReleaseReceipt memory receipt = _capacityReleaseReceipts[allocationId];
+        if (!receipt.exists) revert UnknownCapacityRelease(allocationId);
+        return receipt;
+    }
+
     /// @notice Returns whether a historical PoFC allocation still authorizes the exact current order context.
-    /// @dev Historical records remain immutable; amendments, cancellation, revocation or suspension fail closed for new use.
+    /// @dev A released allocation is permanently ineligible even if the same order context later becomes current again.
     function isCapacityAllocationAuthorized(
         bytes32 allocationId,
         bytes32 orderId,
@@ -399,7 +550,7 @@ contract CapacityVault is AccessControl, Pausable {
         bytes32 policyHash
     ) external view returns (bool) {
         CapacityAllocation storage allocation = _capacityAllocations[allocationId];
-        if (!allocation.exists) return false;
+        if (!allocation.exists || releasedAllocations[allocationId]) return false;
         if (
             allocation.orderId != orderId ||
             allocation.factoryOrganizationId != factoryOrganizationId ||
@@ -432,7 +583,6 @@ contract CapacityVault is AccessControl, Pausable {
     }
 
     /// @notice Deterministic capacity-credential scope enforced at initial certification.
-    /// @dev Binding includes the initial commitment so one credential cannot certify a different opening.
     function capacityCredentialScopeHash(
         bytes32 factoryOrganizationId,
         bytes32 periodId,
@@ -449,6 +599,24 @@ contract CapacityVault is AccessControl, Pausable {
 
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
+    }
+
+    function _readVerifierMetadata(address verifierAddress) internal view returns (bytes32, bytes32) {
+        if (verifierAddress == address(0) || verifierAddress.code.length == 0) revert InvalidVerifier(verifierAddress);
+
+        bytes32 circuitArtifactHash;
+        bytes32 verificationKeyHash;
+        try ICapacityVerifierProvenance(verifierAddress).circuitArtifactHash() returns (bytes32 value) {
+            circuitArtifactHash = value;
+        } catch {
+            revert VerifierMetadataUnavailable(verifierAddress);
+        }
+        try ICapacityVerifierProvenance(verifierAddress).verificationKeyHash() returns (bytes32 value) {
+            verificationKeyHash = value;
+        } catch {
+            revert VerifierMetadataUnavailable(verifierAddress);
+        }
+        return (circuitArtifactHash, verificationKeyHash);
     }
 
     function _registerVerifier(
@@ -484,6 +652,41 @@ contract CapacityVault is AccessControl, Pausable {
         );
     }
 
+    function _registerReleaseVerifier(
+        uint32 circuitVersion,
+        address verifierAddress,
+        bytes32 circuitArtifactHash,
+        bytes32 verificationKeyHash
+    ) internal {
+        if (circuitVersion == 0) revert InvalidCircuitVersion(circuitVersion);
+        if (verifierAddress == address(0) || verifierAddress.code.length == 0) revert InvalidVerifier(verifierAddress);
+        if (address(releaseVerifiers[circuitVersion]) != address(0)) {
+            revert ReleaseVerifierAlreadyRegistered(circuitVersion);
+        }
+        if (circuitArtifactHash == bytes32(0) || verificationKeyHash == bytes32(0)) {
+            revert InvalidVerifierProvenance(circuitArtifactHash, verificationKeyHash);
+        }
+
+        bytes32 verifierCodeHash = verifierAddress.codehash;
+        releaseVerifiers[circuitVersion] = ICapacityReleaseVerifier(verifierAddress);
+        _releaseVerifierProvenance[circuitVersion] = VerifierProvenance({
+            verifier: verifierAddress,
+            circuitArtifactHash: circuitArtifactHash,
+            verificationKeyHash: verificationKeyHash,
+            verifierCodeHash: verifierCodeHash,
+            registeredAt: uint64(block.timestamp)
+        });
+
+        emit ReleaseVerifierRegistered(circuitVersion, verifierAddress);
+        emit ReleaseVerifierProvenanceRegistered(
+            circuitVersion,
+            verifierAddress,
+            circuitArtifactHash,
+            verificationKeyHash,
+            verifierCodeHash
+        );
+    }
+
     function _verifiedVerifier(uint32 circuitVersion) internal view returns (ICapacitySpendVerifier verifier) {
         verifier = verifiers[circuitVersion];
         address verifierAddress = address(verifier);
@@ -493,6 +696,30 @@ contract CapacityVault is AccessControl, Pausable {
         bytes32 actualCodeHash = verifierAddress.codehash;
         if (expectedCodeHash == bytes32(0) || actualCodeHash != expectedCodeHash) {
             revert VerifierCodeHashMismatch(circuitVersion, expectedCodeHash, actualCodeHash);
+        }
+    }
+
+    function _verifiedReleaseVerifier(
+        uint32 circuitVersion
+    ) internal view returns (ICapacityReleaseVerifier verifier) {
+        verifier = releaseVerifiers[circuitVersion];
+        address verifierAddress = address(verifier);
+        if (verifierAddress == address(0)) revert UnknownReleaseVerifier(circuitVersion);
+
+        bytes32 expectedCodeHash = _releaseVerifierProvenance[circuitVersion].verifierCodeHash;
+        bytes32 actualCodeHash = verifierAddress.codehash;
+        if (expectedCodeHash == bytes32(0) || actualCodeHash != expectedCodeHash) {
+            revert ReleaseVerifierCodeHashMismatch(circuitVersion, expectedCodeHash, actualCodeHash);
+        }
+    }
+
+    function _requireFactoryOrRelayer(bytes32 factoryOrganizationId) internal view {
+        bytes32 callerOrganizationId = organizationRegistry.organizationOfAccount(msg.sender);
+        if (callerOrganizationId != factoryOrganizationId && !hasRole(RELAYER_ROLE, msg.sender)) {
+            revert UnauthorizedFactoryCaller(factoryOrganizationId, msg.sender);
+        }
+        if (!organizationRegistry.isActive(factoryOrganizationId)) {
+            revert InactiveFactory(factoryOrganizationId);
         }
     }
 
