@@ -5,9 +5,10 @@ const source = readFileSync(new URL("./verify-production-ceremony.mjs", import.m
 const requiredFragments = [
   '"powersoftau", "verify"',
   '"zkey", "verify"',
-  '"zkey", "export", "json"',
   '"zkey", "export", "verificationkey"',
   '"zkey", "export", "solidityverifier"',
+  "verifiedContributionCount",
+  "contribution\\s+#(\\d+)",
   "phase2ContributionCount",
   "minimumPhase2ContributionCount",
   "participantEntropyAcceptedByThisTool: false",
@@ -24,20 +25,27 @@ for (const fragment of requiredFragments) {
   }
 }
 
-for (const prohibited of ["zkey contribute", "powersoftau contribute", "-e=", "--entropy", "privateKey"]) {
+for (const prohibited of [
+  "zkey contribute",
+  "powersoftau contribute",
+  '"zkey", "export", "json"',
+  "-e=",
+  "--entropy",
+  "privateKey",
+]) {
   if (source.includes(prohibited)) {
-    throw new Error(`Production ceremony verifier must not create ceremony secret material: ${prohibited}`);
+    throw new Error(`Production ceremony verifier must not create ceremony secret material or expand the full proving key: ${prohibited}`);
   }
 }
 
 if (!source.includes('mode !== "production" && mode !== "ci-validation"')) {
   throw new Error("Production ceremony verifier must distinguish production from CI-validation evidence");
 }
-if (!source.includes("contributions.length < minimumContributionCount")) {
-  throw new Error("Production ceremony verifier must fail closed when Phase-2 contributions are missing");
+if (!source.includes("contributionCount < minimumContributionCount")) {
+  throw new Error("Production ceremony verifier must fail closed when verified Phase-2 contributions are missing");
 }
-if (!source.includes('/^[0-9a-f]{40}$/i.test(sourceCommit)')) {
-  throw new Error("Production ceremony verifier must bind production evidence to an exact canonical commit SHA");
+if (!source.includes('/^[0-9a-f]{40}$/i.test(sourceCommit)') || !source.includes('/^0{40}$/i.test(sourceCommit)')) {
+  throw new Error("Production ceremony verifier must bind production evidence to a non-zero exact canonical commit SHA");
 }
 
 console.log("Production ceremony verification trust-boundary checks passed.");
