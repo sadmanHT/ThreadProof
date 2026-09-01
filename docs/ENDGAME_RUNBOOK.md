@@ -1,6 +1,6 @@
 # ThreadProof Endgame Runbook
 
-This runbook is the reproducibility contract for the ThreadProof endgame. It starts from a clean checkout, rebuilds both ZK circuits, boots a disposable five-validator Besu/QBFT consortium on chain `2026`, and executes the live trust paths without relying on a developer laptop or persistent chain state.
+This runbook is the reproducibility contract for the ThreadProof endgame. It starts from a clean checkout, rebuilds both ZK circuits, boots a disposable five-validator Besu/QBFT consortium on chain `2026`, executes the live trust paths, and preserves measured evidence without relying on a developer laptop or persistent chain state.
 
 ## What this proves
 
@@ -14,11 +14,13 @@ A successful clean-state rehearsal demonstrates all of the following on the exac
 6. Real Groth16 proofs are generated and locally verified.
 7. Generated verifier contracts are provenance-bound to the exact circuit artifacts.
 8. A fresh five-validator chain `2026` boots from generated QBFT topology.
-9. A PoFC-backed subcontract authorization completes on the live disposable chain.
-10. A PoFC spend, order cancellation, and cryptographic capacity release complete on the live disposable chain.
-11. The deterministic endgame scorecard passes and is preserved as an artifact.
+9. A worker-signed transaction is submitted to the five-validator network and its receipt latency/gas are measured.
+10. A PoFC-backed subcontract authorization completes on the live disposable chain.
+11. A PoFC spend, order cancellation, and cryptographic capacity release complete on the live disposable chain.
+12. The deterministic endgame trust-boundary scorecard passes.
+13. Measured gas, R1CS, proof-size, proving/verification-time and live-QBFT artifacts are preserved.
 
-This rehearsal does **not** make application databases or AI outputs authoritative. Canonical protocol state remains the signed/verified chain state. Supabase stores encrypted operational state, queues, read models, and canonical-event projections.
+This rehearsal does **not** make application databases or AI outputs authoritative. Canonical protocol state remains signed/verified chain state. Supabase stores encrypted operational state, queues, read models, and canonical-event projections.
 
 ## CI path
 
@@ -26,7 +28,17 @@ Use the GitHub Actions workflow **ThreadProof Clean-State Endgame**. It runs on 
 
 Treat the workflow's exact `github.sha` as the verification unit. Do not transfer a green result from a different commit.
 
-The workflow always destroys its disposable pilot network and uploads the scorecard plus spend/release proof and provenance artifacts.
+The endgame PR is considered technically mergeable only when all seven workflows for the same head SHA are green:
+
+- ThreadProof CI
+- ThreadProof Live PoFC
+- ThreadProof Live Subcontract
+- ThreadProof Live Capacity Release
+- ThreadProof Live Pilot
+- ThreadProof Endgame Scorecard
+- ThreadProof Clean-State Endgame
+
+The clean-state workflow always destroys its disposable pilot network and uploads the scorecard, measured benchmark files, spend/release proofs, verification keys, and verifier-provenance artifacts.
 
 ## Local reproduction
 
@@ -86,7 +98,7 @@ THREADPROOF_GENERATED_PROOF_DIR="$PWD/packages/circuits/artifacts" node packages
 THREADPROOF_GENERATED_PROOF_DIR="$PWD/packages/circuits/artifacts" node packages/contracts/scripts/generate-release-verifier-provenance-wrapper.mjs
 ```
 
-Boot and exercise a fresh consortium:
+Boot, deploy, measure and exercise a fresh consortium:
 
 ```bash
 pnpm pilot:reset
@@ -97,29 +109,47 @@ pnpm pilot:verify
 set -a
 . infrastructure/besu/pilot/runtime/pilot.env
 set +a
+export THREADPROOF_DEPLOYMENT_OUTPUT_PATH="$PWD/infrastructure/besu/pilot/runtime/deployment.json"
 export THREADPROOF_GENERATED_PROOF_DIR="$PWD/packages/circuits/artifacts"
 
+pnpm --filter @threadproof/contracts deploy:local --network threadproofLocal
+pnpm --filter @threadproof/worker test:pilot-live
 pnpm --filter @threadproof/contracts verify:live-subcontract --network threadproofLocal
 pnpm --filter @threadproof/contracts verify:live-capacity-release --network threadproofLocal
 pnpm pilot:verify
 pnpm pilot:reset
 ```
 
+## Measured evaluation artifacts
+
+The clean-state evidence bundle contains measurements rather than inferred performance claims:
+
+- `artifacts/contract-gas-benchmark.json` — representative contract gas on the in-process Hardhat network. The mock-verifier spend measurement is explicitly labeled and does not pretend to include real Groth16 verifier cost.
+- `packages/circuits/artifacts/CapacitySpend_benchmark.json` — R1CS counts, proof/VK/verifier sizes, proving time, verification time and development-ceremony time.
+- `packages/circuits/artifacts/CapacityRelease_benchmark.json` — the corresponding release-circuit measurements.
+- `artifacts/live-qbft-benchmark.json` — one-confirmation submission-to-receipt latency and gas for a worker-signed zero-value transaction on the disposable five-validator chain.
+- `artifacts/endgame-scorecard.json` — deterministic structural/trust-boundary checks. This is not a latency or throughput benchmark.
+
+Wall-clock measurements vary with the CI runner and must not be presented as protocol constants or production SLOs.
+
 ## Hosted Supabase verification
 
 Hosted Supabase is not reset by the clean-state chain workflow. After schema changes, verify separately that:
 
+- repository migration filenames exactly match the versions recorded by hosted Supabase;
 - newly introduced operational tables have RLS enabled;
-- browser roles have no grants to confidential service-only queues/receipts;
+- service-only tables have explicit browser-deny RLS policies and no browser table grants;
+- `service_role` receives only the SELECT/INSERT/UPDATE operations required by the worker implementation;
+- destructive service DELETE/TRUNCATE operations remain denied on confidential protocol mirrors;
 - `service_role` is never exposed to browser code;
-- security advisors do not report newly introduced high-severity issues;
+- security/performance advisors do not report newly introduced actionable issues;
 - Auth leaked-password protection is enabled at the platform level when the project plan supports it.
 
-The `capacity_release_jobs` and `protected_identity_disclosures` tables are designed as service-only operational surfaces. They must remain unreadable by `anon` and `authenticated`.
+`capacity_release_jobs`, `encrypted_supplier_identities`, `protected_identity_disclosures`, and `credential_private_packages` are service-only operational surfaces. They must remain unreadable by `anon` and `authenticated`.
 
 ## Production key boundary
 
-Production and staging transaction writers must use the remote signer mode. Raw relayer private keys are development-only and are rejected by runtime validation outside development.
+Production and staging transaction writers must use remote signer mode. Raw relayer private keys are development-only and are rejected by runtime validation outside development.
 
 Do not commit any of the following:
 
@@ -131,21 +161,51 @@ Do not commit any of the following:
 
 ## Due-Process Disclosure
 
-A protected identity may be exported only after an exact canonical `ProtectedIdentityDisclosureAuthorized` Charter event is indexed and matches the staged proposal action hash, subject reference, and evidence hash.
+Protected identity material is operated through the service-only worker command:
+
+```bash
+pnpm --filter @threadproof/worker protected:identity -- seal <identity-input.json>
+pnpm --filter @threadproof/worker protected:identity -- stage <encryptedIdentityId> <proposalId> <subjectReference> <evidenceHash>
+```
+
+`seal` AES-GCM encrypts the identity before database storage. `stage` reads the actual `ThreadProofCharter` proposal from canonical RPC, recomputes `hashProtectedIdentityDisclosureAction(subjectReference,evidenceHash)`, requires proposal type `4`, rejects cancelled proposals, and stores only the resulting action commitment and encrypted-identity reference.
+
+A protected identity may be exported only after the exact canonical `ProtectedIdentityDisclosureAuthorized` Charter event is indexed and matches the staged proposal action hash, subject reference, and evidence hash.
 
 The exporter decrypts the protected identity in server memory only and immediately envelope-encrypts it to a recipient RSA public key using AES-256-GCM + RSA-OAEP-SHA256. The resulting package contains chain authorization evidence, recipient-key fingerprint, and a deterministic package hash; plaintext is not written back to Supabase.
 
-## Credential packages
+## Real credential packages
 
-Use the worker credential-package tool to export or verify portable credential packages:
+A portable credential package is not created from metadata alone. First seal a private credential body whose declared digest binding matches the canonical `CredentialRegistry` record:
 
 ```bash
+pnpm --filter @threadproof/worker credential:package -- seal <credentialId> <credential-body.json>
 pnpm --filter @threadproof/worker credential:package -- export <credentialId> <output.json>
 pnpm --filter @threadproof/worker credential:package -- verify <output.json>
 ```
 
-Verification re-reads `CredentialRegistry.getCredential` and `isCredentialActive`; a package that diverges from canonical chain state is rejected.
+The private body uses `format: "threadproof-private-credential/v1"`, W3C-style `@context`/`type`/`issuer` presentation fields, an exact canonical `anchor`, and one of two explicit digest bindings:
+
+- `keccak256-canonical-json-v1` — the canonical digest is `keccak256` of the stable canonical JSON body. This is suitable only for credentials issued with that exact digest convention.
+- `threadproof-capacity-credential-v1` — reconstructs ThreadProof's existing structured Capacity Credential digest from credential ID, subject/issuer organizations, period, process, policy, commitment, scope, methodology, validity and circuit version. The body explicitly notes which fields are chain-digest-bound versus package-integrity protected.
+
+The sealed body is AES-256-GCM encrypted in `credential_private_packages`; only service-role processes can read it. `export` decrypts the body only in memory, rechecks the body digest, current credential state, and the actual `CredentialIssued` transaction receipt/block/log on canonical RPC. The resulting file is written mode `0600`.
+
+`verify` requires only the package and canonical RPC. It rechecks the package SHA-256, credential-body SHA-256, body digest binding, `CredentialRegistry.getCredential`, `isCredentialActive`, the issuance receipt's canonical block hash, and the exact `CredentialIssued` event. Old fixture rows with no issuance transaction hash intentionally fail closed and must be re-indexed or re-issued before portable export.
+
+## Capacity release verifier governance
+
+Spend-verifier and release-verifier registration are distinct Charter actions. Release verifier registration is proposal type `14` and is appended after the existing proposal IDs so proposal types `1` through `13` retain their historical meanings.
+
+Release-verifier installation requires the same supermajority shape as spend-verifier registration: four constituencies, mandatory Auditor + Regulator participation, exact artifact/VK action-hash binding and a one-day timelock. Direct deployer/bootstrap verifier-admin authority must be retired before production governance is considered established.
 
 ## Release criteria
 
-A commit is a release candidate only when all mandatory GitHub workflows for that **exact SHA** are green, including standard CI, live PoFC/subcontract/release checks, the clean-state rehearsal, and the endgame scorecard. Platform controls such as branch protection and Supabase Auth settings must be verified separately because repository code cannot substitute for them.
+A commit is a release candidate only when all seven mandatory GitHub workflows for that **exact SHA** are green, the hosted Supabase migration history matches Git, and the Supabase advisors show no new actionable database issues.
+
+Production release still has two platform controls that repository code cannot manufacture:
+
+1. protect `main` and `develop` with required checks/rulesets;
+2. enable Supabase Auth leaked-password protection.
+
+Do not describe those two controls as complete until the platform settings themselves are verified.
