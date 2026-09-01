@@ -160,9 +160,16 @@ const r1csPath = resolve(required(args, "r1cs"));
 const ptauPath = resolve(required(args, "ptau"));
 const zkeyPath = resolve(required(args, "zkey"));
 const outDir = resolve(required(args, "out-dir"));
-const minimumContributionCount = Number(args.get("min-contributions") ?? "1");
+const minimumContributionArgument = args.get("min-contributions")?.trim();
+if (mode === "production" && !minimumContributionArgument) {
+  throw new Error("Production verification requires explicit --min-contributions of at least 2");
+}
+const minimumContributionCount = Number(minimumContributionArgument ?? "1");
 if (!Number.isSafeInteger(minimumContributionCount) || minimumContributionCount < 1) {
   throw new Error("--min-contributions must be a positive integer");
+}
+if (mode === "production" && minimumContributionCount < 2) {
+  throw new Error("Production verification requires --min-contributions >= 2");
 }
 
 const ceremonyId = args.get("ceremony-id")?.trim() || (mode === "ci-validation" ? "ci-validation" : "");
