@@ -84,7 +84,7 @@ const baseManifest = {
     mainBranchProtectionVerified: true,
     supabaseLeakedPasswordProtectionVerified: true,
     supabaseProjectRef: "mgxthhwzsvlxpsombydb",
-    verifiedAt: "2026-09-01T15:31:00Z",
+    verifiedAt: "2026-09-01T15:29:00Z",
     verifiedBy: "security-operator",
   },
   approval: {
@@ -244,13 +244,13 @@ try {
   credentialBearingUrl.evidence.deploymentEvidenceUrl = "https://operator:credential@evidence.threadproof.invalid/deployment";
   expectFail(credentialBearingUrl, "credential-bearing evidence URL");
 
-  const controlsBeforePreparation = structuredClone(baseManifest);
-  controlsBeforePreparation.externalControls.verifiedAt = "2026-09-01T15:29:00Z";
-  expectFail(controlsBeforePreparation, "external controls verified before manifest preparation");
+  const controlsAfterPreparation = structuredClone(baseManifest);
+  controlsAfterPreparation.externalControls.verifiedAt = "2026-09-01T15:31:00Z";
+  expectFail(controlsAfterPreparation, "external controls verified only after manifest preparation");
 
-  const approvalBeforeControls = structuredClone(baseManifest);
-  approvalBeforeControls.approval.approvedAt = "2026-09-01T15:30:30Z";
-  expectFail(approvalBeforeControls, "release approved before external controls verification");
+  const approvalBeforePreparation = structuredClone(baseManifest);
+  approvalBeforePreparation.approval.approvedAt = "2026-09-01T15:29:30Z";
+  expectFail(approvalBeforePreparation, "release approved before manifest preparation");
 
   console.log("Production release readiness policy checks passed.");
 } finally {
