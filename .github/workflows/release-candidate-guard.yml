@@ -3,7 +3,7 @@ name: ThreadProof Trusted Main Release Guard
 on:
   pull_request_target:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
 
 permissions:
   actions: read
@@ -40,18 +40,28 @@ jobs:
           test -f scripts/trusted-main-release-guard.mjs
           test -f scripts/trusted-main-target-history-guard.mjs
           test -f scripts/trusted-main-build-evidence-guard.mjs
+          test -f scripts/trusted-main-maintenance-guard.mjs
+      - name: Reject unsupported main-targeting branch class
+        if: ${{ !startsWith(github.event.pull_request.head.ref, 'release/') && !startsWith(github.event.pull_request.head.ref, 'security/trusted-main-guard/') }}
+        shell: bash
+        run: |
+          echo "main accepts only production release/* PRs or audited security/trusted-main-guard/* maintenance PRs through this trusted check." >&2
+          exit 1
       - name: Reject untested target-only main history
+        if: ${{ startsWith(github.event.pull_request.head.ref, 'release/') }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
           THREADPROOF_RELEASE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           THREADPROOF_RELEASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/trusted-main-target-history-guard.mjs
       - name: Require circuit build-attestation evidence
+        if: ${{ startsWith(github.event.pull_request.head.ref, 'release/') }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
           THREADPROOF_RELEASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/trusted-main-build-evidence-guard.mjs
-      - name: Validate release candidate without executing candidate code
+      - name: Validate production release candidate without executing candidate code
+        if: ${{ startsWith(github.event.pull_request.head.ref, 'release/') }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
           THREADPROOF_RELEASE_PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -60,9 +70,19 @@ jobs:
           THREADPROOF_RELEASE_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
           THREADPROOF_RELEASE_HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: node scripts/trusted-main-release-guard.mjs
+      - name: Validate trusted-main maintenance candidate without executing candidate code
+        if: ${{ startsWith(github.event.pull_request.head.ref, 'security/trusted-main-guard/') }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          THREADPROOF_MAINTENANCE_PR_NUMBER: ${{ github.event.pull_request.number }}
+          THREADPROOF_MAINTENANCE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          THREADPROOF_MAINTENANCE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          THREADPROOF_MAINTENANCE_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          THREADPROOF_MAINTENANCE_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: node scripts/trusted-main-maintenance-guard.mjs
       - name: Record trust boundary
         if: always()
         shell: bash
         run: |
           echo "This pull_request_target workflow executes only the main-branch guards checked out at the target base SHA."
-          echo "It never checks out or executes release-candidate code and has read-only repository permissions."
+          echo "It never checks out or executes release-candidate or trusted-maintenance candidate code and has read-only repository permissions."
