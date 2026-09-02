@@ -7,7 +7,15 @@ This directory is the disposable development/pilot counterpart to `infrastructur
 - The pilot uses **five Besu validators** on one Docker host. It proves multi-validator QBFT behavior, but it is **not an independently administered consortium deployment**.
 - Validator keys, the funded deployment key, generated genesis, peer allowlist and runtime manifest are generated under `infrastructure/besu/pilot/runtime/` and are ignored by Git.
 - Pilot transaction signing may use the generated raw deployer key because `THREADPROOF_DEPLOYMENT_ENV=development`. Staging and production workers continue to reject raw private-key signing and must use the remote signer/KMS/HSM path.
-- The production template remains fail-closed and unchanged. Do not copy pilot keys, addresses, or runtime files into production.
+- The production template remains a separate fail-closed deployment boundary. Do not copy pilot keys, addresses, or runtime files into production.
+
+## QBFT startup peer policy
+
+The five-validator ThreadProof baseline explicitly sets Besu `sync-min-peers=3`. With one validator unavailable, each remaining validator can see only the other three active validators. Requiring four or five sync peers would therefore contradict the documented 4/5 operating case and, with Besu's image default, can make a fresh private chain wait for a peer count it cannot reach.
+
+`sync-min-peers=3` controls **Besu synchronization/startup peer selection only**. It does not change QBFT voting thresholds, validator membership, or consensus quorum. The separate fault-resilience drill still proves that 4/5 validators finalize while 3/5 validators stop finalizing.
+
+A fully healthy pilot is held to a stricter readiness gate than the sync threshold: validator 1 must report all four remote validator peers and the exact five-validator QBFT set. RPC/topology startup gets its own readiness window, and only after that succeeds does ThreadProof begin a separate first-post-genesis-block observation window. This prevents slow container/JVM/peer startup from consuming the consensus-production budget while remaining fail closed if either phase fails.
 
 ## Prerequisites
 
@@ -64,9 +72,10 @@ A passing pilot health gate proves:
 
 1. five generated validator identities match the QBFT genesis validator set;
 2. the generated genesis is chain `2026`;
-3. discovery-disabled static peering and node permissioning form quorum;
-4. at least one post-genesis QBFT block is finalized;
-5. validator 1 sees the four expected peers;
-6. the same topology validator used for production also accepts the generated pilot manifest.
+3. discovery-disabled static peering and node permissioning form the expected healthy topology;
+4. `sync-min-peers=3` is explicitly bound to the five-validator/one-unavailable startup policy;
+5. validator 1 sees the four expected healthy peers;
+6. at least one post-genesis QBFT block is finalized in the dedicated block-production window;
+7. the same low-level topology validator used by production accepts the generated pilot manifest.
 
 It does **not** prove independent validator failure domains, production KMS/HSM custody, production TLS/mTLS, or a production Groth16 ceremony. Those remain operator/deployment responsibilities.

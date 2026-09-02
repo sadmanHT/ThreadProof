@@ -1,3 +1,4 @@
+import "./test-qbft-startup-policy.mjs";
 import { readFileSync } from "node:fs";
 
 const harness = readFileSync(new URL("./pilot-fault-resilience.mjs", import.meta.url), "utf8");
@@ -68,6 +69,7 @@ for (const fragment of [
   "push:\n    branches: [develop]",
   "pull_request:\n    branches: [develop]",
   "github.event.pull_request.head.sha || github.sha",
+  "pnpm infra:test:qbft-startup",
   "pnpm --filter @threadproof/worker test:runtime-readiness",
   "live-stalled-chain-readiness.ts",
   "pnpm pilot:fault-resilience",

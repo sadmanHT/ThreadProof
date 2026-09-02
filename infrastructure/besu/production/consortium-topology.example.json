@@ -23,6 +23,11 @@
       "name": "validator-d",
       "address": "REPLACE_WITH_VALIDATOR_D_ADDRESS",
       "enode": "REPLACE_WITH_VALIDATOR_D_ENODE"
+    },
+    {
+      "name": "validator-e",
+      "address": "REPLACE_WITH_VALIDATOR_E_ADDRESS",
+      "enode": "REPLACE_WITH_VALIDATOR_E_ENODE"
     }
   ],
   "observers": []

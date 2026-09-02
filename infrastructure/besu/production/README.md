@@ -5,7 +5,8 @@ This directory defines the production trust boundary for ThreadProof chain acces
 ## Boundary
 
 - **Besu is canonical.** Application and Supabase state remain coordination/read models only.
-- **Production startup is topology-gated.** Compose runs a network-isolated one-shot preflight before Besu. The preflight requires an approved QBFT genesis hash, at least four distinct validators, all remote validators as static peers, and agreement between the topology manifest, `static-nodes.json`, and the Besu node allowlist. Besu does not start when those checks fail.
+- **Production startup is topology-gated.** Compose runs a network-isolated one-shot ThreadProof production preflight before Besu. The preflight requires an approved QBFT genesis hash, at least five distinct validators, all remote validators as static peers, and agreement between the topology manifest, `static-nodes.json`, and the Besu node allowlist. Besu does not start when those checks fail.
+- **The startup peer threshold is explicit.** The five-validator baseline pins Besu `sync-min-peers=3`, matching the case where one validator is unavailable and each active validator can see three other active validators. This setting controls sync/startup peer selection only; it does not change QBFT voting or finalization quorum.
 - **Workers never receive production transaction private keys.** `THREADPROOF_SIGNER_MODE=remote` points the order relayer and proof submitter at Web3Signer; those workers hold only the public relayer address.
 - **Proof generation and proof submission are separate processes in production.** Run the proof generator with `THREADPROOF_SIGNER_MODE=disabled`; give witness/decryption/nullifier secrets only to that process. Run `pnpm --filter @threadproof/worker submit:proofs` with remote signer configuration and without witness secrets.
 - **Web3Signer owns KMS/HSM access.** The example key metadata uses AWS KMS with environment/default-provider authentication, so no AWS access key or Ethereum private key is committed here.
@@ -20,12 +21,14 @@ Every deployed node needs an operator-controlled topology manifest based on `con
 - chain ID `2026` and consensus `qbft`;
 - the SHA-256 digest of the exact approved `genesis.json` bytes;
 - the stable name of the local node for that host;
-- at least four validator enodes, giving QBFT one-validator-fault tolerance;
+- at least five validator enodes for the ThreadProof production baseline;
 - any approved observer/RPC nodes.
+
+The tracked example models exactly five validators because that is the reviewed ThreadProof baseline and the release manifest requires at least five. With one of those validators unavailable, an active validator has three other active validator peers, which is why the template pins `sync-min-peers=3`. A future validator-set expansion must deliberately review this setting rather than assuming `3` is universal.
 
 Validator node identities must be distinct. On each host, `static-nodes.json` must include every **remote** validator because discovery is disabled. Every static peer must also appear in `nodes-allowlist`, and neither file may contain a peer absent from the topology manifest. The preflight verifies all of these conditions before Besu starts.
 
-The topology manifest does **not** prove that four validators run on independent infrastructure. Production operators must place validators across separately administered failure domains/hosts and enforce network controls outside Docker. Running four containers on one machine is not a resilient consortium deployment.
+The topology manifest does **not** prove that five validators run on independent infrastructure. Production operators must place validators across separately administered failure domains/hosts and enforce network controls outside Docker. Running five containers on one machine is not a resilient consortium deployment.
 
 ## Required operator inputs
 
@@ -79,13 +82,13 @@ The worker validates this policy at startup. `local-dev` signing is rejected out
 
 ## Preflight and start
 
-You can run the same topology gate directly from the repository before Compose:
+You can run the same ThreadProof production topology gate directly from the repository before Compose:
 
 ```bash
 pnpm infra:validate:consortium
 ```
 
-The four `THREADPROOF_*_PATH` variables shown above plus `THREADPROOF_CONSORTIUM_TOPOLOGY_PATH` must be set. A successful run reports validator count and the tolerated QBFT fault count. Any topology/genesis/permission disagreement exits non-zero.
+The four `THREADPROOF_*_PATH` variables shown above plus `THREADPROOF_CONSORTIUM_TOPOLOGY_PATH` must be set. A successful run requires at least five validators and reports validator count and the derived QBFT fault tolerance. Any topology/genesis/permission disagreement exits non-zero.
 
 Compose runs this validation again automatically as the `topology-preflight` service. Besu depends on its successful completion:
 
@@ -103,4 +106,4 @@ curl --fail http://127.0.0.1:9000/upcheck
 - Besu: `26.8.0`
 - Web3Signer: `26.4.2-distroless`
 
-Besu 26.8.0 has a documented discovery issue when discovery mode is configured as `BOTH`; this template deliberately disables discovery and uses approved static/permissioned peers. Upgrade any image pin deliberately after reviewing release/security notes and testing the exact version in staging. For production promotion, prefer immutable registry digests in the deployment system after the approved image is mirrored/scanned.
+Besu 26.8.0 has a documented discovery issue when discovery mode is configured as `BOTH`; this template deliberately disables discovery and uses approved static/permissioned peers. The `sync-min-peers=3` setting is separately pinned for the reviewed five-validator/one-unavailable operating policy. Upgrade any image pin or validator-set policy deliberately after reviewing release/security notes and testing the exact version in staging. For production promotion, prefer immutable registry digests in the deployment system after the approved image is mirrored/scanned.

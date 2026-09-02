@@ -32,6 +32,8 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Verify explicit QBFT startup peer policy
+        run: pnpm infra:test:qbft-startup
       - name: Verify worker stall policy regressions
         run: pnpm --filter @threadproof/worker test:runtime-readiness
       - name: Boot chain for live worker stall proof
