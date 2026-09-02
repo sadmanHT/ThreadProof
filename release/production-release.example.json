@@ -56,7 +56,11 @@
     "benchmarkBundleUrl": "REPLACE_ME",
     "benchmarkBundleSha256": "REPLACE_ME",
     "deploymentEvidenceUrl": "REPLACE_ME",
-    "deploymentManifestSha256": "REPLACE_ME"
+    "deploymentManifestSha256": "REPLACE_ME",
+    "uatAdversarialEvidenceUrl": "REPLACE_ME",
+    "uatAdversarialEvidenceSha256": "REPLACE_ME_WITH_64_HEX_SHA256",
+    "backupRecoveryEvidenceUrl": "REPLACE_ME",
+    "backupRecoveryEvidenceSha256": "REPLACE_ME_WITH_64_HEX_SHA256"
   },
   "externalControls": {
     "developBranchProtectionVerified": false,
