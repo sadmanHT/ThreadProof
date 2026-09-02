@@ -1,0 +1,194 @@
+{
+  "format": "threadproof-production-deployment/v1",
+  "result": "REPLACE_ME_WITH_PASS_AFTER_REAL_DEPLOYMENT_REVIEW",
+  "environment": "production",
+  "networkType": "persistent-consortium",
+  "releaseVersion": "REPLACE_ME_WITH_RELEASE_VERSION",
+  "sourceDevelopCommit": "REPLACE_ME_WITH_TESTED_DEVELOP_SHA",
+  "observedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+  "chain": {
+    "networkName": "ThreadProof Production Consortium",
+    "chainId": 2026,
+    "genesisHash": "REPLACE_ME_WITH_PRODUCTION_GENESIS_HASH",
+    "validatorCount": 5
+  },
+  "validators": [
+    {
+      "validatorId": "validator-buyer",
+      "organizationId": "REPLACE_ME_WITH_ORGANIZATION_BYTES32",
+      "validatorAddress": "REPLACE_ME_WITH_VALIDATOR_ADDRESS",
+      "nodeId": "REPLACE_ME_WITH_0X_PREFIXED_64_BYTE_NODE_ID",
+      "administrativeDomain": "buyer-admin-domain",
+      "persistentStorage": true,
+      "privateNetworking": true,
+      "tlsEnabled": true,
+      "nodePermissioning": true,
+      "monitoringEnabled": true,
+      "evidence": { "url": "REPLACE_ME_WITH_HTTPS_EVIDENCE_URL", "sha256": "REPLACE_ME_WITH_SHA256" }
+    },
+    {
+      "validatorId": "validator-industry",
+      "organizationId": "REPLACE_ME_WITH_ORGANIZATION_BYTES32",
+      "validatorAddress": "REPLACE_ME_WITH_VALIDATOR_ADDRESS",
+      "nodeId": "REPLACE_ME_WITH_0X_PREFIXED_64_BYTE_NODE_ID",
+      "administrativeDomain": "industry-admin-domain",
+      "persistentStorage": true,
+      "privateNetworking": true,
+      "tlsEnabled": true,
+      "nodePermissioning": true,
+      "monitoringEnabled": true,
+      "evidence": { "url": "REPLACE_ME_WITH_HTTPS_EVIDENCE_URL", "sha256": "REPLACE_ME_WITH_SHA256" }
+    },
+    {
+      "validatorId": "validator-auditor",
+      "organizationId": "REPLACE_ME_WITH_ORGANIZATION_BYTES32",
+      "validatorAddress": "REPLACE_ME_WITH_VALIDATOR_ADDRESS",
+      "nodeId": "REPLACE_ME_WITH_0X_PREFIXED_64_BYTE_NODE_ID",
+      "administrativeDomain": "auditor-admin-domain",
+      "persistentStorage": true,
+      "privateNetworking": true,
+      "tlsEnabled": true,
+      "nodePermissioning": true,
+      "monitoringEnabled": true,
+      "evidence": { "url": "REPLACE_ME_WITH_HTTPS_EVIDENCE_URL", "sha256": "REPLACE_ME_WITH_SHA256" }
+    },
+    {
+      "validatorId": "validator-regulator",
+      "organizationId": "REPLACE_ME_WITH_ORGANIZATION_BYTES32",
+      "validatorAddress": "REPLACE_ME_WITH_VALIDATOR_ADDRESS",
+      "nodeId": "REPLACE_ME_WITH_0X_PREFIXED_64_BYTE_NODE_ID",
+      "administrativeDomain": "regulator-admin-domain",
+      "persistentStorage": true,
+      "privateNetworking": true,
+      "tlsEnabled": true,
+      "nodePermissioning": true,
+      "monitoringEnabled": true,
+      "evidence": { "url": "REPLACE_ME_WITH_HTTPS_EVIDENCE_URL", "sha256": "REPLACE_ME_WITH_SHA256" }
+    },
+    {
+      "validatorId": "validator-independent",
+      "organizationId": "REPLACE_ME_WITH_ORGANIZATION_BYTES32",
+      "validatorAddress": "REPLACE_ME_WITH_VALIDATOR_ADDRESS",
+      "nodeId": "REPLACE_ME_WITH_0X_PREFIXED_64_BYTE_NODE_ID",
+      "administrativeDomain": "independent-admin-domain",
+      "persistentStorage": true,
+      "privateNetworking": true,
+      "tlsEnabled": true,
+      "nodePermissioning": true,
+      "monitoringEnabled": true,
+      "evidence": { "url": "REPLACE_ME_WITH_HTTPS_EVIDENCE_URL", "sha256": "REPLACE_ME_WITH_SHA256" }
+    }
+  ],
+  "networkControls": {
+    "privateNetworking": true,
+    "tlsRequired": true,
+    "nodePermissioning": true,
+    "accountPermissioning": true,
+    "persistentStorage": true,
+    "monitoring": true,
+    "backupsConfigured": true,
+    "evidence": { "url": "REPLACE_ME_WITH_HTTPS_EVIDENCE_URL", "sha256": "REPLACE_ME_WITH_SHA256" }
+  },
+  "signing": {
+    "mode": "remote-web3signer",
+    "kmsOrHsmBacked": true,
+    "web3SignerTls": true,
+    "localPrivateKeysDisabled": true,
+    "keyCustodyDescription": "REPLACE_ME_WITH_NON_SECRET_REMOTE_CUSTODY_DESCRIPTION",
+    "evidence": { "url": "REPLACE_ME_WITH_HTTPS_EVIDENCE_URL", "sha256": "REPLACE_ME_WITH_SHA256" }
+  },
+  "contracts": [
+    { "name": "Registry", "address": "REPLACE_ME", "runtimeCodeHash": "REPLACE_ME" },
+    { "name": "CredentialRegistry", "address": "REPLACE_ME", "runtimeCodeHash": "REPLACE_ME" },
+    { "name": "OrderRegistry", "address": "REPLACE_ME", "runtimeCodeHash": "REPLACE_ME" },
+    { "name": "CapacityVault", "address": "REPLACE_ME", "runtimeCodeHash": "REPLACE_ME" },
+    { "name": "SubcontractGovernor", "address": "REPLACE_ME", "runtimeCodeHash": "REPLACE_ME" },
+    { "name": "ThreadProofCharter", "address": "REPLACE_ME", "runtimeCodeHash": "REPLACE_ME" }
+  ],
+  "verifiers": {
+    "capacitySpend": {
+      "address": "REPLACE_ME",
+      "runtimeCodeHash": "REPLACE_ME",
+      "circuitArtifactHash": "REPLACE_ME",
+      "verificationKeyHash": "REPLACE_ME",
+      "buildAttestationSha256": "REPLACE_ME",
+      "ceremonyEvidenceSha256": "REPLACE_ME"
+    },
+    "capacityRelease": {
+      "address": "REPLACE_ME",
+      "runtimeCodeHash": "REPLACE_ME",
+      "circuitArtifactHash": "REPLACE_ME",
+      "verificationKeyHash": "REPLACE_ME",
+      "buildAttestationSha256": "REPLACE_ME",
+      "ceremonyEvidenceSha256": "REPLACE_ME"
+    }
+  },
+  "services": [
+    {
+      "serviceId": "event_indexer",
+      "status": "healthy",
+      "chainId": 2026,
+      "heartbeatAt": "REPLACE_ME_WITH_RECENT_ISO_TIMESTAMP",
+      "evidence": { "url": "REPLACE_ME_WITH_HTTPS_EVIDENCE_URL", "sha256": "REPLACE_ME_WITH_SHA256" },
+      "canonicalCursor": {
+        "blockNumber": "REPLACE_ME_WITH_DECIMAL_BLOCK",
+        "blockHash": "REPLACE_ME_WITH_BLOCK_HASH",
+        "observedHeadBlock": "REPLACE_ME_WITH_DECIMAL_BLOCK",
+        "observedHeadBlockHash": "REPLACE_ME_WITH_BLOCK_HASH",
+        "confirmationDepth": 2,
+        "reorgQuarantineEnabled": true
+      }
+    },
+    {
+      "serviceId": "order_relayer",
+      "status": "healthy",
+      "chainId": 2026,
+      "heartbeatAt": "REPLACE_ME_WITH_RECENT_ISO_TIMESTAMP",
+      "evidence": { "url": "REPLACE_ME_WITH_HTTPS_EVIDENCE_URL", "sha256": "REPLACE_ME_WITH_SHA256" }
+    },
+    {
+      "serviceId": "subcontract_relayer",
+      "status": "healthy",
+      "chainId": 2026,
+      "heartbeatAt": "REPLACE_ME_WITH_RECENT_ISO_TIMESTAMP",
+      "evidence": { "url": "REPLACE_ME_WITH_HTTPS_EVIDENCE_URL", "sha256": "REPLACE_ME_WITH_SHA256" }
+    },
+    {
+      "serviceId": "capacity_spend_proof_generator",
+      "status": "healthy",
+      "chainId": 2026,
+      "heartbeatAt": "REPLACE_ME_WITH_RECENT_ISO_TIMESTAMP",
+      "evidence": { "url": "REPLACE_ME_WITH_HTTPS_EVIDENCE_URL", "sha256": "REPLACE_ME_WITH_SHA256" }
+    },
+    {
+      "serviceId": "capacity_spend_submitter",
+      "status": "healthy",
+      "chainId": 2026,
+      "heartbeatAt": "REPLACE_ME_WITH_RECENT_ISO_TIMESTAMP",
+      "evidence": { "url": "REPLACE_ME_WITH_HTTPS_EVIDENCE_URL", "sha256": "REPLACE_ME_WITH_SHA256" }
+    },
+    {
+      "serviceId": "capacity_release_proof_generator",
+      "status": "healthy",
+      "chainId": 2026,
+      "heartbeatAt": "REPLACE_ME_WITH_RECENT_ISO_TIMESTAMP",
+      "evidence": { "url": "REPLACE_ME_WITH_HTTPS_EVIDENCE_URL", "sha256": "REPLACE_ME_WITH_SHA256" }
+    },
+    {
+      "serviceId": "capacity_release_submitter",
+      "status": "healthy",
+      "chainId": 2026,
+      "heartbeatAt": "REPLACE_ME_WITH_RECENT_ISO_TIMESTAMP",
+      "evidence": { "url": "REPLACE_ME_WITH_HTTPS_EVIDENCE_URL", "sha256": "REPLACE_ME_WITH_SHA256" }
+    }
+  ],
+  "signoff": {
+    "executedBy": "REPLACE_ME_WITH_NON_SECRET_OPERATOR_ID",
+    "reviewerIds": [
+      "REPLACE_ME_WITH_INFRASTRUCTURE_REVIEWER_ID",
+      "REPLACE_ME_WITH_SECURITY_REVIEWER_ID"
+    ],
+    "approvedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+    "statement": "REPLACE_ME_WITH_REVIEW_STATEMENT_FOR_THE_SANITIZED_DEPLOYMENT_RECORD"
+  }
+}
