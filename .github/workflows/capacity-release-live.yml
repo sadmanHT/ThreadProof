@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -99,7 +101,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: live-capacity-release-${{ github.sha }}
+          name: live-capacity-release-${{ github.event.pull_request.head.sha || github.sha }}
           retention-days: 7
           if-no-files-found: warn
           path: |
