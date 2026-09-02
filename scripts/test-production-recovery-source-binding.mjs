@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { execFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 const root = path.resolve(import.meta.dirname, "..");
 const wrapper = path.join(root, "scripts", "production-recovery-verify.mjs");
