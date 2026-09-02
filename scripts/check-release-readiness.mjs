@@ -157,6 +157,10 @@ sha256(evidence.benchmarkBundleSha256, "evidence.benchmarkBundleSha256");
 httpsUrl(evidence.benchmarkBundleUrl, "evidence.benchmarkBundleUrl");
 httpsUrl(evidence.deploymentEvidenceUrl, "evidence.deploymentEvidenceUrl");
 sha256(evidence.deploymentManifestSha256, "evidence.deploymentManifestSha256");
+httpsUrl(evidence.uatAdversarialEvidenceUrl, "evidence.uatAdversarialEvidenceUrl");
+sha256(evidence.uatAdversarialEvidenceSha256, "evidence.uatAdversarialEvidenceSha256");
+httpsUrl(evidence.backupRecoveryEvidenceUrl, "evidence.backupRecoveryEvidenceUrl");
+sha256(evidence.backupRecoveryEvidenceSha256, "evidence.backupRecoveryEvidenceSha256");
 
 const controls = manifest.externalControls;
 requireValue(isRecord(controls), "externalControls section is required.");
