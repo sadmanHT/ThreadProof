@@ -28,17 +28,30 @@ It is distinct from production `release/*` branches. A future maintenance PR is 
 
 - the PR targets `main` and originates from the canonical `sadmanHT/ThreadProof` repository;
 - the branch uses the exact `security/trusted-main-guard/` prefix;
-- the trusted workflow still checks out only `github.event.pull_request.base.sha` with credentials disabled;
-- repository permissions remain read-only for `actions`, `contents`, and `pull-requests`;
-- the candidate never gains an allowed head-SHA checkout in the trusted workflow;
 - changed paths are limited to the audited trusted-main workflow/scripts and this document;
 - at least one trusted policy/workflow file changes, so the maintenance path cannot be used as a generic documentation bypass;
 - no trusted policy file is deleted;
 - the PR body contains a non-placeholder `Trusted-Main-Change-Reference: ...` line;
 - an administrator/maintainer manually applies the `trusted-main-reviewed` label after reviewing the exact diff;
+- the candidate trusted workflow bytes hash to a SHA-256 value that the **already trusted base-side maintenance guard** explicitly allowlists;
+- the workflow retains `pull_request_target`, read-only `actions`/`contents`/`pull-requests` permissions, exact base-SHA checkout with credentials disabled, pinned checkout/setup-node actions, and the single trusted guard job;
+- obvious privilege/candidate-execution surfaces such as write permissions, secret references, head-SHA/head-ref checkout, containers, services, or candidate working directories remain forbidden;
 - the reviewed PR head/base and current `main` tip have not moved while the trusted check runs.
 
 The maintenance verifier reads candidate files only through the GitHub API. It does **not** execute candidate JavaScript or candidate workflow code. The `trusted-main-reviewed` label is an explicit manual review signal, not a claim of independent multi-person approval. If the repository later has multiple administrators, branch/ruleset policy should require an independent approving reviewer or CODEOWNER in addition to this label.
+
+### Why the workflow is byte-pinned
+
+A substring check such as “the workflow still contains `persist-credentials: false`” is not a sufficient self-maintenance boundary. A candidate could retain the safe marker while adding another checkout, another action, another job, or an inline command that executes candidate-controlled material.
+
+The maintenance guard therefore SHA-256 pins the complete trusted workflow bytes. The current approved workflow hash is recorded inside the already trusted `scripts/trusted-main-maintenance-guard.mjs`. A candidate that changes the workflow to any unapproved byte sequence fails before that candidate code can become trusted.
+
+This deliberately creates a **two-stage process** for any future change that expands or alters the workflow executable surface:
+
+1. First open a reviewed maintenance PR that changes only the base-side maintenance policy (and documentation if needed) to pre-approve the exact SHA-256 of the intended future workflow. The workflow itself remains unchanged, so the old trusted guard can validate the PR.
+2. After that policy change is merged and becomes trusted `main`, open a second reviewed maintenance PR containing the exact pre-approved workflow bytes. The new base-side guard verifies their SHA-256 before the workflow can be merged.
+
+This two-stage process prevents a single maintenance candidate from both redefining what workflow is trusted and installing arbitrary new executable workflow content in the same already-protected step. Emergency direct edits are not a substitute for this process.
 
 ### Maintenance bootstrap limitation
 
@@ -50,7 +63,9 @@ Before merging that first maintenance-path PR, manually verify that its diff is 
 - `scripts/trusted-main-maintenance-guard.mjs`
 - `docs/MAIN_RELEASE_GUARD_BOOTSTRAP.md`
 
-and confirm that the workflow preserves read-only permissions, target/base checkout, `persist-credentials: false`, and the unchanged production `release/*` path. Do not enable final `main` protection until this bootstrap has been reviewed and merged.
+and confirm that the workflow preserves read-only permissions, target/base checkout, `persist-credentials: false`, pinned actions, and the unchanged production `release/*` path. Also independently recompute the workflow SHA-256 and confirm it equals the initial allowlisted digest in the maintenance guard. Do not enable final `main` protection until this bootstrap has been reviewed and merged.
+
+Before enabling final protection, create the repository label `trusted-main-reviewed` and restrict label/application permissions to maintainers who are authorized to review trusted-main changes. The label is a review signal, not a cryptographic or multi-party approval mechanism.
 
 ## Production release path
 
