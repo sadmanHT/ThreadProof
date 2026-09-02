@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 
 import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { validateCompetitionDeploymentPlan } from "./competition-deployment-preflight.mjs";
 
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const COMMON = [
   "SUPABASE_URL",
   "SUPABASE_SERVICE_ROLE_KEY",
@@ -161,7 +164,7 @@ expectFailure("production label", (plan) => {
   plan.chain.deployment = "production";
 }, "disposable-demo");
 
-const example = JSON.parse(await readFile("deployment/competition-deployment.example.json", "utf8"));
+const example = JSON.parse(await readFile(resolve(REPO_ROOT, "deployment/competition-deployment.example.json"), "utf8"));
 let exampleFailed = false;
 try {
   validateCompetitionDeploymentPlan(example);
