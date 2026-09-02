@@ -30,7 +30,9 @@ jobs:
       - name: Test production release manifest policy
         run: node scripts/test-release-readiness.mjs
       - name: Test production UAT evidence policy
-        run: node scripts/test-production-uat-evidence.mjs
+        run: |
+          node scripts/test-production-uat-evidence.mjs
+          node scripts/test-production-uat-template.mjs
       - name: Test canonical release GitHub evidence binding
         run: node scripts/test-release-github-evidence.mjs
       - name: Verify canonical evidence workflow concurrency
