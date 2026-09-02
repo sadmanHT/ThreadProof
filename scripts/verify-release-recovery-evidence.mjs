@@ -76,12 +76,9 @@ function scanUnsafe(value, label = "recovery evidence") {
   if (typeof value === "string") {
     requireValue(!FORBIDDEN_VALUE.test(value), `${label} appears to contain secret material.`);
     if (value.includes("://")) {
-      try {
-        const parsed = new URL(value);
-        requireValue(!parsed.username && !parsed.password, `${label} contains a credential-bearing URL.`);
-      } catch {
-        // Owning schema fields validate their own text. Recovery evidence currently has no URL fields.
-      }
+      let parsed = null;
+      try { parsed = new URL(value); } catch { /* Owning schema fields validate non-URL text. */ }
+      if (parsed) requireValue(!parsed.username && !parsed.password, `${label} contains a credential-bearing URL.`);
     }
   }
 }
@@ -202,6 +199,7 @@ function releaseExpectations(manifest) {
   requireValue(isRecord(manifest?.release), "release manifest release section is required.");
   requireValue(isRecord(manifest?.chain), "release manifest chain section is required.");
   requireValue(isRecord(manifest?.evidence), "release manifest evidence section is required.");
+  requireValue(manifest.chain.chainId === 2026, "release manifest chain.chainId must equal 2026.");
 
   const releaseVersion = String(manifest.release.version ?? "").trim();
   requireValue(VERSION.test(releaseVersion), "release.version must be a semantic version such as v1.0.0.");
