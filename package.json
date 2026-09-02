@@ -14,6 +14,8 @@
     "circuits:compile": "pnpm --filter @threadproof/circuits compile",
     "circuits:test": "pnpm --filter @threadproof/circuits test",
     "endgame:scorecard": "node scripts/endgame-scorecard.mjs",
+    "recovery:verify": "node scripts/production-recovery-evidence.mjs",
+    "recovery:test": "node scripts/test-production-recovery-evidence.mjs",
     "infra:validate:consortium": "node scripts/validate-threadproof-production-topology.mjs",
     "infra:test:qbft-startup": "node scripts/test-qbft-startup-policy.mjs",
     "pilot:prepare": "node scripts/pilot-chain.mjs prepare",
