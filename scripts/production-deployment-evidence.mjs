@@ -114,7 +114,7 @@ function scanUnsafe(value, objectPath = "evidence") {
   }
   if (isRecord(value)) {
     for (const [key, child] of Object.entries(value)) {
-      requireValue(!FORBIDDEN_KEY.test(key), `${objectPath}.${key} is a forbidden secret-bearing field name.`);
+      requireValue(key === "localPrivateKeysDisabled" || !FORBIDDEN_KEY.test(key), `${objectPath}.${key} is a forbidden secret-bearing field name.`);
       scanUnsafe(child, `${objectPath}.${key}`);
     }
     return;
