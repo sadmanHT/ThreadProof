@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { createHash } from "node:crypto";
+
 const CANONICAL_REPOSITORY = "sadmanHT/ThreadProof";
 const MAINTENANCE_PREFIX = "security/trusted-main-guard/";
 const REVIEW_LABEL = "trusted-main-reviewed";
@@ -18,6 +20,9 @@ const POLICY_FILES = new Set([
   "scripts/trusted-main-build-evidence-guard.mjs",
   "scripts/trusted-main-maintenance-guard.mjs",
 ]);
+const ALLOWED_WORKFLOW_SHA256 = new Set([
+  "0cb214dbff3f430933e391e6e79c503490dbe0bd2a8c0afdebe751e915f71fa4",
+]);
 const GIT_SHA = /^[0-9a-fA-F]{40}$/;
 const FORBIDDEN_TEXT = /(todo|tbd|placeholder|replace[-_ ]?me|example|dummy|changeme)/i;
 
@@ -35,6 +40,10 @@ function cleanReference(value) {
   requireValue(text.length >= 8, "Trusted-Main-Change-Reference must be a meaningful auditable reference.");
   requireValue(!FORBIDDEN_TEXT.test(text), "Trusted-Main-Change-Reference contains placeholder text.");
   return text;
+}
+
+function sha256Text(value) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
 const repository = process.env.GITHUB_REPOSITORY?.trim();
@@ -77,22 +86,57 @@ async function fetchUtf8File(path) {
 }
 
 function verifyCandidateWorkflow(text) {
+  const workflowSha256 = sha256Text(text);
+  requireValue(
+    ALLOWED_WORKFLOW_SHA256.has(workflowSha256),
+    `candidate trusted-main workflow executable surface is not pre-approved; SHA-256 ${workflowSha256} is not in the trusted allowlist. Update the maintenance guard in a separate reviewed PR before changing the workflow.`,
+  );
+
+  // Defense in depth around the pre-approved byte hash. These checks make the
+  // intended trust boundary obvious during future review even if the allowlist
+  // is expanded deliberately.
   const required = [
     "pull_request_target:",
     "branches: [main]",
+    "permissions:",
     "actions: read",
     "contents: read",
     "pull-requests: read",
+    "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+    "uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
     "ref: ${{ github.event.pull_request.base.sha }}",
+    "fetch-depth: 1",
     "persist-credentials: false",
+    "runs-on: ubuntu-latest",
     "scripts/trusted-main-maintenance-guard.mjs",
   ];
   for (const marker of required) {
     requireValue(text.includes(marker), `candidate trusted-main workflow is missing required safety marker: ${marker}`);
   }
-  for (const forbidden of ["actions: write", "contents: write", "pull-requests: write", "ref: ${{ github.event.pull_request.head.sha }}"]) {
+  for (const forbidden of [
+    "actions: write",
+    "contents: write",
+    "pull-requests: write",
+    "id-token: write",
+    "packages: write",
+    "security-events: write",
+    "secrets.",
+    "persist-credentials: true",
+    "ref: ${{ github.event.pull_request.head.sha }}",
+    "ref: ${{ github.event.pull_request.head.ref }}",
+    "working-directory:",
+    "container:",
+    "services:",
+  ]) {
     requireValue(!text.includes(forbidden), `candidate trusted-main workflow contains forbidden privilege/checkout marker: ${forbidden}`);
   }
+
+  const uses = [...text.matchAll(/^\s*uses:\s*(\S+)\s*$/gm)].map((match) => match[1]);
+  requireValue(uses.length === 2, `candidate trusted-main workflow must contain exactly two pinned action uses; found ${uses.length}.`);
+  requireValue(uses[0] === "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "first trusted action must remain the pinned checkout action.");
+  requireValue(uses[1] === "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020", "second trusted action must remain the pinned setup-node action.");
+  requireValue((text.match(/^permissions:\s*$/gm) ?? []).length === 1, "candidate trusted-main workflow must contain exactly one top-level permissions block.");
+  requireValue((text.match(/^  trusted-main-release-guard:\s*$/gm) ?? []).length === 1, "candidate trusted-main workflow must retain exactly one trusted-main-release-guard job.");
 }
 
 const pr = await github(`/repos/${CANONICAL_REPOSITORY}/pulls/${prNumber}`);
@@ -131,4 +175,5 @@ requireValue(main?.commit?.sha?.toLowerCase() === baseSha.toLowerCase(), "main a
 
 console.log(`Trusted-main maintenance candidate ${headSha} accepted for change reference ${changeReference}.`);
 console.log(`Changed files: ${comparison.files.map((file) => file.filename).join(", ")}`);
+console.log(`Candidate workflow SHA-256: ${sha256Text(candidateWorkflow)}.`);
 console.log(`Manual review signal: ${REVIEW_LABEL}. Candidate code was read through the GitHub API and was not executed.`);
