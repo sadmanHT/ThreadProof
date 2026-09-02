@@ -72,6 +72,10 @@ const baseManifest = {
     benchmarkBundleSha256: sha("1"),
     deploymentEvidenceUrl: "https://evidence.threadproof.invalid/deployment",
     deploymentManifestSha256: sha("2"),
+    uatAdversarialEvidenceUrl: "https://evidence.threadproof.invalid/uat-adversarial",
+    uatAdversarialEvidenceSha256: sha("4"),
+    backupRecoveryEvidenceUrl: "https://evidence.threadproof.invalid/backup-recovery",
+    backupRecoveryEvidenceSha256: sha("5"),
   },
   externalControls: {
     developBranchProtectionVerified: true,
@@ -152,6 +156,30 @@ try {
   const insecureFaultUrl = structuredClone(baseManifest);
   insecureFaultUrl.evidence.qbftFaultRunUrl = "http://evidence.threadproof.invalid/qbft-fault";
   expectFail(insecureFaultUrl, "non-HTTPS QBFT fault-run URL");
+
+  const missingUatEvidence = structuredClone(baseManifest);
+  delete missingUatEvidence.evidence.uatAdversarialEvidenceUrl;
+  expectFail(missingUatEvidence, "missing UAT/adversarial evidence URL");
+
+  const zeroUatEvidence = structuredClone(baseManifest);
+  zeroUatEvidence.evidence.uatAdversarialEvidenceSha256 = "0".repeat(64);
+  expectFail(zeroUatEvidence, "zero UAT/adversarial evidence digest");
+
+  const insecureUatEvidence = structuredClone(baseManifest);
+  insecureUatEvidence.evidence.uatAdversarialEvidenceUrl = "http://evidence.threadproof.invalid/uat-adversarial";
+  expectFail(insecureUatEvidence, "non-HTTPS UAT/adversarial evidence URL");
+
+  const missingRecoveryEvidence = structuredClone(baseManifest);
+  delete missingRecoveryEvidence.evidence.backupRecoveryEvidenceUrl;
+  expectFail(missingRecoveryEvidence, "missing backup/recovery evidence URL");
+
+  const zeroRecoveryEvidence = structuredClone(baseManifest);
+  zeroRecoveryEvidence.evidence.backupRecoveryEvidenceSha256 = "0".repeat(64);
+  expectFail(zeroRecoveryEvidence, "zero backup/recovery evidence digest");
+
+  const insecureRecoveryEvidence = structuredClone(baseManifest);
+  insecureRecoveryEvidence.evidence.backupRecoveryEvidenceUrl = "http://evidence.threadproof.invalid/backup-recovery";
+  expectFail(insecureRecoveryEvidence, "non-HTTPS backup/recovery evidence URL");
 
   const placeholder = structuredClone(baseManifest);
   placeholder.release.preparedBy = "REPLACE_ME";
