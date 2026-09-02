@@ -247,7 +247,11 @@ jobs:
       - name: Guard QBFT fault-resilience evidence policy
         run: node scripts/test-qbft-fault-resilience-policy.mjs
       - name: Test production recovery evidence verifier
-        run: pnpm recovery:test
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/test-production-recovery-evidence.mjs
+          node scripts/test-production-recovery-source-binding.mjs
       - name: Enforce canonical capacity allocation binding
         run: node scripts/check-capacity-allocation-binding.mjs
       - name: Validate production Besu compose template
