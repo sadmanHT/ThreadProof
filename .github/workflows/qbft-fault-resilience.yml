@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -64,6 +66,8 @@ jobs:
       - name: Verify isolated five-validator chain
         run: pnpm pilot:verify
       - name: Exercise one-validator tolerance, quorum loss, and recovery
+        env:
+          THREADPROOF_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: pnpm pilot:fault-resilience
       - name: Upload QBFT fault-resilience evidence
         if: always()
