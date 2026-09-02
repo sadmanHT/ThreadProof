@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -57,14 +59,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      # Hosted role-workspace tests are opt-in. The password must be supplied as an
-      # Actions secret; when absent, only the public authentication-boundary suite runs.
       NEXT_PUBLIC_SUPABASE_URL: https://mgxthhwzsvlxpsombydb.supabase.co
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LdvioX_0DM6Dwlfwebfc0Q_XiM7VLfs
       THREADPROOF_E2E_DEMO_PASSWORD: ${{ secrets.THREADPROOF_E2E_DEMO_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -84,7 +86,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report-${{ github.sha }}
+          name: playwright-report-${{ github.event.pull_request.head.sha || github.sha }}
           retention-days: 3
           if-no-files-found: ignore
           path: apps/web/playwright-report/
@@ -95,6 +97,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -117,6 +121,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -143,6 +149,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -194,7 +202,7 @@ jobs:
       - name: Upload reproducibility artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: capacity-spend-zk-${{ github.sha }}
+          name: capacity-spend-zk-${{ github.event.pull_request.head.sha || github.sha }}
           retention-days: 7
           if-no-files-found: error
           path: |
@@ -218,6 +226,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Reject committed secrets
         shell: bash
         run: |
@@ -236,6 +246,12 @@ jobs:
         run: node scripts/test-consortium-topology-preflight.mjs
       - name: Guard QBFT fault-resilience evidence policy
         run: node scripts/test-qbft-fault-resilience-policy.mjs
+      - name: Test production recovery evidence verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/test-production-recovery-evidence.mjs
+          node scripts/test-production-recovery-source-binding.mjs
       - name: Enforce canonical capacity allocation binding
         run: node scripts/check-capacity-allocation-binding.mjs
       - name: Validate production Besu compose template
@@ -253,6 +269,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
