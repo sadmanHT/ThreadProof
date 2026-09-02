@@ -46,6 +46,7 @@ const SECRET_KEY_FRAGMENTS = [
   "signercredential",
   "credentialsecret",
 ];
+const SAFE_SECRET_LIKE_KEYS = new Set(["supabaseLeakedPasswordProtectionVerified"]);
 
 function cleanText(value, label) {
   requireValue(typeof value === "string" && value.trim().length > 0, `${label} is required.`);
@@ -103,7 +104,7 @@ function assertNoSecretMaterial(value, label = "manifest") {
     for (const [key, entry] of Object.entries(value)) {
       const normalized = normalizeKey(key);
       requireValue(
-        !SECRET_KEY_FRAGMENTS.some((fragment) => normalized.includes(fragment)),
+        SAFE_SECRET_LIKE_KEYS.has(key) || !SECRET_KEY_FRAGMENTS.some((fragment) => normalized.includes(fragment)),
         `${label}.${key} uses a secret-bearing field name.`,
       );
       assertNoSecretMaterial(entry, `${label}.${key}`);
