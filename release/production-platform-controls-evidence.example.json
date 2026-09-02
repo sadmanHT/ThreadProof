@@ -1,0 +1,60 @@
+{
+  "format": "threadproof-production-platform-controls/v1",
+  "result": "REPLACE_ME_WITH_PASS_AFTER_REAL_PLATFORM_REVIEW",
+  "environment": "production",
+  "releaseVersion": "REPLACE_ME_WITH_RELEASE_VERSION",
+  "sourceDevelopCommit": "REPLACE_ME_WITH_TESTED_DEVELOP_SHA",
+  "observedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+  "github": {
+    "repository": "sadmanHT/ThreadProof",
+    "main": {
+      "protected": false,
+      "forcePushAllowed": true,
+      "deletionAllowed": true,
+      "requiredStatusChecksEnforced": false,
+      "reviewerApprovalEnforced": false,
+      "requiredStatusCheck": "ThreadProof Trusted Main Release Guard / trusted-main-release-guard",
+      "upToDateOrMergeQueueEnforced": false,
+      "evidence": {
+        "url": "REPLACE_ME_WITH_HTTPS_GITHUB_CONTROL_EVIDENCE_URL",
+        "sha256": "REPLACE_ME_WITH_SHA256"
+      }
+    },
+    "develop": {
+      "protected": false,
+      "forcePushAllowed": true,
+      "deletionAllowed": true,
+      "requiredStatusChecksEnforced": false,
+      "reviewerApprovalEnforced": false,
+      "evidence": {
+        "url": "REPLACE_ME_WITH_HTTPS_GITHUB_CONTROL_EVIDENCE_URL",
+        "sha256": "REPLACE_ME_WITH_SHA256"
+      }
+    },
+    "rulesetReviewCompleted": false,
+    "reviewEvidence": {
+      "url": "REPLACE_ME_WITH_HTTPS_RULESET_REVIEW_EVIDENCE_URL",
+      "sha256": "REPLACE_ME_WITH_SHA256"
+    }
+  },
+  "supabase": {
+    "organization": "ThreadProof",
+    "projectRef": "REPLACE_ME_WITH_PRODUCTION_PROJECT_REF",
+    "leakedPasswordProtectionEnabled": false,
+    "leakedPasswordWarningAbsent": false,
+    "securityAdvisorObservedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+    "evidence": {
+      "url": "REPLACE_ME_WITH_HTTPS_SUPABASE_ADVISOR_EVIDENCE_URL",
+      "sha256": "REPLACE_ME_WITH_SHA256"
+    }
+  },
+  "review": {
+    "executedBy": "REPLACE_ME_WITH_PLATFORM_OPERATOR_ID",
+    "reviewerIds": [
+      "REPLACE_ME_WITH_SECURITY_REVIEWER_ID",
+      "REPLACE_ME_WITH_RELEASE_REVIEWER_ID"
+    ],
+    "approvedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+    "statement": "REPLACE_ME_WITH_SANITIZED_PLATFORM_CONTROL_REVIEW_STATEMENT"
+  }
+}
