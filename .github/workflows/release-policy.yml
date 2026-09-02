@@ -33,6 +33,8 @@ jobs:
         run: |
           node scripts/test-production-deployment-evidence.mjs
           node scripts/test-production-deployment-template.mjs
+      - name: Test production evidence capture policy
+        run: node scripts/test-production-evidence-capture.mjs
       - name: Test production UAT evidence policy
         run: |
           node scripts/test-production-uat-evidence.mjs

@@ -16,6 +16,8 @@
     "endgame:scorecard": "node scripts/endgame-scorecard.mjs",
     "recovery:verify": "node scripts/production-recovery-verify.mjs",
     "recovery:test": "node scripts/test-production-recovery-evidence.mjs && node scripts/test-production-recovery-source-binding.mjs",
+    "evidence:test:capture": "node scripts/test-production-evidence-capture.mjs && pnpm --filter @threadproof/contracts test:production-evidence-capture",
+    "evidence:capture:production": "pnpm --filter @threadproof/contracts capture:production-evidence --",
     "infra:validate:consortium": "node scripts/validate-threadproof-production-topology.mjs",
     "infra:test:qbft-startup": "node scripts/test-qbft-startup-policy.mjs",
     "competition:preflight": "node scripts/competition-deployment-preflight.mjs",
