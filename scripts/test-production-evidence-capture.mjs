@@ -187,7 +187,9 @@ expectFailure("verifier address mismatch", ({ chain }) => {
 }, "verifier address does not match", false);
 
 expectFailure("stale heartbeat", ({ operations }) => {
-  operations.workerHeartbeats[0].last_heartbeat_at = "2026-09-02T23:30:00.000Z";
+  operations.workerHeartbeats[0].started_at = "2026-09-02T23:40:00.000Z";
+  operations.workerHeartbeats[0].last_heartbeat_at = "2026-09-02T23:50:00.000Z";
+  operations.workerHeartbeats[0].last_success_at = "2026-09-02T23:49:30.000Z";
 }, "heartbeat is stale");
 expectFailure("wrong-chain heartbeat", ({ operations }) => {
   operations.workerHeartbeats[1].chain_id = 1;
