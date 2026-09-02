@@ -1,0 +1,534 @@
+{
+  "format": "threadproof-production-uat/v1",
+  "result": "REPLACE_ME_WITH_PASS_AFTER_REAL_UAT",
+  "releaseVersion": "REPLACE_ME_WITH_RELEASE_VERSION",
+  "sourceDevelopCommit": "REPLACE_ME_WITH_TESTED_DEVELOP_SHA",
+  "chainId": 2026,
+  "genesisHash": "REPLACE_ME_WITH_PRODUCTION_GENESIS_HASH",
+  "validatorCount": 5,
+  "deploymentManifestSha256": "REPLACE_ME_WITH_DEPLOYMENT_MANIFEST_SHA256",
+  "environment": "production",
+  "networkType": "persistent-consortium",
+  "signing": {
+    "mode": "remote-web3signer",
+    "kmsOrHsmBacked": true
+  },
+  "startedAt": "REPLACE_ME_WITH_UAT_START_ISO_TIMESTAMP",
+  "completedAt": "REPLACE_ME_WITH_UAT_COMPLETION_ISO_TIMESTAMP",
+  "participants": [
+    {
+      "participantId": "buyer-uat",
+      "role": "buyer",
+      "organizationId": "REPLACE_ME_WITH_BUYER_ORGANIZATION_BYTES32",
+      "walletAddress": "REPLACE_ME_WITH_BUYER_WALLET"
+    },
+    {
+      "participantId": "factory-primary-uat",
+      "role": "factory",
+      "organizationId": "REPLACE_ME_WITH_PRIMARY_FACTORY_ORGANIZATION_BYTES32",
+      "walletAddress": "REPLACE_ME_WITH_PRIMARY_FACTORY_WALLET"
+    },
+    {
+      "participantId": "factory-sub-uat",
+      "role": "factory",
+      "organizationId": "REPLACE_ME_WITH_SUBCONTRACT_FACTORY_ORGANIZATION_BYTES32",
+      "walletAddress": "REPLACE_ME_WITH_SUBCONTRACT_FACTORY_WALLET"
+    },
+    {
+      "participantId": "auditor-uat",
+      "role": "auditor",
+      "organizationId": "REPLACE_ME_WITH_AUDITOR_ORGANIZATION_BYTES32",
+      "walletAddress": "REPLACE_ME_WITH_AUDITOR_WALLET"
+    },
+    {
+      "participantId": "regulator-uat",
+      "role": "regulator",
+      "organizationId": "REPLACE_ME_WITH_REGULATOR_ORGANIZATION_BYTES32",
+      "walletAddress": "REPLACE_ME_WITH_REGULATOR_WALLET"
+    },
+    {
+      "participantId": "worker-labor-uat",
+      "role": "worker_labor",
+      "organizationId": "REPLACE_ME_WITH_WORKER_LABOR_ORGANIZATION_BYTES32",
+      "walletAddress": "REPLACE_ME_WITH_WORKER_LABOR_WALLET"
+    }
+  ],
+  "functionalCases": [
+    {
+      "id": "onboarding",
+      "result": "pass",
+      "participantIds": ["factory-primary-uat", "auditor-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_ONBOARDING_OUTCOME",
+      "observed": "REPLACE_ME_WITH_OBSERVED_ONBOARDING_OUTCOME",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "chainReceipt": {
+          "chainId": 2026,
+          "transactionHash": "REPLACE_ME_WITH_TRANSACTION_HASH",
+          "blockNumber": "REPLACE_ME_WITH_BLOCK_NUMBER",
+          "blockHash": "REPLACE_ME_WITH_BLOCK_HASH",
+          "contractAddress": "REPLACE_ME_WITH_REGISTRY_ADDRESS",
+          "eventName": "REPLACE_ME_WITH_ONBOARDING_EVENT_NAME"
+        }
+      }
+    },
+    {
+      "id": "credential_issue",
+      "result": "pass",
+      "participantIds": ["factory-primary-uat", "auditor-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_CREDENTIAL_ISSUE_OUTCOME",
+      "observed": "REPLACE_ME_WITH_OBSERVED_CREDENTIAL_ISSUE_OUTCOME",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "chainReceipt": {
+          "chainId": 2026,
+          "transactionHash": "REPLACE_ME_WITH_TRANSACTION_HASH",
+          "blockNumber": "REPLACE_ME_WITH_BLOCK_NUMBER",
+          "blockHash": "REPLACE_ME_WITH_BLOCK_HASH",
+          "contractAddress": "REPLACE_ME_WITH_CREDENTIAL_REGISTRY_ADDRESS",
+          "eventName": "REPLACE_ME_WITH_CREDENTIAL_ISSUE_EVENT_NAME"
+        }
+      }
+    },
+    {
+      "id": "credential_revocation",
+      "result": "pass",
+      "participantIds": ["factory-primary-uat", "auditor-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_CREDENTIAL_REVOCATION_OUTCOME",
+      "observed": "REPLACE_ME_WITH_OBSERVED_CREDENTIAL_REVOCATION_OUTCOME",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "chainReceipt": {
+          "chainId": 2026,
+          "transactionHash": "REPLACE_ME_WITH_TRANSACTION_HASH",
+          "blockNumber": "REPLACE_ME_WITH_BLOCK_NUMBER",
+          "blockHash": "REPLACE_ME_WITH_BLOCK_HASH",
+          "contractAddress": "REPLACE_ME_WITH_CREDENTIAL_REGISTRY_ADDRESS",
+          "eventName": "REPLACE_ME_WITH_CREDENTIAL_REVOCATION_EVENT_NAME"
+        }
+      }
+    },
+    {
+      "id": "capacity_certification",
+      "result": "pass",
+      "participantIds": ["factory-primary-uat", "auditor-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_CAPACITY_CERTIFICATION_OUTCOME",
+      "observed": "REPLACE_ME_WITH_OBSERVED_CAPACITY_CERTIFICATION_OUTCOME",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "chainReceipt": {
+          "chainId": 2026,
+          "transactionHash": "REPLACE_ME_WITH_TRANSACTION_HASH",
+          "blockNumber": "REPLACE_ME_WITH_BLOCK_NUMBER",
+          "blockHash": "REPLACE_ME_WITH_BLOCK_HASH",
+          "contractAddress": "REPLACE_ME_WITH_CAPACITY_VAULT_ADDRESS",
+          "eventName": "REPLACE_ME_WITH_CAPACITY_CERTIFICATION_EVENT_NAME"
+        }
+      }
+    },
+    {
+      "id": "order_authorization",
+      "result": "pass",
+      "participantIds": ["buyer-uat", "factory-primary-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_ORDER_AUTHORIZATION_OUTCOME",
+      "observed": "REPLACE_ME_WITH_OBSERVED_ORDER_AUTHORIZATION_OUTCOME",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "chainReceipt": {
+          "chainId": 2026,
+          "transactionHash": "REPLACE_ME_WITH_TRANSACTION_HASH",
+          "blockNumber": "REPLACE_ME_WITH_BLOCK_NUMBER",
+          "blockHash": "REPLACE_ME_WITH_BLOCK_HASH",
+          "contractAddress": "REPLACE_ME_WITH_ORDER_REGISTRY_ADDRESS",
+          "eventName": "REPLACE_ME_WITH_ORDER_AUTHORIZATION_EVENT_NAME"
+        }
+      }
+    },
+    {
+      "id": "pofc_spend",
+      "result": "pass",
+      "participantIds": ["buyer-uat", "factory-primary-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_POFC_SPEND_OUTCOME",
+      "observed": "REPLACE_ME_WITH_OBSERVED_POFC_SPEND_OUTCOME",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "chainReceipt": {
+          "chainId": 2026,
+          "transactionHash": "REPLACE_ME_WITH_TRANSACTION_HASH",
+          "blockNumber": "REPLACE_ME_WITH_BLOCK_NUMBER",
+          "blockHash": "REPLACE_ME_WITH_BLOCK_HASH",
+          "contractAddress": "REPLACE_ME_WITH_CAPACITY_VAULT_ADDRESS",
+          "eventName": "REPLACE_ME_WITH_POFC_SPEND_EVENT_NAME"
+        }
+      }
+    },
+    {
+      "id": "subcontract_authorization",
+      "result": "pass",
+      "participantIds": ["factory-primary-uat", "factory-sub-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_SUBCONTRACT_OUTCOME",
+      "observed": "REPLACE_ME_WITH_OBSERVED_SUBCONTRACT_OUTCOME",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "chainReceipt": {
+          "chainId": 2026,
+          "transactionHash": "REPLACE_ME_WITH_TRANSACTION_HASH",
+          "blockNumber": "REPLACE_ME_WITH_BLOCK_NUMBER",
+          "blockHash": "REPLACE_ME_WITH_BLOCK_HASH",
+          "contractAddress": "REPLACE_ME_WITH_SUBCONTRACT_GOVERNOR_ADDRESS",
+          "eventName": "REPLACE_ME_WITH_SUBCONTRACT_EVENT_NAME"
+        }
+      }
+    },
+    {
+      "id": "order_amendment",
+      "result": "pass",
+      "participantIds": ["buyer-uat", "factory-primary-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_ORDER_AMENDMENT_OUTCOME",
+      "observed": "REPLACE_ME_WITH_OBSERVED_ORDER_AMENDMENT_OUTCOME",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "chainReceipt": {
+          "chainId": 2026,
+          "transactionHash": "REPLACE_ME_WITH_TRANSACTION_HASH",
+          "blockNumber": "REPLACE_ME_WITH_BLOCK_NUMBER",
+          "blockHash": "REPLACE_ME_WITH_BLOCK_HASH",
+          "contractAddress": "REPLACE_ME_WITH_ORDER_REGISTRY_ADDRESS",
+          "eventName": "REPLACE_ME_WITH_ORDER_AMENDMENT_EVENT_NAME"
+        }
+      }
+    },
+    {
+      "id": "order_cancellation",
+      "result": "pass",
+      "participantIds": ["buyer-uat", "factory-primary-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_ORDER_CANCELLATION_OUTCOME",
+      "observed": "REPLACE_ME_WITH_OBSERVED_ORDER_CANCELLATION_OUTCOME",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "chainReceipt": {
+          "chainId": 2026,
+          "transactionHash": "REPLACE_ME_WITH_TRANSACTION_HASH",
+          "blockNumber": "REPLACE_ME_WITH_BLOCK_NUMBER",
+          "blockHash": "REPLACE_ME_WITH_BLOCK_HASH",
+          "contractAddress": "REPLACE_ME_WITH_ORDER_REGISTRY_ADDRESS",
+          "eventName": "REPLACE_ME_WITH_ORDER_CANCELLATION_EVENT_NAME"
+        }
+      }
+    },
+    {
+      "id": "capacity_release",
+      "result": "pass",
+      "participantIds": ["buyer-uat", "factory-primary-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_CAPACITY_RELEASE_OUTCOME",
+      "observed": "REPLACE_ME_WITH_OBSERVED_CAPACITY_RELEASE_OUTCOME",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "chainReceipt": {
+          "chainId": 2026,
+          "transactionHash": "REPLACE_ME_WITH_TRANSACTION_HASH",
+          "blockNumber": "REPLACE_ME_WITH_BLOCK_NUMBER",
+          "blockHash": "REPLACE_ME_WITH_BLOCK_HASH",
+          "contractAddress": "REPLACE_ME_WITH_CAPACITY_VAULT_ADDRESS",
+          "eventName": "REPLACE_ME_WITH_CAPACITY_RELEASE_EVENT_NAME"
+        }
+      }
+    },
+    {
+      "id": "due_process_disclosure",
+      "result": "pass",
+      "participantIds": ["auditor-uat", "regulator-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_DUE_PROCESS_DISCLOSURE_OUTCOME",
+      "observed": "REPLACE_ME_WITH_OBSERVED_DUE_PROCESS_DISCLOSURE_OUTCOME",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "chainReceipt": {
+          "chainId": 2026,
+          "transactionHash": "REPLACE_ME_WITH_TRANSACTION_HASH",
+          "blockNumber": "REPLACE_ME_WITH_BLOCK_NUMBER",
+          "blockHash": "REPLACE_ME_WITH_BLOCK_HASH",
+          "contractAddress": "REPLACE_ME_WITH_CHARTER_ADDRESS",
+          "eventName": "ProtectedIdentityDisclosureAuthorized"
+        },
+        "package": {
+          "url": "REPLACE_ME_WITH_HTTPS_SEALED_DISCLOSURE_PACKAGE_URL",
+          "sha256": "REPLACE_ME_WITH_PACKAGE_SHA256",
+          "format": "threadproof-protected-identity-disclosure/v1"
+        }
+      }
+    },
+    {
+      "id": "credential_package_export",
+      "result": "pass",
+      "participantIds": ["factory-primary-uat", "auditor-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_CREDENTIAL_EXPORT_OUTCOME",
+      "observed": "REPLACE_ME_WITH_OBSERVED_CREDENTIAL_EXPORT_OUTCOME",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "package": {
+          "url": "REPLACE_ME_WITH_HTTPS_CREDENTIAL_PACKAGE_URL",
+          "sha256": "REPLACE_ME_WITH_PACKAGE_SHA256",
+          "format": "threadproof-credential-package/v1"
+        }
+      }
+    },
+    {
+      "id": "credential_package_verification",
+      "result": "pass",
+      "participantIds": ["buyer-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_CREDENTIAL_VERIFICATION_OUTCOME",
+      "observed": "REPLACE_ME_WITH_OBSERVED_CREDENTIAL_VERIFICATION_OUTCOME",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "package": {
+          "url": "REPLACE_ME_WITH_HTTPS_CREDENTIAL_PACKAGE_URL",
+          "sha256": "REPLACE_ME_WITH_PACKAGE_SHA256",
+          "format": "threadproof-credential-package/v1"
+        }
+      }
+    }
+  ],
+  "adversarialCases": [
+    {
+      "id": "stale_capacity",
+      "result": "pass",
+      "participantIds": ["factory-primary-uat", "auditor-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_STALE_CAPACITY_REJECTION",
+      "observed": "REPLACE_ME_WITH_OBSERVED_STALE_CAPACITY_REJECTION",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "rejection": {
+          "errorCode": "REPLACE_ME_WITH_ERROR_CODE",
+          "requestSha256": "REPLACE_ME_WITH_REQUEST_SHA256",
+          "canonicalStateUnchanged": true,
+          "beforeStateHash": "REPLACE_ME_WITH_STATE_HASH",
+          "afterStateHash": "REPLACE_ME_WITH_SAME_STATE_HASH"
+        }
+      }
+    },
+    {
+      "id": "duplicate_nullifier",
+      "result": "pass",
+      "participantIds": ["factory-primary-uat", "auditor-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_DUPLICATE_NULLIFIER_REJECTION",
+      "observed": "REPLACE_ME_WITH_OBSERVED_DUPLICATE_NULLIFIER_REJECTION",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "rejection": {
+          "errorCode": "REPLACE_ME_WITH_ERROR_CODE",
+          "requestSha256": "REPLACE_ME_WITH_REQUEST_SHA256",
+          "canonicalStateUnchanged": true,
+          "beforeStateHash": "REPLACE_ME_WITH_STATE_HASH",
+          "afterStateHash": "REPLACE_ME_WITH_SAME_STATE_HASH"
+        }
+      }
+    },
+    {
+      "id": "invalid_proof",
+      "result": "pass",
+      "participantIds": ["factory-primary-uat", "auditor-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_INVALID_PROOF_REJECTION",
+      "observed": "REPLACE_ME_WITH_OBSERVED_INVALID_PROOF_REJECTION",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "rejection": {
+          "errorCode": "REPLACE_ME_WITH_ERROR_CODE",
+          "requestSha256": "REPLACE_ME_WITH_REQUEST_SHA256",
+          "canonicalStateUnchanged": true,
+          "beforeStateHash": "REPLACE_ME_WITH_STATE_HASH",
+          "afterStateHash": "REPLACE_ME_WITH_SAME_STATE_HASH"
+        }
+      }
+    },
+    {
+      "id": "invalid_allocation",
+      "result": "pass",
+      "participantIds": ["factory-primary-uat", "auditor-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_INVALID_ALLOCATION_REJECTION",
+      "observed": "REPLACE_ME_WITH_OBSERVED_INVALID_ALLOCATION_REJECTION",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "rejection": {
+          "errorCode": "REPLACE_ME_WITH_ERROR_CODE",
+          "requestSha256": "REPLACE_ME_WITH_REQUEST_SHA256",
+          "canonicalStateUnchanged": true,
+          "beforeStateHash": "REPLACE_ME_WITH_STATE_HASH",
+          "afterStateHash": "REPLACE_ME_WITH_SAME_STATE_HASH"
+        }
+      }
+    },
+    {
+      "id": "release_replay",
+      "result": "pass",
+      "participantIds": ["factory-primary-uat", "auditor-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_RELEASE_REPLAY_REJECTION",
+      "observed": "REPLACE_ME_WITH_OBSERVED_RELEASE_REPLAY_REJECTION",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "rejection": {
+          "errorCode": "REPLACE_ME_WITH_ERROR_CODE",
+          "requestSha256": "REPLACE_ME_WITH_REQUEST_SHA256",
+          "canonicalStateUnchanged": true,
+          "beforeStateHash": "REPLACE_ME_WITH_STATE_HASH",
+          "afterStateHash": "REPLACE_ME_WITH_SAME_STATE_HASH"
+        }
+      }
+    },
+    {
+      "id": "revoked_credential",
+      "result": "pass",
+      "participantIds": ["factory-primary-uat", "auditor-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_REVOKED_CREDENTIAL_REJECTION",
+      "observed": "REPLACE_ME_WITH_OBSERVED_REVOKED_CREDENTIAL_REJECTION",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "rejection": {
+          "errorCode": "REPLACE_ME_WITH_ERROR_CODE",
+          "requestSha256": "REPLACE_ME_WITH_REQUEST_SHA256",
+          "canonicalStateUnchanged": true,
+          "beforeStateHash": "REPLACE_ME_WITH_STATE_HASH",
+          "afterStateHash": "REPLACE_ME_WITH_SAME_STATE_HASH"
+        }
+      }
+    },
+    {
+      "id": "rpc_outage",
+      "result": "pass",
+      "participantIds": ["buyer-uat", "factory-primary-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_RPC_OUTAGE_FAIL_CLOSED_BEHAVIOR",
+      "observed": "REPLACE_ME_WITH_OBSERVED_RPC_OUTAGE_FAIL_CLOSED_BEHAVIOR",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "outage": {
+          "mode": "rpc",
+          "operationRejected": true,
+          "safetyPreserved": true,
+          "observedDurationMs": "REPLACE_ME_WITH_POSITIVE_INTEGER",
+          "beforeStateHash": "REPLACE_ME_WITH_STATE_HASH",
+          "afterStateHash": "REPLACE_ME_WITH_SAME_STATE_HASH"
+        }
+      }
+    },
+    {
+      "id": "signer_outage",
+      "result": "pass",
+      "participantIds": ["buyer-uat", "factory-primary-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_SIGNER_OUTAGE_FAIL_CLOSED_BEHAVIOR",
+      "observed": "REPLACE_ME_WITH_OBSERVED_SIGNER_OUTAGE_FAIL_CLOSED_BEHAVIOR",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "outage": {
+          "mode": "signer",
+          "operationRejected": true,
+          "safetyPreserved": true,
+          "observedDurationMs": "REPLACE_ME_WITH_POSITIVE_INTEGER",
+          "beforeStateHash": "REPLACE_ME_WITH_STATE_HASH",
+          "afterStateHash": "REPLACE_ME_WITH_SAME_STATE_HASH"
+        }
+      }
+    },
+    {
+      "id": "validator_loss",
+      "result": "pass",
+      "participantIds": ["auditor-uat", "regulator-uat"],
+      "expected": "REPLACE_ME_WITH_EXPECTED_QBFT_TOLERANCE_STALL_AND_RECOVERY_BEHAVIOR",
+      "observed": "REPLACE_ME_WITH_OBSERVED_QBFT_TOLERANCE_STALL_AND_RECOVERY_BEHAVIOR",
+      "startedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "completedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "evidence": {
+        "transcriptUrl": "REPLACE_ME_WITH_HTTPS_TRANSCRIPT_URL",
+        "transcriptSha256": "REPLACE_ME_WITH_TRANSCRIPT_SHA256",
+        "outage": {
+          "mode": "validator",
+          "safetyPreserved": true,
+          "oneUnavailable": {
+            "startBlock": "REPLACE_ME_WITH_DECIMAL_BLOCK",
+            "endBlock": "REPLACE_ME_WITH_AT_LEAST_START_PLUS_2"
+          },
+          "quorumLost": {
+            "startBlock": "REPLACE_ME_WITH_DECIMAL_BLOCK",
+            "endBlock": "REPLACE_ME_WITH_IDENTICAL_DECIMAL_BLOCK",
+            "rpcResponsive": true,
+            "operationRejected": true,
+            "observedDurationMs": "REPLACE_ME_WITH_POSITIVE_INTEGER",
+            "beforeStateHash": "REPLACE_ME_WITH_STATE_HASH",
+            "afterStateHash": "REPLACE_ME_WITH_SAME_STATE_HASH"
+          },
+          "recovered": {
+            "startBlock": "REPLACE_ME_WITH_DECIMAL_BLOCK",
+            "endBlock": "REPLACE_ME_WITH_AT_LEAST_START_PLUS_2"
+          }
+        }
+      }
+    }
+  ],
+  "signoff": {
+    "executedBy": "REPLACE_ME_WITH_NON_SECRET_OPERATOR_ID",
+    "reviewerParticipantIds": ["auditor-uat", "regulator-uat"],
+    "approvedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP_AFTER_UAT",
+    "statement": "REPLACE_ME_WITH_AUDITOR_AND_REGULATOR_REVIEW_STATEMENT"
+  }
+}
