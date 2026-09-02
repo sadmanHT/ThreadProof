@@ -30,6 +30,7 @@ jobs:
         run: |
           node scripts/test-release-readiness.mjs
           node scripts/test-release-github-evidence.mjs
+          node scripts/test-production-uat-evidence.mjs
       - name: Re-run production trust-boundary checks
         run: |
           node scripts/check-production-boundaries.mjs
@@ -38,6 +39,8 @@ jobs:
         run: |
           test -f release/production-release.json
           node scripts/check-release-readiness.mjs
+      - name: Verify release-bound production UAT/adversarial evidence
+        run: node scripts/verify-release-uat-evidence.mjs
       - name: Verify canonical develop workflow evidence
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -78,6 +81,6 @@ jobs:
           console.log(`Tested develop source: ${manifest.release.sourceDevelopCommit}`);
           console.log(`Chain: ${manifest.chain.networkName} (${manifest.chain.chainId})`);
           console.log(`Validators: ${manifest.chain.validatorCount}`);
-          console.log('Canonical develop workflow evidence is verified live against GitHub Actions before release promotion.');
+          console.log('Canonical develop workflow evidence and release-bound UAT/adversarial evidence are verified before release promotion.');
           console.log('External platform controls are attested in the release manifest; CI does not manufacture those attestations.');
           NODE
