@@ -11,6 +11,14 @@ pnpm pilot:fault-resilience
 pnpm pilot:reset
 ```
 
+## Startup/sync policy is not consensus quorum
+
+The five-validator ThreadProof baseline pins Besu `sync-min-peers=3`. This is an operational startup/synchronization threshold: when one validator is unavailable, any running validator can connect to only three other active validators. Inheriting a larger image default would conflict with the documented 4/5 availability case and can make a fresh private network wait for an unreachable sync-peer count.
+
+This setting does **not** alter QBFT votes, validator membership, finalization quorum, genesis, or the fail-closed application policy. A healthy five-validator startup is still required to show four remote peers and the exact five-validator QBFT set. The pilot first waits for RPC/topology/peer readiness and then starts a separate first-post-genesis-block observation window. The fault harness below independently proves the consensus boundary: 4/5 continues finalizing; 3/5 must not.
+
+If the approved production validator set changes, operators must deliberately review the sync-peer threshold together with the network policy rather than treating `3` as a universal constant. The production template is only configuration evidence; it is not proof that separately administered production validators exist.
+
 `pnpm pilot:fault-resilience` keeps `validator1` running during the fault observation because it is the pilot RPC endpoint and applies the following sequence:
 
 1. Verify the healthy five-validator network advances by at least two post-observation blocks.
