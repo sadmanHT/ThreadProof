@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const PINNED_CIRCOM_REVISION = "9fd40a34f42912ee52230f8b6a114d78f6df1a48";
+const REQUIRED_PNPM_VERSION = "10.15.0";
+const DEPENDENCY_INSTALL_METHOD = "pnpm-offline-frozen-lockfile";
 
 function sha256(bytes) {
   return `0x${createHash("sha256").update(bytes).digest("hex")}`;
@@ -52,13 +54,19 @@ try {
     verification: {
       circuitBuildRecompiled: true,
       sourceCommitMatchedCleanGitHead: true,
+      dependenciesRehydratedFromFrozenLockfile: true,
+      repositoryNodeModulesIgnored: true,
       phase2ContributionCount: 2,
+      minimumPhase2ContributionCount: 2,
     },
     build: {
       gitTree: "2222222222222222222222222222222222222222",
       compilerVersion: "2.2.0",
       compilerPinnedSourceRevision: PINNED_CIRCOM_REVISION,
       compilerBinarySha256: `0x${"12".repeat(32)}`,
+      dependencyInstallMethod: DEPENDENCY_INSTALL_METHOD,
+      pnpmVersion: REQUIRED_PNPM_VERSION,
+      pnpmExecutableSha256: `0x${"56".repeat(32)}`,
       dependencyFileCount: 7,
     },
     artifacts: {
@@ -110,18 +118,31 @@ try {
   if (
     provenance.setup !== "production-ceremony" ||
     provenance.productionTrustedSetup !== true ||
-    provenance.circuitBuildRecompiled !== true
+    provenance.circuitBuildRecompiled !== true ||
+    provenance.dependenciesRehydratedFromFrozenLockfile !== true ||
+    provenance.repositoryNodeModulesIgnored !== true
   ) {
     throw new Error("Production provenance manifest lost production/build-verification identity");
   }
   if (provenance.verifierComposition !== "direct-inheritance") {
     throw new Error("Production provenance must record the self-contained verifier composition");
   }
-  if (provenance.phase2ContributionCount !== 2 || provenance.sourceCommit !== evidence.sourceCommit) {
+  if (
+    provenance.phase2ContributionCount !== 2 ||
+    provenance.minimumPhase2ContributionCount !== 2 ||
+    provenance.sourceCommit !== evidence.sourceCommit
+  ) {
     throw new Error("Production provenance manifest lost ceremony contribution/source binding");
   }
   if (provenance.build?.attestationSha256 !== evidence.artifacts.buildAttestation.sha256.toLowerCase()) {
     throw new Error("Production provenance lost the circuit build-attestation digest");
+  }
+  if (
+    provenance.build?.dependencyInstallMethod !== DEPENDENCY_INSTALL_METHOD ||
+    provenance.build?.pnpmVersion !== REQUIRED_PNPM_VERSION ||
+    provenance.build?.pnpmExecutableSha256 !== evidence.build.pnpmExecutableSha256.toLowerCase()
+  ) {
+    throw new Error("Production provenance lost frozen-lockfile dependency-tool binding");
   }
 
   evidence.verification.circuitBuildRecompiled = false;
@@ -132,6 +153,14 @@ try {
   }
 
   evidence.verification.circuitBuildRecompiled = true;
+  evidence.verification.dependenciesRehydratedFromFrozenLockfile = false;
+  writeEvidence();
+  const rejectedMutableDependencies = run(commonArgs, 1);
+  if (!rejectedMutableDependencies.includes("frozen-lockfile rehydrated dependencies")) {
+    throw new Error("Ceremony evidence without frozen-lockfile dependency provenance was not rejected");
+  }
+
+  evidence.verification.dependenciesRehydratedFromFrozenLockfile = true;
   evidence.mode = "ci-validation";
   writeEvidence();
   const rejectedMode = run(commonArgs, 1);

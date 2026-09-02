@@ -10,12 +10,13 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, delimiter, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const REQUIRED_CIRCOM_VERSION = "2.2.0";
+const REQUIRED_PNPM_VERSION = "10.15.0";
 const PINNED_CIRCOM_REVISION = "9fd40a34f42912ee52230f8b6a114d78f6df1a48";
 const CIRCUIT_SOURCES = Object.freeze({
   CapacitySpend: "circuits/CapacitySpend.circom",
@@ -50,7 +51,7 @@ function run(command, args, options = {}) {
     cwd: options.cwd,
     encoding: "utf8",
     stdio: "pipe",
-    env: process.env,
+    env: options.env ?? process.env,
   });
   if (result.status !== 0) {
     throw new Error(
@@ -93,6 +94,11 @@ function resolveExecutable(name) {
   throw new Error(`Could not resolve executable ${name} from PATH`);
 }
 
+function isPathWithin(basePath, candidatePath) {
+  const value = relative(basePath, candidatePath);
+  return value === "" || (value !== ".." && !value.startsWith(`..${sep}`) && !isAbsolute(value));
+}
+
 function normalizedRepoPath(repoRoot, path) {
   const value = relative(repoRoot, path).split(sep).join("/");
   if (!value || value.startsWith("../") || value === "..") {
@@ -101,11 +107,18 @@ function normalizedRepoPath(repoRoot, path) {
   return value;
 }
 
-function resolveInclude(specifier, currentPath, packageRoot, repoRoot) {
+function normalizedCircuitInputPath(repoRoot, isolatedNodeModules, path) {
+  if (isPathWithin(repoRoot, path)) return normalizedRepoPath(repoRoot, path);
+  if (isPathWithin(isolatedNodeModules, path)) {
+    return `isolated-node_modules/${relative(isolatedNodeModules, path).split(sep).join("/")}`;
+  }
+  throw new Error(`Circuit dependency is outside trusted source and isolated dependency roots: ${path}`);
+}
+
+function resolveInclude(specifier, currentPath, isolatedNodeModules) {
   const candidates = [
     resolve(dirname(currentPath), specifier),
-    resolve(packageRoot, "node_modules", specifier),
-    resolve(repoRoot, "node_modules", specifier),
+    resolve(isolatedNodeModules, specifier),
   ];
   for (const candidate of candidates) {
     if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
@@ -113,10 +126,10 @@ function resolveInclude(specifier, currentPath, packageRoot, repoRoot) {
   throw new Error(`Could not resolve Circom include ${specifier} from ${currentPath}`);
 }
 
-function collectCircuitClosure(rootSource, packageRoot, repoRoot) {
+function collectCircuitClosure(rootSource, repoRoot, isolatedNodeModules) {
   const visited = new Map();
   const visit = (path) => {
-    const logical = normalizedRepoPath(repoRoot, path);
+    const logical = normalizedCircuitInputPath(repoRoot, isolatedNodeModules, path);
     if (visited.has(logical)) return;
     const bytes = readFileSync(path);
     const text = bytes.toString("utf8");
@@ -126,11 +139,65 @@ function collectCircuitClosure(rootSource, packageRoot, repoRoot) {
       sha256: sha256Bytes(bytes),
     });
     for (const match of text.matchAll(/\binclude\s+"([^"]+)"\s*;/g)) {
-      visit(resolveInclude(match[1], path, packageRoot, repoRoot));
+      visit(resolveInclude(match[1], path, isolatedNodeModules));
     }
   };
   visit(rootSource);
   return [...visited.values()].sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function copyExactFile(sourcePath, destinationPath) {
+  mkdirSync(dirname(destinationPath), { recursive: true });
+  writeFileSync(destinationPath, readFileSync(sourcePath), { mode: 0o644 });
+}
+
+function rehydrateCircuitDependencies({ repoRoot, packageRoot, pnpmPath }) {
+  const tempRoot = mkdtempSync(join(tmpdir(), "threadproof-circuit-deps-"));
+  try {
+    const rootManifestPath = resolve(repoRoot, "package.json");
+    const workspaceManifestPath = resolve(repoRoot, "pnpm-workspace.yaml");
+    const lockfilePath = resolve(repoRoot, "pnpm-lock.yaml");
+    const circuitManifestPath = resolve(packageRoot, "package.json");
+
+    copyExactFile(rootManifestPath, join(tempRoot, "package.json"));
+    copyExactFile(workspaceManifestPath, join(tempRoot, "pnpm-workspace.yaml"));
+    copyExactFile(lockfilePath, join(tempRoot, "pnpm-lock.yaml"));
+    copyExactFile(circuitManifestPath, join(tempRoot, "packages", "circuits", "package.json"));
+
+    const pnpmVersion = run(pnpmPath, ["--version"]);
+    if (pnpmVersion !== REQUIRED_PNPM_VERSION) {
+      throw new Error(`pnpm ${REQUIRED_PNPM_VERSION} is required for dependency rehydration; got: ${pnpmVersion}`);
+    }
+
+    run(
+      pnpmPath,
+      [
+        "install",
+        "--offline",
+        "--frozen-lockfile",
+        "--ignore-scripts",
+        "--prod",
+        "--filter",
+        "@threadproof/circuits...",
+      ],
+      { cwd: tempRoot },
+    );
+
+    const isolatedNodeModules = join(tempRoot, "packages", "circuits", "node_modules");
+    if (!existsSync(isolatedNodeModules) || !statSync(isolatedNodeModules).isDirectory()) {
+      throw new Error("Frozen-lockfile dependency rehydration did not create the isolated circuit node_modules tree");
+    }
+
+    return {
+      tempRoot,
+      isolatedNodeModules,
+      pnpmVersion,
+      pnpmExecutable: artifact(pnpmPath),
+    };
+  } catch (error) {
+    rmSync(tempRoot, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -173,14 +240,22 @@ if (!compilerVersionOutput.includes(REQUIRED_CIRCOM_VERSION)) {
   throw new Error(`Circom ${REQUIRED_CIRCOM_VERSION} is required; got: ${compilerVersionOutput}`);
 }
 const compilerArtifact = artifact(compilerPath);
+const pnpmPath = resolveExecutable("pnpm");
 const sourcePath = resolve(packageRoot, sourceRelative);
-const sourceClosure = collectCircuitClosure(sourcePath, packageRoot, repoRoot);
 const lockfilePath = resolve(repoRoot, "pnpm-lock.yaml");
 const packageManifestPath = resolve(packageRoot, "package.json");
+const rootManifestPath = resolve(repoRoot, "package.json");
+const workspaceManifestPath = resolve(repoRoot, "pnpm-workspace.yaml");
 const suppliedR1cs = artifact(r1csPath);
 
-const tempDir = mkdtempSync(join(tmpdir(), `threadproof-${circuit.toLowerCase()}-rebuild-`));
+const dependencyWorkspace = rehydrateCircuitDependencies({ repoRoot, packageRoot, pnpmPath });
+const rebuildDir = mkdtempSync(join(tmpdir(), `threadproof-${circuit.toLowerCase()}-rebuild-`));
 try {
+  const sourceClosure = collectCircuitClosure(sourcePath, repoRoot, dependencyWorkspace.isolatedNodeModules);
+  if (!sourceClosure.some((entry) => entry.path.startsWith("isolated-node_modules/"))) {
+    throw new Error("Circuit dependency closure did not include any frozen-lockfile rehydrated dependency files");
+  }
+
   run(
     compilerPath,
     [
@@ -189,22 +264,22 @@ try {
       "--wasm",
       "--sym",
       "-o",
-      tempDir,
+      rebuildDir,
       "-l",
-      resolve(packageRoot, "node_modules"),
+      dependencyWorkspace.isolatedNodeModules,
     ],
     { cwd: packageRoot },
   );
-  const rebuiltR1csPath = join(tempDir, `${circuit}.r1cs`);
+  const rebuiltR1csPath = join(rebuildDir, `${circuit}.r1cs`);
   const rebuiltR1cs = artifact(rebuiltR1csPath);
   if (rebuiltR1cs.sha256.toLowerCase() !== suppliedR1cs.sha256.toLowerCase()) {
     throw new Error(
-      `Supplied ${circuit} R1CS does not match a clean recompilation from ${sourceCommit}: supplied=${suppliedR1cs.sha256}, rebuilt=${rebuiltR1cs.sha256}`,
+      `Supplied ${circuit} R1CS does not match an isolated frozen-lockfile recompilation from ${sourceCommit}: supplied=${suppliedR1cs.sha256}, rebuilt=${rebuiltR1cs.sha256}`,
     );
   }
 
-  const rebuiltWasmPath = join(tempDir, `${circuit}_js`, `${circuit}.wasm`);
-  const rebuiltSymPath = join(tempDir, `${circuit}.sym`);
+  const rebuiltWasmPath = join(rebuildDir, `${circuit}_js`, `${circuit}.wasm`);
+  const rebuiltSymPath = join(rebuildDir, `${circuit}.sym`);
   const attestation = {
     schemaVersion: 1,
     format: "threadproof-circuit-build-attestation/v1",
@@ -218,6 +293,10 @@ try {
       recompiledR1csMatched: true,
       sourceCommitMatchedHead: true,
       dependencyClosureHashed: true,
+      dependenciesRehydratedFromFrozenLockfile: true,
+      repositoryNodeModulesIgnored: true,
+      offlineDependencyInstall: true,
+      dependencyInstallScriptsDisabled: true,
       compilerBinaryHashed: true,
       lockfileHashed: true,
     },
@@ -227,7 +306,24 @@ try {
       pinnedSourceRevision: PINNED_CIRCOM_REVISION,
       executable: compilerArtifact,
     },
+    dependencyInstallation: {
+      method: "pnpm-offline-frozen-lockfile",
+      requiredPnpmVersion: REQUIRED_PNPM_VERSION,
+      actualPnpmVersion: dependencyWorkspace.pnpmVersion,
+      pnpmExecutable: dependencyWorkspace.pnpmExecutable,
+      productionDependencyOnly: true,
+      installScriptsEnabled: false,
+      repositoryNodeModulesUsed: false,
+    },
     inputs: {
+      rootPackageManifest: {
+        path: normalizedRepoPath(repoRoot, rootManifestPath),
+        ...artifact(rootManifestPath),
+      },
+      workspaceManifest: {
+        path: normalizedRepoPath(repoRoot, workspaceManifestPath),
+        ...artifact(workspaceManifestPath),
+      },
       packageManifest: {
         path: normalizedRepoPath(repoRoot, packageManifestPath),
         ...artifact(packageManifestPath),
@@ -245,7 +341,7 @@ try {
       rebuiltSym: artifact(rebuiltSymPath),
     },
     generatedAt: new Date().toISOString(),
-    note: "The supplied R1CS was byte-hash matched against a fresh Circom recompilation from the exact clean Git HEAD using the recorded compiler binary and recursive include closure.",
+    note: "The supplied R1CS was byte-hash matched against a fresh Circom recompilation from the exact clean Git HEAD. Circuit dependencies were rehydrated into a disposable workspace with pnpm --offline --frozen-lockfile --ignore-scripts and the repository node_modules tree was not used for include resolution or compilation.",
   };
 
   mkdirSync(outDir, { recursive: true });
@@ -264,11 +360,15 @@ try {
       gitTree,
       r1csSha256: suppliedR1cs.sha256,
       compilerSha256: compilerArtifact.sha256,
+      pnpmSha256: dependencyWorkspace.pnpmExecutable.sha256,
+      dependencyInstallMethod: "pnpm-offline-frozen-lockfile",
+      repositoryNodeModulesUsed: false,
       dependencyFileCount: sourceClosure.length,
       attestationPath,
       attestationSha256,
     })}`,
   );
 } finally {
-  rmSync(tempDir, { recursive: true, force: true });
+  rmSync(rebuildDir, { recursive: true, force: true });
+  rmSync(dependencyWorkspace.tempRoot, { recursive: true, force: true });
 }

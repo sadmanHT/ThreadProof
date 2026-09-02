@@ -170,6 +170,8 @@ jobs:
           "$RUNNER_TEMP/circom/bin/circom" --version | grep -F "2.2.0"
       - name: Compile CapacitySpend circuit
         run: pnpm --filter @threadproof/circuits compile
+      - name: Reject mutable local dependency provenance
+        run: pnpm --filter @threadproof/circuits test:dependency-rehydration
       - name: Report R1CS information
         run: pnpm --filter @threadproof/circuits info
       - name: Execute adversarial witness tests

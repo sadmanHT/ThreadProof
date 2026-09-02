@@ -4,6 +4,8 @@ import { basename, join, resolve } from "node:path";
 import { keccak256 } from "ethers";
 
 const PINNED_CIRCOM_REVISION = "9fd40a34f42912ee52230f8b6a114d78f6df1a48";
+const REQUIRED_PNPM_VERSION = "10.15.0";
+const DEPENDENCY_INSTALL_METHOD = "pnpm-offline-frozen-lockfile";
 const HASH32 = /^0x[0-9a-fA-F]{64}$/;
 const ALLOWED_ARGUMENTS = new Set([
   "circuit",
@@ -89,15 +91,21 @@ if (!/^[0-9a-f]{40}$/i.test(evidence.sourceCommit ?? "") || /^0{40}$/i.test(evid
 }
 if (
   evidence.verification?.circuitBuildRecompiled !== true ||
-  evidence.verification?.sourceCommitMatchedCleanGitHead !== true
+  evidence.verification?.sourceCommitMatchedCleanGitHead !== true ||
+  evidence.verification?.dependenciesRehydratedFromFrozenLockfile !== true ||
+  evidence.verification?.repositoryNodeModulesIgnored !== true
 ) {
-  throw new Error("Production verifier wrappers require ceremony evidence from an exact clean-source circuit recompilation");
+  throw new Error(
+    "Production verifier wrappers require ceremony evidence from an exact clean-source circuit recompilation using frozen-lockfile rehydrated dependencies",
+  );
 }
 if (
   !Number.isSafeInteger(evidence.verification?.phase2ContributionCount) ||
-  evidence.verification.phase2ContributionCount < 1
+  evidence.verification.phase2ContributionCount < 2 ||
+  !Number.isSafeInteger(evidence.verification?.minimumPhase2ContributionCount) ||
+  evidence.verification.minimumPhase2ContributionCount < 2
 ) {
-  throw new Error("Ceremony evidence does not prove at least one Phase-2 contribution");
+  throw new Error("Production ceremony evidence must enforce and prove at least two Phase-2 contributions");
 }
 if (
   evidence.handling?.participantEntropyAcceptedByThisTool !== false ||
@@ -108,6 +116,12 @@ if (
 if (evidence.build?.compilerPinnedSourceRevision !== PINNED_CIRCOM_REVISION) {
   throw new Error("Ceremony evidence was not built with the pinned ThreadProof Circom source revision");
 }
+if (
+  evidence.build?.dependencyInstallMethod !== DEPENDENCY_INSTALL_METHOD ||
+  evidence.build?.pnpmVersion !== REQUIRED_PNPM_VERSION
+) {
+  throw new Error("Ceremony evidence was not built from ThreadProof's offline frozen-lockfile dependency boundary");
+}
 const buildAttestationSha256 = requireHash32(
   evidence.artifacts?.buildAttestation?.sha256,
   "build attestation SHA-256",
@@ -115,6 +129,10 @@ const buildAttestationSha256 = requireHash32(
 const compilerBinarySha256 = requireHash32(
   evidence.build?.compilerBinarySha256,
   "compiler binary SHA-256",
+);
+const pnpmExecutableSha256 = requireHash32(
+  evidence.build?.pnpmExecutableSha256,
+  "pnpm executable SHA-256",
 );
 
 requireEvidenceHash(r1csBytes, evidence.artifacts?.r1cs, "R1CS");
@@ -156,18 +174,24 @@ const provenance = {
   setup: "production-ceremony",
   productionTrustedSetup: true,
   circuitBuildRecompiled: true,
+  dependenciesRehydratedFromFrozenLockfile: true,
+  repositoryNodeModulesIgnored: true,
   verifierComposition: "direct-inheritance",
   circuit,
   circuitVersion: 1,
   sourceCommit: evidence.sourceCommit,
   ceremonyId: evidence.ceremonyId,
   phase2ContributionCount: evidence.verification.phase2ContributionCount,
+  minimumPhase2ContributionCount: evidence.verification.minimumPhase2ContributionCount,
   build: {
     attestationSha256: buildAttestationSha256,
     gitTree: evidence.build?.gitTree,
     compilerVersion: evidence.build?.compilerVersion,
     compilerPinnedSourceRevision: evidence.build?.compilerPinnedSourceRevision,
     compilerBinarySha256,
+    dependencyInstallMethod: evidence.build?.dependencyInstallMethod,
+    pnpmVersion: evidence.build?.pnpmVersion,
+    pnpmExecutableSha256,
     dependencyFileCount: evidence.build?.dependencyFileCount,
   },
   circuitArtifact: {
@@ -199,6 +223,8 @@ console.log(
     verificationKeyHash,
     buildAttestationSha256,
     ceremonyEvidenceSha256,
+    dependencyInstallMethod: provenance.build.dependencyInstallMethod,
+    repositoryNodeModulesIgnored: true,
     verifierComposition: provenance.verifierComposition,
     verifierOutputPath,
     wrapperOutputPath,

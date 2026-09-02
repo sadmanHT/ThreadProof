@@ -7,6 +7,8 @@ import { spawnSync } from "node:child_process";
 
 const require = createRequire(import.meta.url);
 const scriptDir = dirname(fileURLToPath(import.meta.url));
+const REQUIRED_PNPM_VERSION = "10.15.0";
+const DEPENDENCY_INSTALL_METHOD = "pnpm-offline-frozen-lockfile";
 
 const ALLOWED_ARGUMENTS = new Set([
   "mode",
@@ -137,9 +139,24 @@ function verifyBuildAttestation({ mode, circuit, r1csPath, outDir, sourceCommit 
     attestation.trackedCheckoutClean !== true ||
     attestation.buildVerification?.recompiledR1csMatched !== true ||
     attestation.buildVerification?.sourceCommitMatchedHead !== true ||
-    attestation.buildVerification?.dependencyClosureHashed !== true
+    attestation.buildVerification?.dependencyClosureHashed !== true ||
+    attestation.buildVerification?.dependenciesRehydratedFromFrozenLockfile !== true ||
+    attestation.buildVerification?.repositoryNodeModulesIgnored !== true ||
+    attestation.buildVerification?.offlineDependencyInstall !== true ||
+    attestation.buildVerification?.dependencyInstallScriptsDisabled !== true
   ) {
-    throw new Error("Circuit build attestation did not prove the required clean exact-source recompilation boundary");
+    throw new Error(
+      "Circuit build attestation did not prove the required clean-source, frozen-lockfile dependency rehydration boundary",
+    );
+  }
+  if (
+    attestation.dependencyInstallation?.method !== DEPENDENCY_INSTALL_METHOD ||
+    attestation.dependencyInstallation?.requiredPnpmVersion !== REQUIRED_PNPM_VERSION ||
+    attestation.dependencyInstallation?.actualPnpmVersion !== REQUIRED_PNPM_VERSION ||
+    attestation.dependencyInstallation?.repositoryNodeModulesUsed !== false ||
+    attestation.dependencyInstallation?.installScriptsEnabled !== false
+  ) {
+    throw new Error("Circuit build attestation dependency installation metadata does not match ThreadProof policy");
   }
   if (attestation.artifacts?.suppliedR1cs?.sha256?.toLowerCase() !== sha256File(r1csPath).toLowerCase()) {
     throw new Error("Circuit build attestation R1CS hash does not match the ceremony R1CS");
@@ -189,9 +206,11 @@ if (mode === "production") {
 for (const path of [r1csPath, ptauPath, zkeyPath]) artifact(path);
 mkdirSync(outDir, { recursive: true });
 
-// This is the key source-to-ceremony boundary: before accepting a finalized zkey,
-// recompile the exact clean Git source with the pinned Circom toolchain and require
-// byte-identical R1CS output. The resulting attestation is hashed into ceremony evidence.
+// Before accepting a finalized zkey, independently reconstruct the circuit's dependency tree
+// from the frozen lockfile in an offline disposable workspace, compile from the exact clean Git
+// source, and require byte-identical R1CS output. The resulting attestation is hashed into the
+// ceremony evidence so downstream verifier generation cannot silently fall back to mutable
+// repository node_modules state.
 const { attestationPath: buildAttestationPath, attestation: buildAttestation } = verifyBuildAttestation({
   mode,
   circuit,
@@ -233,6 +252,8 @@ const evidence = {
   verification: {
     circuitBuildRecompiled: true,
     sourceCommitMatchedCleanGitHead: true,
+    dependenciesRehydratedFromFrozenLockfile: true,
+    repositoryNodeModulesIgnored: true,
     powersOfTauVerified: true,
     finalZkeyVerified: true,
     phase2ContributionCount: contributionCount,
@@ -244,6 +265,9 @@ const evidence = {
     compilerVersion: buildAttestation.compiler?.requiredVersion,
     compilerPinnedSourceRevision: buildAttestation.compiler?.pinnedSourceRevision,
     compilerBinarySha256: buildAttestation.compiler?.executable?.sha256,
+    dependencyInstallMethod: buildAttestation.dependencyInstallation?.method,
+    pnpmVersion: buildAttestation.dependencyInstallation?.actualPnpmVersion,
+    pnpmExecutableSha256: buildAttestation.dependencyInstallation?.pnpmExecutable?.sha256,
     dependencyFileCount: buildAttestation.inputs?.circuitClosure?.length,
   },
   artifacts: {
@@ -260,7 +284,7 @@ const evidence = {
     participantEntropyAcceptedByThisTool: false,
     participantPrivateMaterialPersistedByThisTool: false,
     finalZkeyCopiedByThisTool: false,
-    note: "This verifier consumes finalized ceremony artifacts only. It independently recompiles the exact circuit source before accepting the finalized zkey. Ceremony contributions and participant entropy must be created outside this repository workflow.",
+    note: "This verifier consumes finalized ceremony artifacts only. It rehydrates circuit dependencies offline from the frozen lockfile, ignores repository node_modules, and independently recompiles the exact clean circuit source before accepting the finalized zkey. Ceremony contributions and participant entropy must be created outside this repository workflow.",
   },
 };
 
@@ -275,6 +299,8 @@ console.log(
     mode,
     sourceCommit,
     circuitBuildRecompiled: true,
+    dependenciesRehydratedFromFrozenLockfile: true,
+    repositoryNodeModulesIgnored: true,
     buildAttestationPath,
     buildAttestationSha256: artifact(buildAttestationPath).sha256,
     phase2ContributionCount: contributionCount,

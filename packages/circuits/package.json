@@ -13,6 +13,7 @@
     "test:release:witness": "node scripts/test-release-witnesses.mjs",
     "test:release:groth16": "node scripts/groth16-release-smoke.mjs && node scripts/verify-production-ceremony.mjs --mode ci-validation --circuit CapacityRelease --r1cs artifacts/CapacityRelease.r1cs --ptau artifacts/dev-pot14_final.ptau --zkey artifacts/CapacityRelease_dev_final.zkey --out-dir artifacts/release-ceremony-validation",
     "test:ceremony-policy": "node scripts/test-production-ceremony-policy.mjs",
+    "test:dependency-rehydration": "node scripts/test-dependency-rehydration.mjs",
     "test:ceremony-verifier": "node scripts/verify-production-ceremony.mjs --mode ci-validation --circuit CapacitySpend --r1cs artifacts/CapacitySpend.r1cs --ptau artifacts/dev-pot14_final.ptau --zkey artifacts/CapacitySpend_dev_final.zkey --out-dir artifacts/ceremony-validation",
     "test:release:ceremony-verifier": "node scripts/verify-production-ceremony.mjs --mode ci-validation --circuit CapacityRelease --r1cs artifacts/CapacityRelease.r1cs --ptau artifacts/dev-pot14_final.ptau --zkey artifacts/CapacityRelease_dev_final.zkey --out-dir artifacts/release-ceremony-validation",
     "ceremony:verify": "node scripts/verify-production-ceremony.mjs"
