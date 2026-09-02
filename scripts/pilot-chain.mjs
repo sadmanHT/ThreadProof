@@ -3,17 +3,27 @@ import { chmod, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/prom
 import { spawnSync } from "node:child_process";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  THREADPROOF_BASELINE_VALIDATOR_COUNT,
+  THREADPROOF_HEALTHY_PEER_MINIMUM,
+  parseBesuSyncMinPeers,
+  validateThreadProofBaselinePeerPolicy,
+} from "./qbft-network-policy.mjs";
 import { validateConsortiumTopology, validatorAddressFromNodeId } from "./validate-consortium-topology.mjs";
 
 const BESU_IMAGE = "hyperledger/besu:26.8.0";
 const CHAIN_ID = 2026;
-const VALIDATOR_COUNT = 5;
+const VALIDATOR_COUNT = THREADPROOF_BASELINE_VALIDATOR_COUNT;
 const PILOT_SUBNET_PREFIX = "172.28.0.";
+const RPC_STARTUP_TIMEOUT_MS = 60_000;
+const BLOCK_PRODUCTION_TIMEOUT_MS = 45_000;
+const READINESS_POLL_INTERVAL_MS = 1_000;
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PILOT_DIR = join(REPO_ROOT, "infrastructure", "besu", "pilot");
 const RUNTIME_DIR = join(PILOT_DIR, "runtime");
 const GENERATED_DIR = join(RUNTIME_DIR, "generated");
 const COMPOSE_FILE = join(PILOT_DIR, "docker-compose.yml");
+const BESU_CONFIG_FILE = join(PILOT_DIR, "besu-config.toml");
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -32,6 +42,16 @@ function run(command, args, options = {}) {
 function ensureDocker() {
   run("docker", ["version", "--format", "{{.Server.Version}}"], { capture: true });
   run("docker", ["compose", "version"], { capture: true });
+}
+
+function sleep(ms) {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
+}
+
+async function assertPilotBesuPolicy() {
+  const source = await readFile(BESU_CONFIG_FILE, "utf8");
+  const syncMinPeers = parseBesuSyncMinPeers(source, "pilot Besu config");
+  return validateThreadProofBaselinePeerPolicy(syncMinPeers);
 }
 
 function dockerHostUserArgs() {
@@ -96,6 +116,7 @@ function besuPublicKey(keyPath, outputPath) {
 
 async function prepare() {
   ensureDocker();
+  const peerPolicy = await assertPilotBesuPolicy();
   await rm(RUNTIME_DIR, { recursive: true, force: true });
   // Runtime manifests and validator bind paths must be traversable by Besu's non-root
   // container user. The funded deployer secret is isolated below in its own 0700 dir.
@@ -198,7 +219,10 @@ async function prepare() {
   ].join("\n");
   await writeFile(join(RUNTIME_DIR, "pilot.env"), pilotEnv, { mode: 0o600 });
 
-  console.log(`Prepared disposable ThreadProof QBFT pilot: ${VALIDATOR_COUNT} validators, chain ${CHAIN_ID}.`);
+  console.log(
+    `Prepared disposable ThreadProof QBFT pilot: ${VALIDATOR_COUNT} validators, chain ${CHAIN_ID}, ` +
+      `sync-min-peers=${peerPolicy.syncMinPeers}.`,
+  );
   console.log(`Genesis SHA-256: ${genesisSha256}`);
   console.log(`Funded deployer: ${deployerAddress}`);
   console.log(`Runtime material: ${RUNTIME_DIR}`);
@@ -209,6 +233,7 @@ async function rpc(method, params = []) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    signal: AbortSignal.timeout(8_000),
   });
   if (!response.ok) throw new Error(`RPC ${method} returned HTTP ${response.status}.`);
   const body = await response.json();
@@ -216,28 +241,74 @@ async function rpc(method, params = []) {
   return body.result;
 }
 
-async function verify() {
-  let lastError;
-  for (let attempt = 0; attempt < 45; attempt += 1) {
+async function waitForHealthyTopology(timeoutMs = RPC_STARTUP_TIMEOUT_MS) {
+  const startedAt = Date.now();
+  let lastError = null;
+  while (Date.now() - startedAt < timeoutMs) {
     try {
       const chainId = Number(BigInt(await rpc("eth_chainId")));
       if (chainId !== CHAIN_ID) throw new Error(`RPC reports chain ${chainId}; expected ${CHAIN_ID}.`);
-      const blockNumber = Number(BigInt(await rpc("eth_blockNumber")));
       const peerCount = Number(BigInt(await rpc("net_peerCount")));
       const validators = await rpc("qbft_getValidatorsByBlockNumber", ["latest"]);
       if (!Array.isArray(validators) || validators.length !== VALIDATOR_COUNT) {
-        throw new Error(`QBFT reports ${Array.isArray(validators) ? validators.length : "invalid"} validators; expected ${VALIDATOR_COUNT}.`);
+        throw new Error(
+          `QBFT reports ${Array.isArray(validators) ? validators.length : "invalid"} validators; expected ${VALIDATOR_COUNT}.`,
+        );
       }
-      if (peerCount < VALIDATOR_COUNT - 1) throw new Error(`validator1 sees only ${peerCount} peers; expected at least ${VALIDATOR_COUNT - 1}.`);
-      if (blockNumber < 1) throw new Error("QBFT has not produced its first post-genesis block yet.");
-      console.log(`ThreadProof pilot healthy: chain ${chainId}, block ${blockNumber}, ${validators.length} validators, ${peerCount} peers.`);
-      return;
+      if (peerCount < THREADPROOF_HEALTHY_PEER_MINIMUM) {
+        throw new Error(
+          `validator1 sees only ${peerCount} peers; healthy startup requires at least ${THREADPROOF_HEALTHY_PEER_MINIMUM}.`,
+        );
+      }
+      return {
+        chainId,
+        peerCount,
+        validatorCount: validators.length,
+        elapsedMs: Date.now() - startedAt,
+      };
     } catch (error) {
       lastError = error;
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 1000));
+      await sleep(READINESS_POLL_INTERVAL_MS);
     }
   }
-  throw lastError instanceof Error ? lastError : new Error("ThreadProof pilot RPC did not become healthy.");
+  throw new Error(
+    `Pilot RPC/topology readiness did not become healthy within ${timeoutMs}ms` +
+      `${lastError instanceof Error ? `; last error: ${lastError.message}` : "."}`,
+  );
+}
+
+async function waitForFirstPostGenesisBlock(timeoutMs = BLOCK_PRODUCTION_TIMEOUT_MS) {
+  const startedAt = Date.now();
+  let lastBlock = 0;
+  let lastError = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      lastBlock = Number(BigInt(await rpc("eth_blockNumber")));
+      if (lastBlock >= 1) {
+        return { blockNumber: lastBlock, elapsedMs: Date.now() - startedAt };
+      }
+      lastError = new Error("QBFT has not produced its first post-genesis block yet.");
+    } catch (error) {
+      lastError = error;
+    }
+    await sleep(READINESS_POLL_INTERVAL_MS);
+  }
+  throw new Error(
+    `QBFT did not produce a post-genesis block within a dedicated ${timeoutMs}ms observation window; ` +
+      `latest block ${lastBlock}` +
+      `${lastError instanceof Error ? `; last error: ${lastError.message}` : "."}`,
+  );
+}
+
+async function verify() {
+  const peerPolicy = await assertPilotBesuPolicy();
+  const topology = await waitForHealthyTopology();
+  const block = await waitForFirstPostGenesisBlock();
+  console.log(
+    `ThreadProof pilot healthy: chain ${topology.chainId}, block ${block.blockNumber}, ` +
+      `${topology.validatorCount} validators, ${topology.peerCount} peers, sync-min-peers=${peerPolicy.syncMinPeers}; ` +
+      `RPC/topology ${topology.elapsedMs}ms, first-block observation ${block.elapsedMs}ms.`,
+  );
 }
 
 function compose(...args) {
