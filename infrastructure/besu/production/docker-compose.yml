@@ -4,7 +4,7 @@ services:
     restart: "no"
     command:
       - node
-      - /opt/threadproof/validate-consortium-topology.mjs
+      - /opt/threadproof/validate-threadproof-production-topology.mjs
     environment:
       THREADPROOF_CHAIN_ID: ${THREADPROOF_CHAIN_ID:-2026}
       THREADPROOF_CONSORTIUM_TOPOLOGY_PATH: /runtime/consortium-topology.json
@@ -18,7 +18,9 @@ services:
     security_opt:
       - no-new-privileges:true
     volumes:
+      - ../../../scripts/validate-threadproof-production-topology.mjs:/opt/threadproof/validate-threadproof-production-topology.mjs:ro
       - ../../../scripts/validate-consortium-topology.mjs:/opt/threadproof/validate-consortium-topology.mjs:ro
+      - ../../../scripts/qbft-network-policy.mjs:/opt/threadproof/qbft-network-policy.mjs:ro
       - ${THREADPROOF_CONSORTIUM_TOPOLOGY_PATH:-./consortium-topology.json}:/runtime/consortium-topology.json:ro
       - ${THREADPROOF_BESU_GENESIS_PATH:-./genesis.json}:/runtime/genesis.json:ro
       - ${THREADPROOF_BESU_STATIC_NODES_PATH:-./static-nodes.json}:/runtime/static-nodes.json:ro
