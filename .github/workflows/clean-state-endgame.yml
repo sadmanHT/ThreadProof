@@ -22,6 +22,7 @@ jobs:
       - name: Checkout exact revision
         uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           clean: true
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -129,7 +130,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: threadproof-clean-state-${{ github.sha }}
+          name: threadproof-clean-state-${{ github.event.pull_request.head.sha || github.sha }}
           retention-days: 14
           if-no-files-found: warn
           path: |
