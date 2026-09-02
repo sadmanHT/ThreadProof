@@ -284,7 +284,7 @@ requireValue(controls.supabaseLeakedPasswordProtectionVerified === true, "Supaba
 const supabaseProjectRef = cleanText(controls.supabaseProjectRef, "externalControls.supabaseProjectRef");
 requireValue(PROJECT_REF.test(supabaseProjectRef), "externalControls.supabaseProjectRef must be a lowercase Supabase project reference.");
 const controlsVerifiedAt = isoDate(controls.verifiedAt, "externalControls.verifiedAt");
-requireValue(controlsVerifiedAt >= preparedAt, "externalControls.verifiedAt must not precede release.preparedAt.");
+requireValue(controlsVerifiedAt <= preparedAt, "externalControls.verifiedAt must not follow release.preparedAt.");
 cleanText(controls.verifiedBy, "externalControls.verifiedBy");
 
 const approval = manifest.approval;
