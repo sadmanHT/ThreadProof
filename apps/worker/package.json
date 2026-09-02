@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:signer-policy": "tsx scripts/test-signer-policy.ts && tsx scripts/test-runtime-readiness.ts && tsx scripts/test-canonical-proof-preflight.ts && tsx scripts/test-indexer-cursor.ts && tsx scripts/test-job-lease.ts && tsx scripts/test-capacity-release-policy.ts && tsx scripts/test-endgame-services.ts",
+    "test:signer-policy": "tsx scripts/test-signer-policy.ts && tsx scripts/test-runtime-readiness.ts && tsx scripts/test-canonical-proof-preflight.ts && tsx scripts/test-indexer-cursor.ts && tsx scripts/test-job-lease.ts && tsx scripts/test-capacity-release-policy.ts && tsx scripts/test-endgame-services.ts && node ../../scripts/test-competition-deployment-preflight.mjs",
     "test:runtime-readiness": "tsx scripts/test-runtime-readiness.ts",
     "test:canonical-proof-preflight": "tsx scripts/test-canonical-proof-preflight.ts",
     "test:indexer-cursor": "tsx scripts/test-indexer-cursor.ts",

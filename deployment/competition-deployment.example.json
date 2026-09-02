@@ -1,0 +1,174 @@
+{
+  "format": "threadproof-competition-deployment/v1",
+  "deploymentClass": "competition-demo",
+  "sourceCommit": "REPLACE_ME_WITH_CERTIFIED_DEVELOP_SHA",
+  "chain": {
+    "chainId": 2026,
+    "consensus": "qbft",
+    "deployment": "disposable-demo",
+    "canonicalAuthority": "on-chain"
+  },
+  "services": [
+    {
+      "id": "web-api",
+      "hostClass": "web-serverless",
+      "command": "pnpm --filter @threadproof/web start",
+      "deploymentEnvironment": "staging",
+      "signerMode": "none",
+      "environmentNames": [
+        "NEXT_PUBLIC_APP_URL",
+        "NEXT_PUBLIC_SUPABASE_URL",
+        "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "THREADPROOF_RPC_URL",
+        "THREADPROOF_CHAIN_ID",
+        "NEXT_PUBLIC_THREADPROOF_CHAIN_ID",
+        "THREADPROOF_REGISTRY_ADDRESS",
+        "THREADPROOF_CREDENTIAL_REGISTRY_ADDRESS",
+        "THREADPROOF_ORDER_REGISTRY_ADDRESS",
+        "THREADPROOF_CAPACITY_VAULT_ADDRESS",
+        "THREADPROOF_SUBCONTRACT_GOVERNOR_ADDRESS",
+        "THREADPROOF_CHARTER_ADDRESS"
+      ]
+    },
+    {
+      "id": "event-indexer",
+      "hostClass": "long-running-node",
+      "command": "pnpm --filter @threadproof/worker index",
+      "deploymentEnvironment": "staging",
+      "signerMode": "disabled",
+      "environmentNames": [
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "THREADPROOF_RPC_URL",
+        "THREADPROOF_CHAIN_ID",
+        "THREADPROOF_DEPLOYMENT_ENV",
+        "THREADPROOF_REGISTRY_ADDRESS",
+        "THREADPROOF_CREDENTIAL_REGISTRY_ADDRESS",
+        "THREADPROOF_ORDER_REGISTRY_ADDRESS",
+        "THREADPROOF_CAPACITY_VAULT_ADDRESS",
+        "THREADPROOF_SUBCONTRACT_GOVERNOR_ADDRESS",
+        "THREADPROOF_CHARTER_ADDRESS",
+        "THREADPROOF_SIGNER_MODE"
+      ]
+    },
+    {
+      "id": "order-relayer",
+      "hostClass": "long-running-node",
+      "command": "pnpm --filter @threadproof/worker relay:orders",
+      "deploymentEnvironment": "staging",
+      "signerMode": "remote",
+      "environmentNames": [
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "THREADPROOF_RPC_URL",
+        "THREADPROOF_CHAIN_ID",
+        "THREADPROOF_DEPLOYMENT_ENV",
+        "THREADPROOF_REGISTRY_ADDRESS",
+        "THREADPROOF_ORDER_REGISTRY_ADDRESS",
+        "THREADPROOF_SIGNER_MODE",
+        "THREADPROOF_SIGNER_URL",
+        "THREADPROOF_RELAYER_ADDRESS"
+      ]
+    },
+    {
+      "id": "subcontract-relayer",
+      "hostClass": "long-running-node",
+      "command": "pnpm --filter @threadproof/worker relay:subcontracts",
+      "deploymentEnvironment": "staging",
+      "signerMode": "remote",
+      "environmentNames": [
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "THREADPROOF_RPC_URL",
+        "THREADPROOF_CHAIN_ID",
+        "THREADPROOF_DEPLOYMENT_ENV",
+        "THREADPROOF_REGISTRY_ADDRESS",
+        "THREADPROOF_CREDENTIAL_REGISTRY_ADDRESS",
+        "THREADPROOF_ORDER_REGISTRY_ADDRESS",
+        "THREADPROOF_CAPACITY_VAULT_ADDRESS",
+        "THREADPROOF_SUBCONTRACT_GOVERNOR_ADDRESS",
+        "THREADPROOF_SIGNER_MODE",
+        "THREADPROOF_SIGNER_URL",
+        "THREADPROOF_RELAYER_ADDRESS"
+      ]
+    },
+    {
+      "id": "capacity-spend-proof-generator",
+      "hostClass": "long-running-node",
+      "command": "pnpm --filter @threadproof/worker proof",
+      "deploymentEnvironment": "staging",
+      "signerMode": "disabled",
+      "environmentNames": [
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "THREADPROOF_RPC_URL",
+        "THREADPROOF_CHAIN_ID",
+        "THREADPROOF_DEPLOYMENT_ENV",
+        "THREADPROOF_CAPACITY_VAULT_ADDRESS",
+        "THREADPROOF_CAPACITY_WASM_PATH",
+        "THREADPROOF_CAPACITY_ZKEY_PATH",
+        "THREADPROOF_DATA_KEY_BASE64",
+        "THREADPROOF_FACTORY_SECRETS_JSON",
+        "THREADPROOF_SIGNER_MODE"
+      ]
+    },
+    {
+      "id": "capacity-spend-submitter",
+      "hostClass": "long-running-node",
+      "command": "pnpm --filter @threadproof/worker submit:proofs",
+      "deploymentEnvironment": "staging",
+      "signerMode": "remote",
+      "environmentNames": [
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "THREADPROOF_RPC_URL",
+        "THREADPROOF_CHAIN_ID",
+        "THREADPROOF_DEPLOYMENT_ENV",
+        "THREADPROOF_CAPACITY_VAULT_ADDRESS",
+        "THREADPROOF_SIGNER_MODE",
+        "THREADPROOF_SIGNER_URL",
+        "THREADPROOF_RELAYER_ADDRESS"
+      ]
+    },
+    {
+      "id": "capacity-release-proof-generator",
+      "hostClass": "long-running-node",
+      "command": "pnpm --filter @threadproof/worker release:proof",
+      "deploymentEnvironment": "staging",
+      "signerMode": "disabled",
+      "environmentNames": [
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "THREADPROOF_RPC_URL",
+        "THREADPROOF_CHAIN_ID",
+        "THREADPROOF_DEPLOYMENT_ENV",
+        "THREADPROOF_CAPACITY_VAULT_ADDRESS",
+        "THREADPROOF_CAPACITY_WASM_PATH",
+        "THREADPROOF_CAPACITY_ZKEY_PATH",
+        "THREADPROOF_DATA_KEY_BASE64",
+        "THREADPROOF_FACTORY_SECRETS_JSON",
+        "THREADPROOF_SIGNER_MODE"
+      ]
+    },
+    {
+      "id": "capacity-release-submitter",
+      "hostClass": "long-running-node",
+      "command": "pnpm --filter @threadproof/worker submit:releases",
+      "deploymentEnvironment": "staging",
+      "signerMode": "remote",
+      "environmentNames": [
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "THREADPROOF_RPC_URL",
+        "THREADPROOF_CHAIN_ID",
+        "THREADPROOF_DEPLOYMENT_ENV",
+        "THREADPROOF_CAPACITY_VAULT_ADDRESS",
+        "THREADPROOF_SIGNER_MODE",
+        "THREADPROOF_SIGNER_URL",
+        "THREADPROOF_RELAYER_ADDRESS"
+      ]
+    }
+  ]
+}

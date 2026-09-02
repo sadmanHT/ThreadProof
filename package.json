@@ -18,6 +18,8 @@
     "recovery:test": "node scripts/test-production-recovery-evidence.mjs && node scripts/test-production-recovery-source-binding.mjs",
     "infra:validate:consortium": "node scripts/validate-threadproof-production-topology.mjs",
     "infra:test:qbft-startup": "node scripts/test-qbft-startup-policy.mjs",
+    "competition:preflight": "node scripts/competition-deployment-preflight.mjs",
+    "competition:test": "node scripts/test-competition-deployment-preflight.mjs",
     "pilot:prepare": "node scripts/pilot-chain.mjs prepare",
     "pilot:up": "node scripts/pilot-chain.mjs up",
     "pilot:verify": "node scripts/pilot-chain.mjs verify",
