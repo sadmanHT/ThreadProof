@@ -15,7 +15,16 @@ const productionConfig = readFileSync(new URL("../infrastructure/besu/production
 const productionTopology = JSON.parse(
   readFileSync(new URL("../infrastructure/besu/production/consortium-topology.example.json", import.meta.url), "utf8"),
 );
+const productionCompose = readFileSync(
+  new URL("../infrastructure/besu/production/docker-compose.yml", import.meta.url),
+  "utf8",
+);
+const productionPreflight = readFileSync(
+  new URL("./validate-threadproof-production-topology.mjs", import.meta.url),
+  "utf8",
+);
 const pilotRuntime = readFileSync(new URL("./pilot-chain.mjs", import.meta.url), "utf8");
+const rootPackage = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
 assert.equal(THREADPROOF_BASELINE_VALIDATOR_COUNT, 5);
 assert.equal(THREADPROOF_TOLERATED_UNAVAILABLE_VALIDATORS, 1);
@@ -38,6 +47,26 @@ assert.equal(
   THREADPROOF_BASELINE_VALIDATOR_COUNT,
   "production topology example must model the five-validator ThreadProof baseline",
 );
+assert.equal(
+  rootPackage.scripts?.["infra:validate:consortium"],
+  "node scripts/validate-threadproof-production-topology.mjs",
+  "operator-facing topology command must use the ThreadProof five-validator production wrapper",
+);
+
+for (const fragment of [
+  "THREADPROOF_BASELINE_VALIDATOR_COUNT",
+  "topology.validators.length < THREADPROOF_BASELINE_VALIDATOR_COUNT",
+  "validateConsortiumTopology",
+]) {
+  assert.ok(productionPreflight.includes(fragment), `production preflight must include ${fragment}`);
+}
+for (const fragment of [
+  "/opt/threadproof/validate-threadproof-production-topology.mjs",
+  "/opt/threadproof/validate-consortium-topology.mjs",
+  "/opt/threadproof/qbft-network-policy.mjs",
+]) {
+  assert.ok(productionCompose.includes(fragment), `production Compose preflight must mount/use ${fragment}`);
+}
 
 assert.throws(
   () => validateQbftStartupPeerPolicy({
