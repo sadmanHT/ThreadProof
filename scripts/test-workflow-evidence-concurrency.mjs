@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 const SOURCE_EXPR = "github.event.pull_request.head.sha || github.sha";
+const SOURCE_EXPR_LITERAL = "${{ " + SOURCE_EXPR + " }}";
 const workflows = [
   ".github/workflows/ci.yml",
   ".github/workflows/endgame-scorecard.yml",
@@ -74,7 +75,7 @@ for (const workflowPath of workflows) {
 
 const qbftWorkflow = readFileSync(".github/workflows/qbft-fault-resilience.yml", "utf8");
 const qbftHarness = readFileSync("scripts/pilot-fault-resilience.mjs", "utf8");
-if (!qbftWorkflow.includes(`THREADPROOF_SOURCE_COMMIT: ${{ ${SOURCE_EXPR} }}`)) {
+if (!qbftWorkflow.includes(`THREADPROOF_SOURCE_COMMIT: ${SOURCE_EXPR_LITERAL}`)) {
   failures.push("QBFT workflow must pass the resolved exact source commit into the evidence harness");
 }
 if (!qbftHarness.includes("process.env.THREADPROOF_SOURCE_COMMIT || process.env.GITHUB_SHA || null")) {
