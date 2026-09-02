@@ -28,6 +28,25 @@ const GIT_SHA = /^[0-9a-fA-F]{40}$/;
 const VERSION = /^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 const PROJECT_REF = /^[a-z0-9]{12,40}$/;
 const FORBIDDEN_TEXT = /(todo|tbd|placeholder|replace[-_ ]?me|example|dummy|changeme)/i;
+const SECRET_KEY_FRAGMENTS = [
+  "apikey",
+  "accesstoken",
+  "refreshtoken",
+  "bearertoken",
+  "password",
+  "passwd",
+  "privatekey",
+  "secretkey",
+  "secretaccesskey",
+  "servicerolekey",
+  "mnemonic",
+  "seedphrase",
+  "authorization",
+  "authheader",
+  "signercredential",
+  "credentialsecret",
+];
+const SAFE_SECRET_LIKE_KEYS = new Set(["supabaseLeakedPasswordProtectionVerified"]);
 
 function cleanText(value, label) {
   requireValue(typeof value === "string" && value.trim().length > 0, `${label} is required.`);
@@ -56,7 +75,7 @@ function isoDate(value, label) {
   const text = cleanText(value, label);
   const parsed = Date.parse(text);
   requireValue(Number.isFinite(parsed), `${label} must be an ISO-8601 timestamp.`);
-  return text;
+  return parsed;
 }
 
 function httpsUrl(value, label) {
@@ -72,6 +91,43 @@ function httpsUrl(value, label) {
   return text;
 }
 
+function normalizeKey(key) {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function assertNoSecretMaterial(value, label = "manifest") {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => assertNoSecretMaterial(entry, `${label}[${index}]`));
+    return;
+  }
+  if (isRecord(value)) {
+    for (const [key, entry] of Object.entries(value)) {
+      const normalized = normalizeKey(key);
+      requireValue(
+        SAFE_SECRET_LIKE_KEYS.has(key) || !SECRET_KEY_FRAGMENTS.some((fragment) => normalized.includes(fragment)),
+        `${label}.${key} uses a secret-bearing field name.`,
+      );
+      assertNoSecretMaterial(entry, `${label}.${key}`);
+    }
+    return;
+  }
+  if (typeof value !== "string" || !value.includes("://")) return;
+  try {
+    const url = new URL(value);
+    requireValue(!url.username && !url.password, `${label} contains a credential-bearing URL.`);
+  } catch {
+    // Non-URL text containing :// is validated by its owning field when applicable.
+  }
+}
+
+function assertExactKeys(record, allowedKeys, label) {
+  requireValue(isRecord(record), `${label} must be an object.`);
+  const allowed = new Set(allowedKeys);
+  for (const key of Object.keys(record)) {
+    requireValue(allowed.has(key), `${label} contains unexpected field ${key}.`);
+  }
+}
+
 if (!existsSync(manifestPath)) {
   fail(`missing ${path.relative(process.cwd(), manifestPath)}. Copy release/production-release.example.json only after replacing every placeholder with verified production evidence.`);
 }
@@ -84,19 +140,25 @@ try {
 }
 
 requireValue(isRecord(manifest), "release manifest must be a JSON object.");
+assertNoSecretMaterial(manifest);
+assertExactKeys(
+  manifest,
+  ["schemaVersion", "release", "chain", "contracts", "verifiers", "signing", "evidence", "externalControls", "approval"],
+  "release manifest",
+);
 requireValue(manifest.schemaVersion === 1, "schemaVersion must equal 1.");
 
 const release = manifest.release;
-requireValue(isRecord(release), "release section is required.");
+assertExactKeys(release, ["version", "sourceDevelopCommit", "preparedAt", "preparedBy"], "release");
 const releaseVersion = cleanText(release.version, "release.version");
 requireValue(VERSION.test(releaseVersion), "release.version must be a semantic version such as v1.0.0.");
 requireValue(typeof release.sourceDevelopCommit === "string" && GIT_SHA.test(release.sourceDevelopCommit), "release.sourceDevelopCommit must be a full 40-character Git SHA.");
 requireValue(!/^0{40}$/i.test(release.sourceDevelopCommit), "release.sourceDevelopCommit must not be the zero SHA.");
-isoDate(release.preparedAt, "release.preparedAt");
+const preparedAt = isoDate(release.preparedAt, "release.preparedAt");
 cleanText(release.preparedBy, "release.preparedBy");
 
 const chain = manifest.chain;
-requireValue(isRecord(chain), "chain section is required.");
+assertExactKeys(chain, ["networkName", "chainId", "genesisHash", "validatorCount"], "chain");
 requireValue(chain.chainId === 2026, "chain.chainId must equal the ThreadProof chain ID 2026.");
 hash32(chain.genesisHash, "chain.genesisHash");
 requireValue(Number.isInteger(chain.validatorCount) && chain.validatorCount >= 5, "chain.validatorCount must be at least 5.");
@@ -112,10 +174,11 @@ const requiredContracts = [
 ];
 const contracts = manifest.contracts;
 requireValue(Array.isArray(contracts), "contracts must be an array.");
+requireValue(contracts.length === requiredContracts.length, "contracts must contain exactly the six canonical ThreadProof state contracts.");
 const byName = new Map();
 const contractAddresses = new Set();
 for (const entry of contracts) {
-  requireValue(isRecord(entry), "every contract entry must be an object.");
+  assertExactKeys(entry, ["name", "address", "runtimeCodeHash"], "contracts[]");
   const name = cleanText(entry.name, "contracts[].name");
   requireValue(!byName.has(name), `contract ${name} is duplicated.`);
   const normalizedAddress = address(entry.address, `contract ${name} address`);
@@ -129,12 +192,30 @@ for (const required of requiredContracts) {
 }
 
 const verifiers = manifest.verifiers;
-requireValue(isRecord(verifiers), "verifiers section is required.");
+assertExactKeys(verifiers, ["capacitySpend", "capacityRelease"], "verifiers");
+const verifierAddresses = new Set();
 for (const key of ["capacitySpend", "capacityRelease"]) {
   const verifier = verifiers[key];
-  requireValue(isRecord(verifier), `verifiers.${key} is required.`);
+  assertExactKeys(
+    verifier,
+    [
+      "circuitVersion",
+      "address",
+      "circuitArtifactHash",
+      "verificationKeyHash",
+      "runtimeCodeHash",
+      "buildAttestationSha256",
+      "setup",
+      "ceremonyEvidenceUrl",
+      "ceremonyEvidenceSha256",
+    ],
+    `verifiers.${key}`,
+  );
   requireValue(Number.isInteger(verifier.circuitVersion) && verifier.circuitVersion >= 1, `verifiers.${key}.circuitVersion must be a positive integer.`);
-  address(verifier.address, `verifiers.${key}.address`);
+  const normalizedVerifierAddress = address(verifier.address, `verifiers.${key}.address`);
+  requireValue(!contractAddresses.has(normalizedVerifierAddress), `verifiers.${key}.address must be distinct from all state-contract addresses.`);
+  requireValue(!verifierAddresses.has(normalizedVerifierAddress), `verifiers.${key}.address must be distinct from the other verifier address.`);
+  verifierAddresses.add(normalizedVerifierAddress);
   hash32(verifier.circuitArtifactHash, `verifiers.${key}.circuitArtifactHash`);
   hash32(verifier.verificationKeyHash, `verifiers.${key}.verificationKeyHash`);
   hash32(verifier.runtimeCodeHash, `verifiers.${key}.runtimeCodeHash`);
@@ -145,13 +226,31 @@ for (const key of ["capacitySpend", "capacityRelease"]) {
 }
 
 const signing = manifest.signing;
-requireValue(isRecord(signing), "signing section is required.");
+assertExactKeys(signing, ["mode", "kmsOrHsmBacked", "keyCustodyDescription"], "signing");
 requireValue(signing.mode === "remote-web3signer", "signing.mode must equal remote-web3signer for production.");
 requireValue(signing.kmsOrHsmBacked === true, "signing.kmsOrHsmBacked must be true.");
 cleanText(signing.keyCustodyDescription, "signing.keyCustodyDescription");
 
 const evidence = manifest.evidence;
-requireValue(isRecord(evidence), "evidence section is required.");
+assertExactKeys(
+  evidence,
+  [
+    "cleanStateRunUrl",
+    "qbftFaultRunUrl",
+    "qbftFaultEvidenceSha256",
+    "benchmarkBundleSha256",
+    "benchmarkBundleUrl",
+    "deploymentEvidenceUrl",
+    "deploymentManifestSha256",
+    "uatAdversarialEvidenceUrl",
+    "uatAdversarialEvidenceSha256",
+    "backupRecoveryEvidenceUrl",
+    "backupRecoveryEvidenceSha256",
+    "platformControlsEvidenceUrl",
+    "platformControlsEvidenceSha256",
+  ],
+  "evidence",
+);
 httpsUrl(evidence.cleanStateRunUrl, "evidence.cleanStateRunUrl");
 httpsUrl(evidence.qbftFaultRunUrl, "evidence.qbftFaultRunUrl");
 sha256(evidence.qbftFaultEvidenceSha256, "evidence.qbftFaultEvidenceSha256");
@@ -167,21 +266,35 @@ httpsUrl(evidence.platformControlsEvidenceUrl, "evidence.platformControlsEvidenc
 sha256(evidence.platformControlsEvidenceSha256, "evidence.platformControlsEvidenceSha256");
 
 const controls = manifest.externalControls;
-requireValue(isRecord(controls), "externalControls section is required.");
+assertExactKeys(
+  controls,
+  [
+    "developBranchProtectionVerified",
+    "mainBranchProtectionVerified",
+    "supabaseLeakedPasswordProtectionVerified",
+    "supabaseProjectRef",
+    "verifiedAt",
+    "verifiedBy",
+  ],
+  "externalControls",
+);
 requireValue(controls.developBranchProtectionVerified === true, "develop branch protection/ruleset must be independently verified before production release.");
 requireValue(controls.mainBranchProtectionVerified === true, "main branch protection/ruleset must be independently verified before production release.");
 requireValue(controls.supabaseLeakedPasswordProtectionVerified === true, "Supabase leaked-password protection must be independently verified before production release.");
 const supabaseProjectRef = cleanText(controls.supabaseProjectRef, "externalControls.supabaseProjectRef");
 requireValue(PROJECT_REF.test(supabaseProjectRef), "externalControls.supabaseProjectRef must be a lowercase Supabase project reference.");
-isoDate(controls.verifiedAt, "externalControls.verifiedAt");
+const controlsVerifiedAt = isoDate(controls.verifiedAt, "externalControls.verifiedAt");
+requireValue(controlsVerifiedAt <= preparedAt, "externalControls.verifiedAt must not follow release.preparedAt.");
 cleanText(controls.verifiedBy, "externalControls.verifiedBy");
 
 const approval = manifest.approval;
-requireValue(isRecord(approval), "approval section is required.");
+assertExactKeys(approval, ["changeReference", "productionReleaseApproved", "approvedBy", "approvedAt"], "approval");
 cleanText(approval.changeReference, "approval.changeReference");
 requireValue(approval.productionReleaseApproved === true, "approval.productionReleaseApproved must be true.");
 cleanText(approval.approvedBy, "approval.approvedBy");
-isoDate(approval.approvedAt, "approval.approvedAt");
+const approvedAt = isoDate(approval.approvedAt, "approval.approvedAt");
+requireValue(approvedAt >= preparedAt, "approval.approvedAt must not precede release.preparedAt.");
+requireValue(approvedAt >= controlsVerifiedAt, "approval.approvedAt must not precede externalControls.verifiedAt.");
 
 console.log(`Production release manifest is structurally ready for ${releaseVersion}.`);
 console.log(`Source develop commit: ${release.sourceDevelopCommit}`);

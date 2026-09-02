@@ -84,7 +84,7 @@ const baseManifest = {
     mainBranchProtectionVerified: true,
     supabaseLeakedPasswordProtectionVerified: true,
     supabaseProjectRef: "mgxthhwzsvlxpsombydb",
-    verifiedAt: "2026-09-01T15:31:00Z",
+    verifiedAt: "2026-09-01T15:29:00Z",
     verifiedBy: "security-operator",
   },
   approval: {
@@ -211,6 +211,46 @@ try {
   const localSigner = structuredClone(baseManifest);
   localSigner.signing.mode = "local-dev";
   expectFail(localSigner, "local production signer");
+
+  const unknownTopLevel = structuredClone(baseManifest);
+  unknownTopLevel.metadata = { note: "public but not part of the release contract" };
+  expectFail(unknownTopLevel, "unknown top-level field");
+
+  const unknownSectionField = structuredClone(baseManifest);
+  unknownSectionField.release.operatorNote = "shadow metadata";
+  expectFail(unknownSectionField, "unknown release field");
+
+  const extraContract = structuredClone(baseManifest);
+  extraContract.contracts.push({
+    name: "UnexpectedRegistry",
+    address: address("09"),
+    runtimeCodeHash: h("1"),
+  });
+  expectFail(extraContract, "extra state contract");
+
+  const verifierReusesStateAddress = structuredClone(baseManifest);
+  verifierReusesStateAddress.verifiers.capacitySpend.address = verifierReusesStateAddress.contracts[0].address;
+  expectFail(verifierReusesStateAddress, "verifier reuses state-contract address");
+
+  const duplicateVerifierAddress = structuredClone(baseManifest);
+  duplicateVerifierAddress.verifiers.capacityRelease.address = duplicateVerifierAddress.verifiers.capacitySpend.address;
+  expectFail(duplicateVerifierAddress, "duplicate verifier address");
+
+  const secretBearingExtra = structuredClone(baseManifest);
+  secretBearingExtra.approval.apiKey = "must-never-be-exported";
+  expectFail(secretBearingExtra, "secret-bearing nested field");
+
+  const credentialBearingUrl = structuredClone(baseManifest);
+  credentialBearingUrl.evidence.deploymentEvidenceUrl = "https://operator:credential@evidence.threadproof.invalid/deployment";
+  expectFail(credentialBearingUrl, "credential-bearing evidence URL");
+
+  const controlsAfterPreparation = structuredClone(baseManifest);
+  controlsAfterPreparation.externalControls.verifiedAt = "2026-09-01T15:31:00Z";
+  expectFail(controlsAfterPreparation, "external controls verified only after manifest preparation");
+
+  const approvalBeforePreparation = structuredClone(baseManifest);
+  approvalBeforePreparation.approval.approvedAt = "2026-09-01T15:29:30Z";
+  expectFail(approvalBeforePreparation, "release approved before manifest preparation");
 
   console.log("Production release readiness policy checks passed.");
 } finally {
