@@ -110,7 +110,7 @@ These controls are independent operator actions and must not be self-attested by
 - enable Supabase Auth leaked-password protection;
 - re-read GitHub protection/ruleset state and rerun Supabase security advisors.
 
-Record the verifier/operator identity and timestamp in `externalControls` only after these checks are actually complete.
+Record the verifier/operator identity and timestamp in `externalControls` only after these checks are actually complete. The final manifest enforces the lifecycle `externalControls.verifiedAt <= release.preparedAt <= approval.approvedAt`; do not backdate or reorder those attestations.
 
 ## 7. Prepare the release manifest
 
@@ -139,17 +139,21 @@ That command checks the live RPC chain ID and genesis hash, recomputes runtime b
 
 The manifest checker requires:
 
+- a closed schema at the top level and within every security-relevant section; unknown or shadow fields are rejected;
+- no secret-bearing field names or credential-bearing URLs anywhere in the manifest;
 - semantic release version;
 - full tested `develop` SHA;
 - chain ID 2026 and non-zero genesis hash;
 - at least five validators;
-- all six required protocol contracts with distinct addresses and runtime code hashes;
+- exactly the six required protocol contracts, with no extra contracts, distinct addresses and runtime code hashes;
+- both production verifier addresses distinct from each other and from every state-contract address;
 - production-ceremony evidence for both ZK verifiers;
 - non-zero circuit build-attestation SHA-256 commitments for both ZK verifiers;
 - remote Web3Signer plus KMS/HSM-backed custody;
 - clean-state, QBFT fault, benchmark and deployment evidence;
 - verified branch protection for `develop` and `main`;
 - verified Supabase leaked-password protection;
+- chronology `externalControls.verifiedAt <= release.preparedAt <= approval.approvedAt`;
 - explicit production-release approval.
 
 ## 8. Promote to main
