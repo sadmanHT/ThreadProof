@@ -39,6 +39,8 @@ jobs:
         run: |
           node scripts/test-production-uat-evidence.mjs
           node scripts/test-production-uat-template.mjs
+      - name: Test production backup/recovery release-binding policy
+        run: node scripts/test-release-recovery-evidence.mjs
       - name: Test production platform-controls evidence policy
         run: |
           node scripts/test-production-platform-controls-evidence.mjs
