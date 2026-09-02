@@ -149,7 +149,7 @@ async function main() {
     format: "threadproof-qbft-fault-resilience/v1",
     chainId: identity.chainId,
     configuredValidatorCount: identity.validatorCount,
-    sourceCommit: process.env.GITHUB_SHA || null,
+    sourceCommit: process.env.THREADPROOF_SOURCE_COMMIT || process.env.GITHUB_SHA || null,
     startedAt: new Date().toISOString(),
     faultModel: {
       oneValidatorUnavailable: "network must remain live with 4/5 validators",
