@@ -20,6 +20,9 @@ if (hostedPassword && !/^\$\{\{\s*secrets\.[A-Z0-9_]+\s*\}\}$/.test(hostedPasswo
 if (!ciWorkflow.includes("node scripts/test-consortium-topology-preflight.mjs")) {
   throw new Error("Security CI must execute the consortium topology preflight regression suite");
 }
+if (!ciWorkflow.includes("node scripts/test-qbft-fault-resilience-policy.mjs")) {
+  throw new Error("Security CI must execute the composed QBFT startup/fault-resilience policy regression suite");
+}
 
 const envSource = await readFile("apps/worker/src/env.ts", "utf8");
 for (const required of [
@@ -57,6 +60,9 @@ for (const required of [
   "condition: service_completed_successfully",
   "network_mode: none",
   "THREADPROOF_CONSORTIUM_TOPOLOGY_PATH",
+  "/opt/threadproof/validate-threadproof-production-topology.mjs",
+  "/opt/threadproof/validate-consortium-topology.mjs",
+  "/opt/threadproof/qbft-network-policy.mjs",
   "127.0.0.1:8545:8545",
   "127.0.0.1:8546:8546",
   "127.0.0.1:9000:9000",
@@ -86,8 +92,9 @@ for (const required of [
   "discovery-enabled=false",
   "permissions-nodes-config-file-enabled=true",
   'permissions-nodes-config-file="/etc/besu/permissions_config.toml"',
+  "sync-min-peers=3",
 ]) {
-  if (!besuConfig.includes(required)) throw new Error(`Besu peer-admission boundary is missing ${required}`);
+  if (!besuConfig.includes(required)) throw new Error(`Besu peer-admission/startup boundary is missing ${required}`);
 }
 if (besuConfig.includes("rpc-http-cors-origins=[]")) {
   throw new Error("Besu must use its default deny-by-absence CORS behavior instead of an invalid empty domain entry");
@@ -102,14 +109,38 @@ for (const required of [
   "nodes-allowlist",
 ]) {
   if (!topologyValidator.includes(required)) {
-    throw new Error(`Consortium topology preflight is missing required fail-closed boundary: ${required}`);
+    throw new Error(`Generic consortium topology validator is missing required fail-closed boundary: ${required}`);
+  }
+}
+
+const productionTopologyValidator = await readFile("scripts/validate-threadproof-production-topology.mjs", "utf8");
+for (const required of [
+  "THREADPROOF_BASELINE_VALIDATOR_COUNT",
+  "topology.validators.length < THREADPROOF_BASELINE_VALIDATOR_COUNT",
+  "validateConsortiumTopology",
+]) {
+  if (!productionTopologyValidator.includes(required)) {
+    throw new Error(`ThreadProof production topology wrapper is missing required five-validator boundary: ${required}`);
+  }
+}
+
+const startupPolicy = await readFile("scripts/qbft-network-policy.mjs", "utf8");
+for (const required of [
+  "THREADPROOF_BASELINE_VALIDATOR_COUNT = 5",
+  "THREADPROOF_TOLERATED_UNAVAILABLE_VALIDATORS = 1",
+  "THREADPROOF_SYNC_MIN_PEERS = 3",
+  "remotePeersWithToleratedUnavailable",
+]) {
+  if (!startupPolicy.includes(required)) {
+    throw new Error(`ThreadProof QBFT startup policy is missing required boundary: ${required}`);
   }
 }
 
 const productionReadme = await readFile("infrastructure/besu/production/README.md", "utf8");
 for (const required of [
   "pnpm infra:validate:consortium",
-  "at least four validator enodes",
+  "at least five validator enodes",
+  "sync-min-peers=3",
   "not a resilient consortium deployment",
 ]) {
   if (!productionReadme.includes(required)) {
@@ -121,8 +152,13 @@ const topologyExample = JSON.parse(await readFile(
   "infrastructure/besu/production/consortium-topology.example.json",
   "utf8",
 ));
-if (topologyExample.chainId !== 2026 || topologyExample.consensus !== "qbft" || topologyExample.validators?.length < 4) {
-  throw new Error("Consortium topology example must describe a four-validator-or-greater QBFT chain 2026 deployment");
+if (topologyExample.chainId !== 2026 || topologyExample.consensus !== "qbft" || topologyExample.validators?.length < 5) {
+  throw new Error("Consortium topology example must describe a five-validator-or-greater QBFT chain 2026 deployment");
+}
+
+const rootPackage = JSON.parse(await readFile("package.json", "utf8"));
+if (rootPackage.scripts?.["infra:validate:consortium"] !== "node scripts/validate-threadproof-production-topology.mjs") {
+  throw new Error("Operator-facing consortium validation must execute the ThreadProof five-validator production wrapper");
 }
 
 const kmsExample = await readFile(
@@ -151,4 +187,4 @@ for (const path of infraFiles) {
   }
 }
 
-console.log("Production signing, spend recovery, quorum topology, Besu, and hosted E2E boundary checks passed");
+console.log("Production signing, spend recovery, five-validator quorum topology, explicit sync policy, Besu, and hosted E2E boundary checks passed");
