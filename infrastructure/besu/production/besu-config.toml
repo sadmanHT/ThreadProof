@@ -9,6 +9,10 @@ discovery-enabled=false
 static-nodes-file="/etc/besu/static-nodes.json"
 permissions-nodes-config-file-enabled=true
 permissions-nodes-config-file="/etc/besu/permissions_config.toml"
+# Five-validator ThreadProof baseline: a running validator sees three other
+# validator peers when one validator is unavailable. This setting controls Besu
+# sync/startup peer selection only and does not weaken QBFT voting/quorum rules.
+sync-min-peers=3
 
 host-allowlist=["localhost","127.0.0.1","besu","threadproof-rpc.internal"]
 rpc-http-enabled=true
