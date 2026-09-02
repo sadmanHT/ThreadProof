@@ -76,11 +76,14 @@ const baseManifest = {
     uatAdversarialEvidenceSha256: sha("4"),
     backupRecoveryEvidenceUrl: "https://evidence.threadproof.invalid/backup-recovery",
     backupRecoveryEvidenceSha256: sha("5"),
+    platformControlsEvidenceUrl: "https://evidence.threadproof.invalid/platform-controls",
+    platformControlsEvidenceSha256: sha("6"),
   },
   externalControls: {
     developBranchProtectionVerified: true,
     mainBranchProtectionVerified: true,
     supabaseLeakedPasswordProtectionVerified: true,
+    supabaseProjectRef: "mgxthhwzsvlxpsombydb",
     verifiedAt: "2026-09-01T15:31:00Z",
     verifiedBy: "security-operator",
   },
@@ -180,6 +183,26 @@ try {
   const insecureRecoveryEvidence = structuredClone(baseManifest);
   insecureRecoveryEvidence.evidence.backupRecoveryEvidenceUrl = "http://evidence.threadproof.invalid/backup-recovery";
   expectFail(insecureRecoveryEvidence, "non-HTTPS backup/recovery evidence URL");
+
+  const missingPlatformEvidence = structuredClone(baseManifest);
+  delete missingPlatformEvidence.evidence.platformControlsEvidenceUrl;
+  expectFail(missingPlatformEvidence, "missing platform-controls evidence URL");
+
+  const zeroPlatformEvidence = structuredClone(baseManifest);
+  zeroPlatformEvidence.evidence.platformControlsEvidenceSha256 = "0".repeat(64);
+  expectFail(zeroPlatformEvidence, "zero platform-controls evidence digest");
+
+  const insecurePlatformEvidence = structuredClone(baseManifest);
+  insecurePlatformEvidence.evidence.platformControlsEvidenceUrl = "http://evidence.threadproof.invalid/platform-controls";
+  expectFail(insecurePlatformEvidence, "non-HTTPS platform-controls evidence URL");
+
+  const missingSupabaseProject = structuredClone(baseManifest);
+  delete missingSupabaseProject.externalControls.supabaseProjectRef;
+  expectFail(missingSupabaseProject, "missing Supabase project reference");
+
+  const invalidSupabaseProject = structuredClone(baseManifest);
+  invalidSupabaseProject.externalControls.supabaseProjectRef = "INVALID PROJECT REF";
+  expectFail(invalidSupabaseProject, "invalid Supabase project reference");
 
   const placeholder = structuredClone(baseManifest);
   placeholder.release.preparedBy = "REPLACE_ME";

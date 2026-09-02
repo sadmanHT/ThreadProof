@@ -26,6 +26,7 @@ const HEX_20 = /^0x[0-9a-fA-F]{40}$/;
 const SHA256 = /^[0-9a-fA-F]{64}$/;
 const GIT_SHA = /^[0-9a-fA-F]{40}$/;
 const VERSION = /^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+const PROJECT_REF = /^[a-z0-9]{12,40}$/;
 const FORBIDDEN_TEXT = /(todo|tbd|placeholder|replace[-_ ]?me|example|dummy|changeme)/i;
 
 function cleanText(value, label) {
@@ -67,6 +68,7 @@ function httpsUrl(value, label) {
     fail(`${label} must be a valid URL.`);
   }
   requireValue(url.protocol === "https:", `${label} must use https.`);
+  requireValue(!url.username && !url.password, `${label} must not contain URL credentials.`);
   return text;
 }
 
@@ -161,12 +163,16 @@ httpsUrl(evidence.uatAdversarialEvidenceUrl, "evidence.uatAdversarialEvidenceUrl
 sha256(evidence.uatAdversarialEvidenceSha256, "evidence.uatAdversarialEvidenceSha256");
 httpsUrl(evidence.backupRecoveryEvidenceUrl, "evidence.backupRecoveryEvidenceUrl");
 sha256(evidence.backupRecoveryEvidenceSha256, "evidence.backupRecoveryEvidenceSha256");
+httpsUrl(evidence.platformControlsEvidenceUrl, "evidence.platformControlsEvidenceUrl");
+sha256(evidence.platformControlsEvidenceSha256, "evidence.platformControlsEvidenceSha256");
 
 const controls = manifest.externalControls;
 requireValue(isRecord(controls), "externalControls section is required.");
 requireValue(controls.developBranchProtectionVerified === true, "develop branch protection/ruleset must be independently verified before production release.");
 requireValue(controls.mainBranchProtectionVerified === true, "main branch protection/ruleset must be independently verified before production release.");
 requireValue(controls.supabaseLeakedPasswordProtectionVerified === true, "Supabase leaked-password protection must be independently verified before production release.");
+const supabaseProjectRef = cleanText(controls.supabaseProjectRef, "externalControls.supabaseProjectRef");
+requireValue(PROJECT_REF.test(supabaseProjectRef), "externalControls.supabaseProjectRef must be a lowercase Supabase project reference.");
 isoDate(controls.verifiedAt, "externalControls.verifiedAt");
 cleanText(controls.verifiedBy, "externalControls.verifiedBy");
 
@@ -181,3 +187,4 @@ console.log(`Production release manifest is structurally ready for ${releaseVers
 console.log(`Source develop commit: ${release.sourceDevelopCommit}`);
 console.log(`Chain: ${chain.networkName} (${chain.chainId}), validators: ${chain.validatorCount}`);
 console.log(`Verified contracts: ${requiredContracts.join(", ")}`);
+console.log(`Platform controls evidence is bound to Supabase project ${supabaseProjectRef}.`);

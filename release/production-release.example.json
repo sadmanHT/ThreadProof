@@ -60,12 +60,15 @@
     "uatAdversarialEvidenceUrl": "REPLACE_ME",
     "uatAdversarialEvidenceSha256": "REPLACE_ME_WITH_64_HEX_SHA256",
     "backupRecoveryEvidenceUrl": "REPLACE_ME",
-    "backupRecoveryEvidenceSha256": "REPLACE_ME_WITH_64_HEX_SHA256"
+    "backupRecoveryEvidenceSha256": "REPLACE_ME_WITH_64_HEX_SHA256",
+    "platformControlsEvidenceUrl": "REPLACE_ME",
+    "platformControlsEvidenceSha256": "REPLACE_ME_WITH_64_HEX_SHA256"
   },
   "externalControls": {
     "developBranchProtectionVerified": false,
     "mainBranchProtectionVerified": false,
     "supabaseLeakedPasswordProtectionVerified": false,
+    "supabaseProjectRef": "REPLACE_ME_WITH_PRODUCTION_SUPABASE_PROJECT_REF",
     "verifiedAt": "REPLACE_ME",
     "verifiedBy": "REPLACE_ME"
   },
