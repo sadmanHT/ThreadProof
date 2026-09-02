@@ -10,6 +10,7 @@ const ALLOWED_MAINTENANCE_FILES = new Set([
   "scripts/trusted-main-release-guard.mjs",
   "scripts/trusted-main-target-history-guard.mjs",
   "scripts/trusted-main-build-evidence-guard.mjs",
+  "scripts/trusted-main-platform-controls-guard.mjs",
   "scripts/trusted-main-maintenance-guard.mjs",
   "docs/MAIN_RELEASE_GUARD_BOOTSTRAP.md",
 ]);
@@ -18,10 +19,12 @@ const POLICY_FILES = new Set([
   "scripts/trusted-main-release-guard.mjs",
   "scripts/trusted-main-target-history-guard.mjs",
   "scripts/trusted-main-build-evidence-guard.mjs",
+  "scripts/trusted-main-platform-controls-guard.mjs",
   "scripts/trusted-main-maintenance-guard.mjs",
 ]);
 const ALLOWED_WORKFLOW_SHA256 = new Set([
   "0cb214dbff3f430933e391e6e79c503490dbe0bd2a8c0afdebe751e915f71fa4",
+  "28a6c0379b6ced4a19a2101cc213dcdb6d8b84d911aabbb333ef9ae352374f38",
 ]);
 const GIT_SHA = /^[0-9a-fA-F]{40}$/;
 const FORBIDDEN_TEXT = /(todo|tbd|placeholder|replace[-_ ]?me|example|dummy|changeme)/i;
