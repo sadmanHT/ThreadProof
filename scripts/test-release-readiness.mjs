@@ -72,6 +72,8 @@ const baseManifest = {
     benchmarkBundleSha256: sha("1"),
     deploymentEvidenceUrl: "https://evidence.threadproof.invalid/deployment",
     deploymentManifestSha256: sha("2"),
+    verifierGovernanceEvidenceUrl: "https://evidence.threadproof.invalid/verifier-governance",
+    verifierGovernanceEvidenceSha256: sha("7"),
     uatAdversarialEvidenceUrl: "https://evidence.threadproof.invalid/uat-adversarial",
     uatAdversarialEvidenceSha256: sha("4"),
     backupRecoveryEvidenceUrl: "https://evidence.threadproof.invalid/backup-recovery",
@@ -159,6 +161,18 @@ try {
   const insecureFaultUrl = structuredClone(baseManifest);
   insecureFaultUrl.evidence.qbftFaultRunUrl = "http://evidence.threadproof.invalid/qbft-fault";
   expectFail(insecureFaultUrl, "non-HTTPS QBFT fault-run URL");
+
+  const missingGovernanceEvidence = structuredClone(baseManifest);
+  delete missingGovernanceEvidence.evidence.verifierGovernanceEvidenceUrl;
+  expectFail(missingGovernanceEvidence, "missing verifier-governance evidence URL");
+
+  const zeroGovernanceEvidence = structuredClone(baseManifest);
+  zeroGovernanceEvidence.evidence.verifierGovernanceEvidenceSha256 = "0".repeat(64);
+  expectFail(zeroGovernanceEvidence, "zero verifier-governance evidence digest");
+
+  const insecureGovernanceEvidence = structuredClone(baseManifest);
+  insecureGovernanceEvidence.evidence.verifierGovernanceEvidenceUrl = "http://evidence.threadproof.invalid/verifier-governance";
+  expectFail(insecureGovernanceEvidence, "non-HTTPS verifier-governance evidence URL");
 
   const missingUatEvidence = structuredClone(baseManifest);
   delete missingUatEvidence.evidence.uatAdversarialEvidenceUrl;
