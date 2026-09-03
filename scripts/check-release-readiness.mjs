@@ -242,6 +242,8 @@ assertExactKeys(
     "benchmarkBundleUrl",
     "deploymentEvidenceUrl",
     "deploymentManifestSha256",
+    "verifierGovernanceEvidenceUrl",
+    "verifierGovernanceEvidenceSha256",
     "uatAdversarialEvidenceUrl",
     "uatAdversarialEvidenceSha256",
     "backupRecoveryEvidenceUrl",
@@ -258,6 +260,8 @@ sha256(evidence.benchmarkBundleSha256, "evidence.benchmarkBundleSha256");
 httpsUrl(evidence.benchmarkBundleUrl, "evidence.benchmarkBundleUrl");
 httpsUrl(evidence.deploymentEvidenceUrl, "evidence.deploymentEvidenceUrl");
 sha256(evidence.deploymentManifestSha256, "evidence.deploymentManifestSha256");
+httpsUrl(evidence.verifierGovernanceEvidenceUrl, "evidence.verifierGovernanceEvidenceUrl");
+sha256(evidence.verifierGovernanceEvidenceSha256, "evidence.verifierGovernanceEvidenceSha256");
 httpsUrl(evidence.uatAdversarialEvidenceUrl, "evidence.uatAdversarialEvidenceUrl");
 sha256(evidence.uatAdversarialEvidenceSha256, "evidence.uatAdversarialEvidenceSha256");
 httpsUrl(evidence.backupRecoveryEvidenceUrl, "evidence.backupRecoveryEvidenceUrl");
@@ -300,4 +304,5 @@ console.log(`Production release manifest is structurally ready for ${releaseVers
 console.log(`Source develop commit: ${release.sourceDevelopCommit}`);
 console.log(`Chain: ${chain.networkName} (${chain.chainId}), validators: ${chain.validatorCount}`);
 console.log(`Verified contracts: ${requiredContracts.join(", ")}`);
+console.log("Verifier deployment provenance and Charter-governance evidence are independently release-bound.");
 console.log(`Platform controls evidence is bound to Supabase project ${supabaseProjectRef}.`);
