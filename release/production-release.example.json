@@ -57,6 +57,8 @@
     "benchmarkBundleSha256": "REPLACE_ME",
     "deploymentEvidenceUrl": "REPLACE_ME",
     "deploymentManifestSha256": "REPLACE_ME",
+    "verifierGovernanceEvidenceUrl": "REPLACE_ME",
+    "verifierGovernanceEvidenceSha256": "REPLACE_ME_WITH_64_HEX_SHA256",
     "uatAdversarialEvidenceUrl": "REPLACE_ME",
     "uatAdversarialEvidenceSha256": "REPLACE_ME_WITH_64_HEX_SHA256",
     "backupRecoveryEvidenceUrl": "REPLACE_ME",
