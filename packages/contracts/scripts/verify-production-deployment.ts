@@ -313,9 +313,9 @@ async function charterCall(charterAddress: string, functionName: string, args: u
 function matchingParsedLog(
   logs: RpcLog[],
   address: string,
-  iface: ethers.Interface,
+  iface: InstanceType<typeof ethers.Interface>,
   eventName: string,
-  predicate: (args: ethers.Result) => boolean,
+  predicate: (args: any) => boolean,
 ) {
   for (const log of logs) {
     if (!sameHex(log.address, address)) continue;
