@@ -31,6 +31,8 @@ jobs:
           node scripts/test-release-readiness.mjs
           node scripts/test-release-github-evidence.mjs
           node scripts/test-production-deployment-evidence.mjs
+          node scripts/test-production-verifier-governance-evidence.mjs
+          node scripts/test-production-verifier-governance-template.mjs
           node scripts/test-production-uat-evidence.mjs
           node scripts/test-release-recovery-evidence.mjs
           node scripts/test-production-platform-controls-evidence.mjs
@@ -44,6 +46,8 @@ jobs:
           node scripts/check-release-readiness.mjs
       - name: Verify release-bound production deployment evidence
         run: node scripts/verify-release-deployment-evidence.mjs
+      - name: Verify release-bound production verifier-governance evidence
+        run: node scripts/verify-release-verifier-governance-evidence.mjs
       - name: Verify release-bound production UAT/adversarial evidence
         run: node scripts/verify-release-uat-evidence.mjs
       - name: Verify release-bound production backup/recovery evidence
@@ -90,6 +94,7 @@ jobs:
           console.log(`Tested develop source: ${manifest.release.sourceDevelopCommit}`);
           console.log(`Chain: ${manifest.chain.networkName} (${manifest.chain.chainId})`);
           console.log(`Validators: ${manifest.chain.validatorCount}`);
-          console.log('Canonical develop workflow evidence plus release-bound deployment, UAT/adversarial, backup/recovery and platform-controls evidence are verified before release promotion.');
+          console.log('Canonical develop workflow evidence plus release-bound deployment, verifier-governance, UAT/adversarial, backup/recovery and platform-controls evidence are verified before release promotion.');
+          console.log('Verifier deployment/provenance and Charter authorization are separate release gates; neither substitutes for the other.');
           console.log('The platform-controls artifact does not enable external controls; the trusted target-side main guard independently rechecks live GitHub protected state.');
           NODE

@@ -1,0 +1,72 @@
+{
+  "format": "threadproof-production-verifier-governance/v1",
+  "result": "pass",
+  "environment": "production",
+  "releaseVersion": "v1.0.0",
+  "sourceDevelopCommit": "REPLACE_ME_WITH_TESTED_DEVELOP_SHA",
+  "observedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+  "chain": {
+    "chainId": 2026,
+    "genesisHash": "REPLACE_ME_WITH_0X_32_BYTE_GENESIS_HASH"
+  },
+  "contracts": {
+    "capacityVault": "REPLACE_ME_WITH_CAPACITY_VAULT_ADDRESS",
+    "threadProofCharter": "REPLACE_ME_WITH_CHARTER_ADDRESS"
+  },
+  "registrations": {
+    "capacitySpend": {
+      "proposalId": "REPLACE_ME_WITH_0X_32_BYTE_PROPOSAL_ID",
+      "proposalType": "VerifierRegistration",
+      "proposalTypeCode": 8,
+      "actionHash": "REPLACE_ME_WITH_0X_32_BYTE_ACTION_HASH",
+      "circuitVersion": 1,
+      "verifierAddress": "REPLACE_ME_WITH_SPEND_VERIFIER_ADDRESS",
+      "circuitArtifactHash": "REPLACE_ME_WITH_0X_32_BYTE_CIRCUIT_HASH",
+      "verificationKeyHash": "REPLACE_ME_WITH_0X_32_BYTE_VK_HASH",
+      "proposalState": "executed",
+      "policyVersion": 1,
+      "approvalsReceived": 4,
+      "approvalsRequired": 4,
+      "eligibleMask": 31,
+      "requiredMask": 12,
+      "approvalMask": 15,
+      "timelockSeconds": 86400,
+      "approvedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "executeAfter": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "execution": {
+        "txHash": "REPLACE_ME_WITH_0X_32_BYTE_TX_HASH",
+        "blockNumber": 1,
+        "blockHash": "REPLACE_ME_WITH_0X_32_BYTE_BLOCK_HASH",
+        "executedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+        "executorAddress": "REPLACE_ME_WITH_EXECUTOR_ADDRESS"
+      }
+    },
+    "capacityRelease": {
+      "proposalId": "REPLACE_ME_WITH_0X_32_BYTE_PROPOSAL_ID",
+      "proposalType": "ReleaseVerifierRegistration",
+      "proposalTypeCode": 14,
+      "actionHash": "REPLACE_ME_WITH_0X_32_BYTE_ACTION_HASH",
+      "circuitVersion": 1,
+      "verifierAddress": "REPLACE_ME_WITH_RELEASE_VERIFIER_ADDRESS",
+      "circuitArtifactHash": "REPLACE_ME_WITH_0X_32_BYTE_CIRCUIT_HASH",
+      "verificationKeyHash": "REPLACE_ME_WITH_0X_32_BYTE_VK_HASH",
+      "proposalState": "executed",
+      "policyVersion": 1,
+      "approvalsReceived": 4,
+      "approvalsRequired": 4,
+      "eligibleMask": 31,
+      "requiredMask": 12,
+      "approvalMask": 29,
+      "timelockSeconds": 86400,
+      "approvedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "executeAfter": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+      "execution": {
+        "txHash": "REPLACE_ME_WITH_0X_32_BYTE_TX_HASH",
+        "blockNumber": 1,
+        "blockHash": "REPLACE_ME_WITH_0X_32_BYTE_BLOCK_HASH",
+        "executedAt": "REPLACE_ME_WITH_ISO_TIMESTAMP",
+        "executorAddress": "REPLACE_ME_WITH_EXECUTOR_ADDRESS"
+      }
+    }
+  }
+}
