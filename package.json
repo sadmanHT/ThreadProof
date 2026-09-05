@@ -28,7 +28,8 @@
     "pilot:fault-resilience": "node scripts/pilot-fault-resilience.mjs",
     "pilot:down": "node scripts/pilot-chain.mjs down",
     "pilot:reset": "node scripts/pilot-chain.mjs reset",
-    "reset:e2e-users": "node apps/web/scripts/reset-e2e-demo-users.mjs"
+    "reset:e2e-users": "node apps/web/scripts/reset-e2e-demo-users.mjs",
+    "reset:e2e-users:sync": "node apps/web/scripts/reset-e2e-demo-users.mjs --sync-github-secret"
   },
   "devDependencies": {
     "turbo": "^2.5.6",
