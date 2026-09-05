@@ -32,6 +32,7 @@ begin
 
   lock table public.chain_events in share row exclusive mode;
   lock table public.chain_indexer_cursors in share row exclusive mode;
+  lock table public.verifier_provenance_read_model in share row exclusive mode;
 
   select count(*) into actual_event_count
   from public.chain_events
@@ -63,6 +64,7 @@ begin
 
   delete from public.chain_events where chain_id = target_chain_id;
   delete from public.chain_indexer_cursors where chain_id = target_chain_id;
+  delete from public.verifier_provenance_read_model where chain_id = target_chain_id;
 end;
 $$;
 
@@ -98,4 +100,4 @@ revoke all on function public.cleanup_browser_chain_e2e_projection(bigint,bigint
 grant execute on function public.cleanup_browser_chain_e2e_projection(bigint,bigint,bigint,text) to service_role;
 
 comment on function public.cleanup_browser_chain_e2e_projection(bigint,bigint,bigint,text) is
-'Test-only serialized cleanup gate for a browser-to-chain disposable chain-2026 projection. The caller must first verify every persisted block hash against the disposable RPC; the implementation rechecks count/cursor under locks before deletion.';
+'Test-only serialized cleanup gate for a browser-to-chain disposable chain-2026 projection. The caller must first verify every persisted block hash against the disposable RPC when canonical events/cursor exist; the implementation rechecks count/cursor under locks and removes the derived verifier-provenance read model with the owned projection.';
