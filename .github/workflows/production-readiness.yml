@@ -30,6 +30,7 @@ jobs:
         run: |
           node scripts/test-release-readiness.mjs
           node scripts/test-release-github-evidence.mjs
+          node scripts/test-release-ceremony-evidence.mjs
           node scripts/test-production-deployment-evidence.mjs
           node scripts/test-production-verifier-governance-evidence.mjs
           node scripts/test-production-verifier-governance-template.mjs
@@ -44,6 +45,8 @@ jobs:
         run: |
           test -f release/production-release.json
           node scripts/check-release-readiness.mjs
+      - name: Verify release-bound production ceremony evidence
+        run: node scripts/verify-release-ceremony-evidence.mjs
       - name: Verify release-bound production deployment evidence
         run: node scripts/verify-release-deployment-evidence.mjs
       - name: Verify release-bound production verifier-governance evidence
@@ -94,7 +97,7 @@ jobs:
           console.log(`Tested develop source: ${manifest.release.sourceDevelopCommit}`);
           console.log(`Chain: ${manifest.chain.networkName} (${manifest.chain.chainId})`);
           console.log(`Validators: ${manifest.chain.validatorCount}`);
-          console.log('Canonical develop workflow evidence plus release-bound deployment, verifier-governance, UAT/adversarial, backup/recovery and platform-controls evidence are verified before release promotion.');
-          console.log('Verifier deployment/provenance and Charter authorization are separate release gates; neither substitutes for the other.');
+          console.log('Canonical develop workflow evidence plus release-bound ceremony, deployment, verifier-governance, UAT/adversarial, backup/recovery and platform-controls evidence are verified before release promotion.');
+          console.log('Ceremony bytes, verifier deployment/provenance and Charter authorization are separate release gates; none substitutes for another.');
           console.log('The platform-controls artifact does not enable external controls; the trusted target-side main guard independently rechecks live GitHub protected state.');
           NODE

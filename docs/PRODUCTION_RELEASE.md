@@ -47,12 +47,14 @@ Before a production release:
 4. Archive each `<Circuit>_build_attestation.json` and checksum. Independently reproduce or review the recorded Git tree, compiler binary hash, source/include hashes, lockfile hash and R1CS hash.
 5. Run the consortium-approved production ceremony/setup process using the build-verified R1CS for each circuit.
 6. Verify the finalized Powers-of-Tau and zkey using `verify-production-ceremony.mjs`. Ceremony evidence must cryptographically include the corresponding build-attestation SHA-256.
-7. Archive the ceremony transcript/evidence and SHA-256 digest in durable storage.
+7. Archive the ceremony transcript/evidence and SHA-256 digest in durable storage. Preserve the exact JSON bytes emitted by the verifier; do not reformat them before release binding.
 8. Generate production verifier wrappers. They must expose `circuitArtifactHash`, `verificationKeyHash`, `buildAttestationSha256`, and `ceremonyEvidenceSha256` as immutable public constants.
 9. Deploy the final provenance-bound verifier contracts.
 10. Register the spend and release verifiers through the ThreadProof Charter governance process. Spend registration uses `VerifierRegistration`; release registration uses the dedicated `ReleaseVerifierRegistration` proposal type. Production release evidence requires the snapshotted threshold/timelock and Auditor + Regulator participation to satisfy the production governance floor.
 
 The production manifest requires `setup: "production-ceremony"` and a non-zero `buildAttestationSha256` for both verifiers. Legacy production evidence that only labels a source commit without proving a clean source-to-R1CS recompilation is rejected.
+
+During release preparation, copy the **exact verifier-emitted ceremony JSON bytes** to the fixed paths `docs/releases/<version>/capacity-spend-ceremony-evidence.json` and `docs/releases/<version>/capacity-release-ceremony-evidence.json`. The release verifier hashes those bytes before JSON parsing and requires each resulting 0x-prefixed SHA-256 to equal the corresponding manifest/deployed verifier `ceremonyEvidenceSha256`.
 
 See `docs/PRODUCTION_ZK_CEREMONY.md` for the exact artifact and command flow. See `docs/PRODUCTION_VERIFIER_GOVERNANCE_EVIDENCE.md` for the distinct verifier-authorization evidence boundary.
 
@@ -122,17 +124,23 @@ Copy `release/production-release.example.json` to `release/production-release.js
 
 Replace every placeholder with verified, non-secret production evidence. The manifest contains only public deployment identifiers, hashes, URLs and attestations; never place private keys, KMS credentials, passwords, decrypted supplier identities, ZK witnesses or Supabase service keys in it.
 
-For both `verifiers.capacitySpend` and `verifiers.capacityRelease`, record the exact production `buildAttestationSha256` emitted by the clean-source build verification and exposed by the deployed verifier wrapper.
+For both `verifiers.capacitySpend` and `verifiers.capacityRelease`, record the exact production `buildAttestationSha256` emitted by the clean-source build verification and exposed by the deployed verifier wrapper. Record the exact verifier-emitted `ceremonyEvidenceSha256` without stripping its `0x` prefix.
 
 Commit the sanitized release-bound evidence at these fixed paths for the chosen release version:
 
+- `docs/releases/<version>/capacity-spend-ceremony-evidence.json`
+- `docs/releases/<version>/capacity-release-ceremony-evidence.json`
 - `docs/releases/<version>/deployment-evidence.json`
 - `docs/releases/<version>/verifier-governance-evidence.json`
 - `docs/releases/<version>/uat-adversarial-evidence.json`
 - `docs/releases/<version>/backup-recovery-evidence.json`
 - `docs/releases/<version>/platform-controls-evidence.json`
 
-The manifest evidence SHA-256 fields must equal the hashes of the **exact committed bytes** at those paths. The archive HTTPS URLs are contextual durable-storage references; the release gates do not fetch arbitrary network content. Each local release verifier rejects path escape, symlinks, malformed evidence and digest mismatches before accepting the corresponding evidence policy.
+The ceremony JSON files are hashed as exact bytes **before parsing**. Their SHA-256 encoding is a 0x-prefixed 32-byte value and must equal `verifiers.capacitySpend.ceremonyEvidenceSha256` or `verifiers.capacityRelease.ceremonyEvidenceSha256`. Several other manifest evidence SHA-256 fields use raw 64-hex instead; do not normalize one representation into the other.
+
+The remaining manifest evidence SHA-256 fields must equal the hashes of the **exact committed bytes** at their corresponding paths. The archive HTTPS URLs are contextual durable-storage references; the release gates do not fetch arbitrary network content. Each local release verifier rejects path escape, symlinks, malformed evidence and digest mismatches before accepting the corresponding evidence policy.
+
+The ceremony verifier additionally requires `threadproof-groth16-ceremony-evidence/v1`, `mode: production`, exact circuit/source binding, verified Powers-of-Tau and final zkey flags, clean-source recompilation/frozen-lockfile dependency flags, at least two verified Phase-2 contributions, the participant-secret handling boundary, and a build-attestation hash equal to the corresponding release verifier entry. It rejects unknown or secret-bearing fields and evidence generated after `release.preparedAt`.
 
 The verifier-governance artifact must bind both final verifier registrations to distinct executed Charter proposals. For each proposal it records the exact action hash, policy snapshot, approvals, constituency masks, timelock, execution transaction, canonical block identity, and executor. Production policy requires at least four approvals, a minimum 24-hour timelock, and Auditor + Regulator in both the required and actual approval masks.
 
@@ -140,10 +148,12 @@ Validate the release policy locally:
 
 ```bash
 node scripts/test-release-readiness.mjs
+node scripts/test-release-ceremony-evidence.mjs
 node scripts/test-production-verifier-governance-evidence.mjs
 node scripts/test-production-verifier-governance-template.mjs
 node scripts/test-release-recovery-evidence.mjs
 node scripts/check-release-readiness.mjs
+node scripts/verify-release-ceremony-evidence.mjs
 node scripts/verify-release-deployment-evidence.mjs
 node scripts/verify-release-verifier-governance-evidence.mjs
 node scripts/verify-release-uat-evidence.mjs
@@ -175,6 +185,7 @@ The manifest checker requires:
 - both production verifier addresses distinct from each other and from every state-contract address;
 - production-ceremony evidence for both ZK verifiers;
 - non-zero circuit build-attestation SHA-256 commitments for both ZK verifiers;
+- exact-byte release-bound ceremony evidence for both production verifier entries;
 - exact-byte, release-bound verifier-governance evidence for both final verifier registrations;
 - remote Web3Signer plus KMS/HSM-backed custody;
 - clean-state, QBFT fault, benchmark, deployment, verifier-governance, UAT/adversarial, backup/recovery and platform-controls evidence;
@@ -189,7 +200,7 @@ The release-bound backup/recovery verifier additionally requires the exact commi
 
 Open a pull request to `main` from the dedicated `release/*` branch. Production promotion is guarded in two layers:
 
-1. The tested `develop` production-readiness workflow validates manifest structure, canonical GitHub evidence, exact-byte release-bound deployment/verifier-governance/UAT/recovery/platform evidence and release-only delta.
+1. The tested `develop` production-readiness workflow validates manifest structure, canonical GitHub evidence, exact-byte release-bound ceremony/deployment/verifier-governance/UAT/recovery/platform evidence and release-only delta.
 2. The trusted `pull_request_target` guard already installed on `main` executes only target-side policy code, never candidate code. It re-resolves all nine canonical successful `develop` push workflows for exactly `release.sourceDevelopCommit`, checks clean-state/QBFT run bindings, requires build-attestation commitments, rejects forks and moved heads, and rejects untested candidate or target-only application/config/circuit changes.
 
 Only merge after every required check is green, branch protection/rulesets actually require the trusted guard, and the PR still points to the reviewed release head.
@@ -200,7 +211,7 @@ After main promotion:
 
 - create the release tag/version;
 - publish the final manifest and release notes;
-- retain circuit build attestations, ceremony evidence, benchmark, clean-state, QBFT fault, deployment, verifier-governance, UAT/adversarial, backup/recovery and platform-controls evidence in durable storage;
+- retain circuit build attestations, exact ceremony evidence, benchmark, clean-state, QBFT fault, deployment, verifier-governance, UAT/adversarial, backup/recovery and platform-controls evidence in durable storage;
 - record genesis and contract/verifier hashes in consortium operations documentation;
 - verify workers and indexer are reporting healthy runtime state;
 - verify the web application reports the expected chain ID, bytecode and canonical transaction state.
