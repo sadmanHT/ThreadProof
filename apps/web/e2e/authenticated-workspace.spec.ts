@@ -52,7 +52,7 @@ test.describe("authenticated role workspaces", () => {
   test("governance participant reaches Charter due-process state", async ({ page }) => {
     await login(page, "governance.demo@threadproof.test");
 
-    await expect(page.locator("main").getByText("Demo Regulator", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Demo Regulator", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Exercise exceptional powers through attributable due process." })).toBeVisible();
     await expect(page.getByText("Pending / timelocked", { exact: true })).toBeVisible();
 
