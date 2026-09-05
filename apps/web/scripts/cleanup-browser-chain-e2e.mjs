@@ -5,8 +5,10 @@ const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const runId = process.env.THREADPROOF_BROWSER_E2E_RUN_ID?.trim();
 
 if (!url || !serviceRoleKey || !runId) {
-  console.error("Browser-chain cleanup requires Supabase URL, SUPABASE_SERVICE_ROLE_KEY, and THREADPROOF_BROWSER_E2E_RUN_ID.");
-  process.exit(1);
+  console.log(
+    "ThreadProof browser-chain cleanup skipped: setup credentials or run namespace are unavailable, so no namespaced fixture could have been created by this run.",
+  );
+  process.exit(0);
 }
 if (!/^[A-Za-z0-9._-]{1,120}$/.test(runId)) {
   console.error("THREADPROOF_BROWSER_E2E_RUN_ID contains unsafe characters.");
