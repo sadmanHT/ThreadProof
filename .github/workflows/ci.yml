@@ -59,6 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
       NEXT_PUBLIC_SUPABASE_URL: https://mgxthhwzsvlxpsombydb.supabase.co
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LdvioX_0DM6Dwlfwebfc0Q_XiM7VLfs
       THREADPROOF_E2E_DEMO_PASSWORD: ${{ secrets.THREADPROOF_E2E_DEMO_PASSWORD }}
@@ -83,11 +84,17 @@ jobs:
         run: |
           set -euo pipefail
           node --check apps/web/scripts/reset-e2e-demo-users.mjs
+          node --check apps/web/scripts/cleanup-e2e-drafts.mjs
           bash -n scripts/reset-e2e-users-codespaces.sh
+      - name: Remove stale hosted E2E drafts
+        run: node apps/web/scripts/cleanup-e2e-drafts.mjs
       - name: Install pinned Playwright Chromium
         run: pnpm --filter @threadproof/web exec playwright install --with-deps chromium
       - name: Browser auth-boundary tests
         run: pnpm --filter @threadproof/web e2e
+      - name: Cleanup hosted E2E drafts
+        if: always()
+        run: node apps/web/scripts/cleanup-e2e-drafts.mjs
       - name: Upload Playwright failure report
         if: failure()
         uses: actions/upload-artifact@v7
