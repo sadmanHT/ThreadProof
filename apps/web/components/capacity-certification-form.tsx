@@ -146,7 +146,8 @@ export function CapacityCertificationForm({ auditorOrganizations, factories, res
     }
   }
 
-  const busy = stage !== "idle" && stage !== "awaiting-indexer";
+  const busy = stage === "preparing" || stage === "credential" || stage === "certifying";
+  const locked = stage !== "idle";
   const buttonLabel = stage === "preparing"
     ? "Preparing encrypted opening…"
     : stage === "credential"
@@ -161,30 +162,30 @@ export function CapacityCertificationForm({ auditorOrganizations, factories, res
     <section className="panel form-panel">
       <div className="panel-heading"><div><span className="kicker">AUDITOR CERTIFICATION</span><h2>Certify a private capacity opening</h2></div></div>
       <p className="muted">Exact capacity and opening randomness are encrypted before storage. Only the Poseidon commitment, credential binding, policy, period, process and circuit version are submitted to the consortium chain.</p>
-      {error ? <div className="alert alert-error">{error}</div> : null}
-      {message ? <div className="alert alert-success">{message}</div> : null}
-      <form className="stack-form" onSubmit={certify}>
+      {error ? <div className="alert alert-error" role="alert">{error}</div> : null}
+      {message ? <div className="alert alert-success" role="status">{message}</div> : null}
+      <form className="stack-form" onSubmit={certify} aria-busy={busy || undefined}>
         <div className="field-grid two">
-          <label>Auditor organization<select name="auditorOrganizationId" required disabled={busy}>{auditorOrganizations.map((item) => <option value={item.id} key={item.id}>{item.displayName}</option>)}</select></label>
-          <label>Factory<select name="factoryOrganizationId" required disabled={busy}><option value="">Select factory</option>{factories.map((item) => <option value={item.id} key={item.id}>{item.displayName}</option>)}</select></label>
+          <label>Auditor organization<select name="auditorOrganizationId" required disabled={locked}>{auditorOrganizations.map((item) => <option value={item.id} key={item.id}>{item.displayName}</option>)}</select></label>
+          <label>Factory<select name="factoryOrganizationId" required disabled={locked}><option value="">Select factory</option>{factories.map((item) => <option value={item.id} key={item.id}>{item.displayName}</option>)}</select></label>
         </div>
         <div className="field-grid three">
-          <label>Exact certified capacity<input name="exactCapacity" inputMode="numeric" pattern="[0-9]+" required placeholder="e.g. 1200000" disabled={busy} /></label>
-          <label>Period label<input name="periodLabel" required placeholder="e.g. 2026-Q4" disabled={busy} /></label>
-          <label>Process label<input name="processLabel" required placeholder="e.g. sewing-line-a" disabled={busy} /></label>
+          <label>Exact certified capacity<input name="exactCapacity" inputMode="numeric" pattern="[0-9]+" required placeholder="e.g. 1200000" disabled={locked} /></label>
+          <label>Period label<input name="periodLabel" required placeholder="e.g. 2026-Q4" disabled={locked} /></label>
+          <label>Process label<input name="processLabel" required placeholder="e.g. sewing-line-a" disabled={locked} /></label>
         </div>
-        <label>Consortium policy hash<input name="policyHash" className="mono" required pattern="0x[0-9a-fA-F]{64}" placeholder="0x…" disabled={busy} /></label>
-        <label>Assessment methodology<textarea name="assessmentMethodology" rows={3} required placeholder="Describe the audit method and evidence basis used to certify this capacity." disabled={busy} /></label>
+        <label>Consortium policy hash<input name="policyHash" className="mono" required pattern="0x[0-9a-fA-F]{64}" placeholder="0x…" disabled={locked} /></label>
+        <label>Assessment methodology<textarea name="assessmentMethodology" rows={3} required placeholder="Describe the audit method and evidence basis used to certify this capacity." disabled={locked} /></label>
         <div className="field-grid three">
-          <label>Valid from<input name="validFrom" type="date" required disabled={busy} /></label>
-          <label>Valid until<input name="validUntil" type="date" required disabled={busy} /></label>
-          <label>Circuit version<input name="circuitVersion" type="number" min="1" max="4294967295" defaultValue="1" required disabled={busy} /></label>
+          <label>Valid from<input name="validFrom" type="date" required disabled={locked} /></label>
+          <label>Valid until<input name="validUntil" type="date" required disabled={locked} /></label>
+          <label>Circuit version<input name="circuitVersion" type="number" min="1" max="4294967295" defaultValue="1" required disabled={locked} /></label>
         </div>
         <div className="callout"><strong>Authority remains on Besu</strong><span>The server validates that the selected wallet is an active account of the auditor organization and currently holds both CredentialRegistry ISSUER_ROLE and CapacityVault CERTIFIER_ROLE. A staged database row alone never certifies capacity.</span></div>
-        <div className="form-actions"><button className="button primary" type="submit" disabled={busy || stage === "awaiting-indexer"}>{buttonLabel}</button></div>
+        <div className="form-actions"><button className="button primary" type="submit" disabled={locked} aria-busy={busy || undefined}>{buttonLabel}</button>{stage === "awaiting-indexer" ? <button className="button secondary" type="button" onClick={() => router.refresh()}>Check reconciliation</button> : null}</div>
       </form>
 
-      {resumableJobs.length ? <div className="pending-panel"><span className="kicker">RESUMABLE WORK</span><h3>Interrupted certifications</h3><p className="muted">If a wallet flow stopped after staging or credential issuance, resume the same commitment instead of creating a competing opening.</p><div className="record-list">{resumableJobs.map((job) => <div className="record-row" key={job.id}><div><strong>{job.factoryName} · {job.periodLabel}</strong><span>{job.processLabel} · {job.status.replaceAll("_", " ")}</span></div><button type="button" className="button secondary small" disabled={busy} onClick={() => resume(job.id)}>Resume</button></div>)}</div></div> : null}
+      {resumableJobs.length ? <div className="pending-panel"><span className="kicker">RESUMABLE WORK</span><h3>Interrupted certifications</h3><p className="muted">If a wallet flow stopped after staging or credential issuance, resume the same commitment instead of creating a competing opening.</p><div className="record-list">{resumableJobs.map((job) => <div className="record-row" key={job.id}><div><strong>{job.factoryName} · {job.periodLabel}</strong><span>{job.processLabel} · {job.status.replaceAll("_", " ")}</span></div><button type="button" className="button secondary small" disabled={locked} onClick={() => resume(job.id)}>Resume</button></div>)}</div></div> : null}
     </section>
   );
 }
