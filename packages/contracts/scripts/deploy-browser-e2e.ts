@@ -77,12 +77,13 @@ async function main() {
   const orders = await OrderRegistry.deploy(await registry.getAddress());
   await orders.waitForDeployment();
 
-  // Stage 1 exercises real OrderRegistry authorization. Capacity proof verification is
-  // deliberately still the explicit local mock here; Stage 2 replaces it with the
-  // provenance-bound development Groth16 verifier before any PoFC browser assertion.
-  const MockVerifier = await ethers.getContractFactory("MockCapacitySpendVerifier", admin);
-  const mockVerifier = await MockVerifier.deploy();
-  await mockVerifier.waitForDeployment();
+  // Stage 2 installs the real generated Groth16 verifier wrapped with immutable
+  // R1CS/verification-key provenance. The underlying setup remains explicitly
+  // development-only; this disposable integration evidence is never production ceremony evidence.
+  const GeneratedVerifier = await ethers.getContractFactory("CapacitySpendVerifierWithProvenance", admin);
+  const generatedVerifier = await GeneratedVerifier.deploy();
+  await generatedVerifier.waitForDeployment();
+  const generatedVerifierAddress = await generatedVerifier.getAddress();
 
   const CapacityVault = await ethers.getContractFactory("CapacityVault", admin);
   const capacityVault = await CapacityVault.deploy(
@@ -92,8 +93,21 @@ async function main() {
     await registry.getAddress(),
   );
   await capacityVault.waitForDeployment();
-  await (await capacityVault.registerVerifier(1, await mockVerifier.getAddress())).wait();
+  await (await capacityVault.registerVerifier(1, generatedVerifierAddress)).wait();
   await (await capacityVault.grantRole(await capacityVault.CERTIFIER_ROLE(), auditor.address)).wait();
+  await (await capacityVault.grantRole(await capacityVault.RELAYER_ROLE(), relayer.address)).wait();
+
+  const verifierProvenance = await capacityVault.getVerifierProvenance(1);
+  if (verifierProvenance.verifier.toLowerCase() !== generatedVerifierAddress.toLowerCase()) {
+    throw new Error("CapacityVault verifier provenance does not reference the generated Groth16 verifier");
+  }
+  if (
+    verifierProvenance.circuitArtifactHash === ethers.ZeroHash ||
+    verifierProvenance.verificationKeyHash === ethers.ZeroHash ||
+    verifierProvenance.verifierCodeHash === ethers.ZeroHash
+  ) {
+    throw new Error("Generated Groth16 verifier provenance contains a zero commitment");
+  }
 
   const SubcontractGovernor = await ethers.getContractFactory("SubcontractGovernor", admin);
   const subcontractGovernor = await SubcontractGovernor.deploy(
@@ -138,6 +152,9 @@ async function main() {
   await (await capacityVault.revokeRole(await capacityVault.PAUSER_ROLE(), adminAddress)).wait();
   await (await capacityVault.revokeRole(defaultAdminRole, adminAddress)).wait();
 
+  const relayerRoleRetained = await capacityVault.hasRole(await capacityVault.RELAYER_ROLE(), relayer.address);
+  if (!relayerRoleRetained) throw new Error("Disposable proof submitter relayer lost CapacityVault RELAYER_ROLE");
+
   await (await subcontractGovernor.grantRole(defaultAdminRole, charterAddress)).wait();
   await (await subcontractGovernor.grantRole(await subcontractGovernor.POLICY_ADMIN_ROLE(), charterAddress)).wait();
   await (await subcontractGovernor.grantRole(await subcontractGovernor.PAUSER_ROLE(), charterAddress)).wait();
@@ -146,7 +163,7 @@ async function main() {
   await (await subcontractGovernor.revokeRole(defaultAdminRole, adminAddress)).wait();
 
   const deployment = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     evidenceClass: "disposable-browser-integration",
     productionEvidence: false,
     chainId: chainId.toString(),
@@ -156,7 +173,7 @@ async function main() {
       auditor: { id: ORGANIZATIONS.auditor.id, account: auditor.address },
       regulator: { id: ORGANIZATIONS.regulator.id, account: regulator.address },
     },
-    relayer: { account: relayer.address },
+    relayer: { account: relayer.address, capacityVaultRelayerRole: relayerRoleRetained },
     contracts: {
       ThreadProofRegistry: await registry.getAddress(),
       CredentialRegistry: await credentials.getAddress(),
@@ -164,12 +181,16 @@ async function main() {
       CapacityVault: await capacityVault.getAddress(),
       SubcontractGovernor: await subcontractGovernor.getAddress(),
       ThreadProofCharter: charterAddress,
-      MockCapacitySpendVerifier: await mockVerifier.getAddress(),
+      CapacitySpendVerifierWithProvenance: generatedVerifierAddress,
     },
     verifier: {
       circuitVersion: 1,
-      kind: "mock-dev-only-stage1",
-      stage2RequiresProvenanceBoundGroth16: true,
+      kind: "development-groth16-stage2",
+      productionTrustedSetup: false,
+      address: generatedVerifierAddress,
+      circuitArtifactHash: verifierProvenance.circuitArtifactHash,
+      verificationKeyHash: verifierProvenance.verificationKeyHash,
+      verifierCodeHash: verifierProvenance.verifierCodeHash,
     },
     bootstrapAdminRetired: true,
   };
@@ -183,6 +204,7 @@ async function main() {
   console.log(`Auditor signer: ${auditor.address}`);
   console.log(`Regulator signer: ${regulator.address}`);
   console.log(`Relayer signer: ${relayer.address}`);
+  console.log(`Groth16 verifier: ${generatedVerifierAddress}`);
 }
 
 main().catch((error) => {
