@@ -78,6 +78,8 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Validate E2E fixture reset helper
+        run: node --check apps/web/scripts/reset-e2e-demo-users.mjs
       - name: Install pinned Playwright Chromium
         run: pnpm --filter @threadproof/web exec playwright install --with-deps chromium
       - name: Browser auth-boundary tests
