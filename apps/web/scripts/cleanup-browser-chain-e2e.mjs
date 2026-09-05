@@ -65,8 +65,12 @@ async function cleanupNamespacedOrders() {
       throw new Error(`Refusing to clean Stage-1 order ${order.id}: subcontract authorization work exists.`);
     }
 
-    const { error: deleteError } = await supabase.from("purchase_orders").delete().eq("id", order.id);
+    const { data: removed, error: deleteError } = await supabase.rpc("cleanup_browser_chain_e2e_order", {
+      target_order_id: order.id,
+      target_run_id: runId,
+    });
     if (deleteError) throw new Error(`Unable to delete browser-chain fixture ${order.id}: ${deleteError.message}`);
+    if (removed !== true) throw new Error(`Browser-chain fixture ${order.id} disappeared before guarded cleanup completed.`);
     deleted += 1;
   }
 
