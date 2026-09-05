@@ -127,7 +127,7 @@ test.describe("authenticated browser-to-chain real PoFC", () => {
     const buyerAddress = await installDisposableTestWallet(buyerPage, {
       privateKey: buyerPrivateKey!,
       chainId,
-      rpcUrl,
+      rpcUrl: rpcUrl!,
     });
     await login(buyerPage, "buyer.demo@threadproof.test");
     const purchaseOrderId = await createNamespacedDraft(buyerPage, externalReference, title);
@@ -181,7 +181,7 @@ test.describe("authenticated browser-to-chain real PoFC", () => {
     const auditorAddress = await installDisposableTestWallet(auditorPage, {
       privateKey: auditorPrivateKey!,
       chainId,
-      rpcUrl,
+      rpcUrl: rpcUrl!,
     });
     await login(auditorPage, "auditor.demo@threadproof.test");
     await auditorPage.goto("/app/capacity");
@@ -264,7 +264,7 @@ test.describe("authenticated browser-to-chain real PoFC", () => {
     const factoryAddress = await installDisposableTestWallet(factoryPage, {
       privateKey: factoryPrivateKey!,
       chainId,
-      rpcUrl,
+      rpcUrl: rpcUrl!,
     });
     await login(factoryPage, "factory.demo@threadproof.test");
     await factoryPage.goto("/app/proofs");
@@ -402,6 +402,7 @@ test.describe("authenticated browser-to-chain real PoFC", () => {
       args: [spendRequest, calldataProof.a, calldataProof.b, calldataProof.c],
     });
     const replayTxHash = await factoryWallet.sendTransaction({
+      chain: null,
       to: capacityVaultAddress!,
       data: replayData,
       gas: 1_500_000n,
