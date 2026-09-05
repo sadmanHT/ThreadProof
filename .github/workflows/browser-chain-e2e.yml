@@ -10,9 +10,12 @@ on:
 permissions:
   contents: read
 
+# Browser-to-chain runs share the hosted E2E Supabase projection tables. They are
+# serialized instead of cross-SHA-cancelled so an older exact-source run can finish
+# and clean its disposable projection state before the next source revision begins.
 concurrency:
-  group: threadproof-browser-chain-${{ github.event_name }}-${{ github.event.pull_request.head.sha || github.sha }}
-  cancel-in-progress: true
+  group: threadproof-browser-chain-shared-hosted-projection
+  cancel-in-progress: false
 
 jobs:
   order-authorization:
@@ -63,6 +66,13 @@ jobs:
           set -euo pipefail
           test -n "${THREADPROOF_E2E_DEMO_PASSWORD:-}" || { echo "THREADPROOF_E2E_DEMO_PASSWORD is required."; exit 1; }
           test -n "${SUPABASE_SERVICE_ROLE_KEY:-}" || { echo "THREADPROOF_E2E_SUPABASE_SERVICE_ROLE_KEY is required for the real worker/indexer path."; exit 1; }
+
+      - name: Claim exclusive empty chain-2026 projection state
+        shell: bash
+        run: |
+          set -euo pipefail
+          node apps/web/scripts/check-browser-chain-projection-isolation.mjs
+          echo "THREADPROOF_BROWSER_E2E_PROJECTION_OWNED=true" >> "$GITHUB_ENV"
 
       - name: Derive disposable per-run signer keys
         shell: bash
@@ -176,10 +186,6 @@ jobs:
             artifacts/browser-chain-order-evidence.json
             infrastructure/besu/pilot/runtime/browser-e2e-deployment.json
 
-      - name: Cleanup namespaced hosted fixtures
-        if: always()
-        run: node apps/web/scripts/cleanup-browser-chain-e2e.mjs
-
       - name: Stop integration workers
         if: always()
         shell: bash
@@ -190,6 +196,10 @@ jobs:
               kill "$(cat "$pid_file")" 2>/dev/null || true
             fi
           done
+
+      - name: Cleanup owned hosted fixtures and projection state
+        if: always()
+        run: node apps/web/scripts/cleanup-browser-chain-e2e.mjs
 
       - name: Upload browser-chain diagnostics
         if: always()
