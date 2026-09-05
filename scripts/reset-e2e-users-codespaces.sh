@@ -7,7 +7,9 @@ export NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_
 export GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-sadmanHT/ThreadProof}"
 
 if [[ -z "${SUPABASE_SECRET_KEY:-}" && -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
-  read -r -s -p "Paste the Supabase secret/service-role key (input hidden): " SUPABASE_SERVICE_ROLE_KEY
+  echo "Use Supabase Dashboard → Project Settings → API Keys → Secret key (sb_secret_...)"
+  echo "or the legacy service_role key. Do NOT paste the publishable/anon key or database password."
+  read -r -s -p "Paste the Supabase server key (input hidden): " SUPABASE_SERVICE_ROLE_KEY
   echo
   if [[ -z "$SUPABASE_SERVICE_ROLE_KEY" ]]; then
     echo "No Supabase server key was provided." >&2
