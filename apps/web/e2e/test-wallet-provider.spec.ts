@@ -93,3 +93,37 @@ test("disposable EIP-1193 wallet refuses to sign for a different account", async
 
   expect(error).toContain("refused a signature for another account");
 });
+
+test("disposable EIP-1193 wallet never exposes raw signing and requires an explicit RPC for transactions", async ({ page }) => {
+  const address = await installDisposableTestWallet(page, {
+    privateKey: TEST_PRIVATE_KEY,
+    chainId: CHAIN_ID,
+  });
+  await page.goto("/login");
+
+  const errors = await page.evaluate(async (from) => {
+    const provider = (window as Window & {
+      ethereum?: { request(args: { method: string; params?: unknown[] }): Promise<unknown> };
+    }).ethereum;
+    if (!provider) throw new Error("Test EIP-1193 provider was not installed.");
+
+    async function rejected(method: string, params: unknown[]) {
+      try {
+        await provider!.request({ method, params });
+        return null;
+      } catch (caught) {
+        return caught instanceof Error ? caught.message : String(caught);
+      }
+    }
+
+    return {
+      raw: await rejected("eth_sendRawTransaction", ["0x00"]),
+      sign: await rejected("eth_sign", [from, "0x00"]),
+      sendWithoutRpc: await rejected("eth_sendTransaction", [{ from, to: from, value: "0x0" }]),
+    };
+  }, address);
+
+  expect(errors.raw).toContain("refused browser RPC method eth_sendRawTransaction");
+  expect(errors.sign).toContain("refused browser RPC method eth_sign");
+  expect(errors.sendWithoutRpc).toContain("requires rpcUrl for eth_sendTransaction");
+});
