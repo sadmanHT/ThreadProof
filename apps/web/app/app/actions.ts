@@ -1,9 +1,9 @@
 "use server";
 
-import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { buildApplicationUrl } from "@/lib/application-origin.server";
 import { createClient } from "@/lib/supabase/server";
 import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
 
@@ -169,8 +169,15 @@ export async function createInvitationAction(_previous: InviteState, formData: F
     memberRole: formData.get("memberRole"),
   });
   if (!parsed.success) return { ok: false, message: "Enter a valid email and member role." };
-  if (!active || active.member_role !== "admin" || parsed.data.organizationId !== active.organization_id) {
-    return { ok: false, message: "Switch to the organization you administer before creating an invitation." };
+  if (!active || active.member_role !== "admin" || parsed.data.organizationId !== active.organization_id || active.organization.status !== "active") {
+    return { ok: false, message: "Switch to the active organization you administer before creating an invitation." };
+  }
+
+  let applicationOrigin: string;
+  try {
+    applicationOrigin = buildApplicationUrl("/");
+  } catch {
+    return { ok: false, message: "The application origin is not configured safely. Set NEXT_PUBLIC_APP_URL before creating invitations." };
   }
 
   const supabase = await createClient();
@@ -182,10 +189,7 @@ export async function createInvitationAction(_previous: InviteState, formData: F
   });
   if (error || !data?.[0]) return { ok: false, message: error?.message ?? "Unable to create invitation." };
 
-  const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
-  const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  const inviteUrl = `${protocol}://${host}/invite/${data[0].invite_token}`;
+  const inviteUrl = new URL(`/invite/${data[0].invite_token}`, applicationOrigin).toString();
   return { ok: true, message: `Invitation created for ${parsed.data.email}. It expires in 72 hours.`, inviteUrl };
 }
 
