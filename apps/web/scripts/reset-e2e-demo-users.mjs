@@ -9,9 +9,9 @@ const EXPECTED_USERS = [
   { id: "44444444-4444-4444-8444-444444444444", email: "governance.demo@threadproof.test" },
 ];
 
-const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
-const adminKey = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
-const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+const supabaseUrl = (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL)?.trim();
+const adminKey = (process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY)?.trim();
+const publishableKey = (process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)?.trim();
 const suppliedPassword = process.env.THREADPROOF_E2E_DEMO_PASSWORD?.trim();
 const generatedPassword = suppliedPassword ? null : `TP-E2E-${randomBytes(24).toString("base64url")}!`;
 const password = suppliedPassword ?? generatedPassword;
@@ -22,8 +22,39 @@ function fail(message) {
   throw new Error(message);
 }
 
+function decodeLegacyJwtRole(key) {
+  if (!key.startsWith("eyJ")) return null;
+  try {
+    const [, payload] = key.split(".");
+    if (!payload) return null;
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    return typeof parsed.role === "string" ? parsed.role : null;
+  } catch {
+    return null;
+  }
+}
+
+function validateAdminKeyShape(key) {
+  if (key.startsWith("sb_publishable_")) {
+    fail(
+      "A Supabase publishable key was provided. Open Supabase Dashboard → Project Settings → API Keys and use the server-side Secret key (sb_secret_...) or the legacy service_role key. Do not use the publishable/anon key or database password.",
+    );
+  }
+
+  const legacyRole = decodeLegacyJwtRole(key);
+  if (legacyRole === "anon") {
+    fail(
+      "A legacy Supabase anon key was provided. Open Supabase Dashboard → Project Settings → API Keys and copy the legacy service_role key instead, or use the newer sb_secret_... server key.",
+    );
+  }
+  if (legacyRole && legacyRole !== "service_role") {
+    fail(`The supplied legacy JWT has role '${legacyRole}', not service_role; refusing to use it for Auth Admin operations.`);
+  }
+}
+
 if (!supabaseUrl) fail("Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL).");
 if (!adminKey) fail("Missing SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY. Use a server-side key only.");
+validateAdminKeyShape(adminKey);
 if (!password || password.length < 16) fail("THREADPROOF_E2E_DEMO_PASSWORD must be at least 16 characters when supplied.");
 
 const admin = createClient(supabaseUrl, adminKey, {
@@ -36,7 +67,12 @@ const admin = createClient(supabaseUrl, adminKey, {
 
 async function verifyFixtureIdentity() {
   const { data, error } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  if (error) fail(`Unable to list Supabase Auth users: ${error.message}`);
+  if (error) {
+    const suffix = /invalid api key/i.test(error.message)
+      ? " Open Supabase Dashboard → Project Settings → API Keys and use the server-side Secret key (sb_secret_...) or legacy service_role key for this project."
+      : "";
+    fail(`Unable to list Supabase Auth users: ${error.message}.${suffix}`);
+  }
 
   const usersById = new Map(data.users.map((user) => [user.id, user]));
   for (const expected of EXPECTED_USERS) {
