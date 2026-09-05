@@ -8,6 +8,7 @@
     "clean": "hardhat clean",
     "typecheck": "hardhat compile && tsc --noEmit && node scripts/test-production-verifier-wrapper.mjs && node scripts/test-production-evidence-capture-adapter.mjs",
     "deploy:local": "hardhat run scripts/deploy-local.ts",
+    "deploy:browser-e2e": "hardhat run scripts/deploy-browser-e2e.ts --network threadproofLocal",
     "verify:generated": "hardhat run scripts/generated-verifier-smoke.ts",
     "verify:live-pofc": "hardhat run scripts/live-pofc.ts",
     "verify:live-subcontract": "hardhat run scripts/live-subcontract.ts",
