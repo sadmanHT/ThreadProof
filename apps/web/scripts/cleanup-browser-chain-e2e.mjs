@@ -153,17 +153,28 @@ async function cleanupOwnedProjectionState() {
     throw new Error(`Unable to atomically clean verified browser-chain projection state: ${cleanupError.message}`);
   }
 
-  const [{ count: remainingEvents, error: remainingEventsError }, { data: remainingCursor, error: remainingCursorError }] = await Promise.all([
+  const [remainingEventsResult, remainingCursorResult, remainingProvenanceResult] = await Promise.all([
     supabase.from("chain_events").select("id", { count: "exact", head: true }).eq("chain_id", chainId),
     supabase.from("chain_indexer_cursors").select("chain_id").eq("chain_id", chainId).maybeSingle(),
+    supabase
+      .from("verifier_provenance_read_model")
+      .select("circuit_version", { count: "exact", head: true })
+      .eq("chain_id", chainId),
   ]);
-  if (remainingEventsError) throw remainingEventsError;
-  if (remainingCursorError) throw remainingCursorError;
-  if ((remainingEvents ?? 0) !== 0 || remainingCursor) {
-    throw new Error(`Browser-chain projection cleanup left ${remainingEvents ?? 0} event(s) or a cursor for chain ${chainId}.`);
+  if (remainingEventsResult.error) throw remainingEventsResult.error;
+  if (remainingCursorResult.error) throw remainingCursorResult.error;
+  if (remainingProvenanceResult.error) throw remainingProvenanceResult.error;
+
+  const remainingEvents = remainingEventsResult.count ?? 0;
+  const remainingCursor = remainingCursorResult.data;
+  const remainingProvenance = remainingProvenanceResult.count ?? 0;
+  if (remainingEvents !== 0 || remainingCursor || remainingProvenance !== 0) {
+    throw new Error(
+      `Browser-chain projection cleanup left ${remainingEvents} event(s), ${remainingProvenance} verifier provenance row(s), or a cursor for chain ${chainId}.`,
+    );
   }
 
-  console.log(`ThreadProof browser-chain projection cleanup complete for chain ${chainId}; verified block ownership before deletion.`);
+  console.log(`ThreadProof browser-chain projection cleanup complete for chain ${chainId}; verified block ownership before deletion and removed derived verifier provenance.`);
 }
 
 let deleted = 0;
