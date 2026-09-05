@@ -56,4 +56,21 @@ test.describe("public authentication boundary", () => {
     expect(target.pathname).toBe("/login");
     expect(target.searchParams.get("error")).toBe("Unable to complete sign in.");
   });
+
+  test("action continuation rejects unsafe targets and forwarded hosts", async ({ request }) => {
+    const response = await request.get(`/app/continue?next=${encodeURIComponent("//example.invalid/steal")}`, {
+      headers: {
+        "x-forwarded-host": "example.invalid",
+        "x-forwarded-proto": "https",
+      },
+      maxRedirects: 0,
+    });
+
+    expect(response.status()).toBe(303);
+    const location = response.headers().location;
+    expect(location).toBeTruthy();
+    const target = new URL(location!);
+    expect(target.origin).toBe("http://127.0.0.1:3000");
+    expect(target.pathname).toBe("/app");
+  });
 });
