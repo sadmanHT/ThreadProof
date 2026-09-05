@@ -156,6 +156,19 @@ jobs:
           timeout 45 bash -c 'until grep -q "Order relayer runtime ready on chain 2026" artifacts/browser-chain-order-relayer.log; do sleep 1; done'
           timeout 45 bash -c 'until grep -q "Indexer runtime ready on chain 2026" artifacts/browser-chain-indexer.log; do sleep 1; done'
 
+          # A worker can print its readiness banner and then immediately fail on its
+          # first database/chain operation. Give both loops one tick and prove the
+          # actual background processes are still alive before browser automation.
+          sleep 2
+          for worker in order-relayer indexer; do
+            pid_file="$RUNNER_TEMP/threadproof-${worker}.pid"
+            if ! kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+              echo "ThreadProof ${worker} exited immediately after readiness." >&2
+              cat "artifacts/browser-chain-${worker}.log" >&2 || true
+              exit 1
+            fi
+          done
+
       - name: Install pinned Playwright Chromium
         run: pnpm --filter @threadproof/web exec playwright install --with-deps chromium
 
