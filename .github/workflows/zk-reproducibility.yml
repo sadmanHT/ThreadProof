@@ -1,0 +1,145 @@
+name: ThreadProof ZK Reproducibility
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - ".github/workflows/zk-reproducibility.yml"
+      - "packages/circuits/**"
+      - "packages/contracts/contracts/**"
+      - "packages/contracts/scripts/benchmark-generated-verifier.ts"
+      - "packages/contracts/scripts/generate-verifier-provenance-wrapper.mjs"
+      - "packages/contracts/scripts/generated-verifier-smoke.ts"
+      - "packages/contracts/package.json"
+      - "pnpm-lock.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: threadproof-zk-reproducibility-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  capacity-spend-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate circuit policy and versioned vectors
+        run: pnpm --filter @threadproof/circuits test
+
+      - name: Install pinned Circom 2.2.0 compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install \
+            --git https://github.com/iden3/circom.git \
+            --rev 9fd40a34f42912ee52230f8b6a114d78f6df1a48 \
+            --locked \
+            --root "$RUNNER_TEMP/circom" \
+            circom
+          echo "$RUNNER_TEMP/circom/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/circom/bin/circom" --version | grep -F "2.2.0"
+
+      - name: Compile CapacitySpend from exact source
+        run: pnpm --filter @threadproof/circuits compile
+
+      - name: Reject mutable dependency provenance
+        run: pnpm --filter @threadproof/circuits test:dependency-rehydration
+
+      - name: Execute versioned positive and negative vectors
+        run: pnpm --filter @threadproof/circuits test:witness
+
+      - name: Generate development Groth16 proving artifacts and attestations
+        run: pnpm --filter @threadproof/circuits test:groth16
+
+      - name: Generate provenance-bound Solidity verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf packages/contracts/contracts/generated
+          mkdir -p packages/contracts/contracts/generated
+          cp packages/circuits/artifacts/CapacitySpendVerifier.sol \
+            packages/contracts/contracts/generated/CapacitySpendVerifier.sol
+          THREADPROOF_GENERATED_PROOF_DIR="$GITHUB_WORKSPACE/packages/circuits/artifacts" \
+            node packages/contracts/scripts/generate-verifier-provenance-wrapper.mjs
+          THREADPROOF_GENERATED_PROOF_DIR="$GITHUB_WORKSPACE/packages/circuits/artifacts" \
+          THREADPROOF_GENERATED_VERIFIER_SOL="$GITHUB_WORKSPACE/packages/contracts/contracts/generated/CapacitySpendVerifierWithProvenance.sol" \
+            pnpm --filter @threadproof/contracts verify:generated
+
+      - name: Boot disposable five-validator QBFT chain
+        run: |
+          pnpm pilot:prepare
+          pnpm pilot:up
+
+      - name: Measure generated verifier gas on chain 2026
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          . infrastructure/besu/pilot/runtime/pilot.env
+          set +a
+          export THREADPROOF_GENERATED_PROOF_DIR="$GITHUB_WORKSPACE/packages/circuits/artifacts"
+          pnpm --filter @threadproof/contracts benchmark:verifier --network threadproofLocal
+
+      - name: Assemble exact-SHA ZK reproducibility package
+        env:
+          THREADPROOF_ZK_PACKAGE_MODE: ci-validation
+        run: pnpm --filter @threadproof/circuits package:zk
+
+      - name: Upload exact-SHA reproducibility package
+        uses: actions/upload-artifact@v7
+        with:
+          name: capacity-spend-zk-package-${{ github.event.pull_request.head.sha || github.sha }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            packages/circuits/vectors/CapacitySpend.v1.json
+            packages/circuits/artifacts/CapacitySpend.r1cs
+            packages/circuits/artifacts/CapacitySpend.sym
+            packages/circuits/artifacts/CapacitySpend_js/CapacitySpend.wasm
+            packages/circuits/artifacts/CapacitySpend_dev_final.zkey
+            packages/circuits/artifacts/dev-pot14_final.ptau
+            packages/circuits/artifacts/CapacitySpendVerifier.sol
+            packages/circuits/artifacts/verification_key.json
+            packages/circuits/artifacts/proof.json
+            packages/circuits/artifacts/public.json
+            packages/circuits/artifacts/CapacitySpend_benchmark.json
+            packages/circuits/artifacts/CapacitySpend_verifier_gas.json
+            packages/circuits/artifacts/witness-tests/vector-results.json
+            packages/circuits/artifacts/verifier_provenance.json
+            packages/circuits/artifacts/ceremony-validation/build-verification/CapacitySpend_build_attestation.json
+            packages/circuits/artifacts/ceremony-validation/build-verification/CapacitySpend_build_attestation.json.sha256
+            packages/circuits/artifacts/ceremony-validation/CapacitySpend_ceremony_evidence.json
+            packages/circuits/artifacts/ceremony-validation/CapacitySpend_ceremony_evidence.json.sha256
+            packages/circuits/artifacts/reproducibility/CapacitySpend_manifest.json
+            packages/circuits/artifacts/reproducibility/CapacitySpend_manifest.json.sha256
+            packages/contracts/contracts/generated/CapacitySpendVerifierWithProvenance.sol
+
+      - name: Pilot diagnostics
+        if: failure()
+        run: docker compose -f infrastructure/besu/pilot/docker-compose.yml logs --no-color || true
+
+      - name: Destroy disposable pilot network
+        if: always()
+        run: pnpm pilot:reset

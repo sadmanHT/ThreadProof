@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "format": "threadproof-capacity-spend-vectors/v1",
+  "circuit": "CapacitySpend",
+  "circuitVersion": 1,
+  "domains": {
+    "capacityCommitment": "1",
+    "orderCommitment": "2",
+    "nullifier": "3"
+  },
+  "baseInput": {
+    "factoryId": "101",
+    "periodId": "202610",
+    "processId": "1",
+    "orderId": "7001",
+    "policyHash": "9001",
+    "previousCapacity": "1800000",
+    "newCapacity": "1260000",
+    "orderWorkload": "540000",
+    "oldRandomness": "111111",
+    "newRandomness": "222222",
+    "orderRandomness": "333333",
+    "factoryNullifierSecret": "444444"
+  },
+  "cases": [
+    {
+      "id": "valid-base",
+      "description": "Certified capacity exceeds the authenticated workload and the successor state subtracts it exactly.",
+      "expected": "accept",
+      "overrides": {}
+    },
+    {
+      "id": "insufficient-capacity",
+      "description": "A workload larger than the predecessor capacity must be rejected.",
+      "expected": "reject",
+      "overrides": {
+        "previousCapacity": "1000",
+        "orderWorkload": "1001",
+        "newCapacity": "0"
+      }
+    },
+    {
+      "id": "wrong-subtraction",
+      "description": "A successor capacity that does not equal predecessor minus workload must be rejected.",
+      "expected": "reject",
+      "overrides": {
+        "newCapacity": "1260001"
+      }
+    },
+    {
+      "id": "tampered-old-commitment",
+      "description": "A predecessor commitment that does not open to the supplied private state must be rejected even when the nullifier is recomputed from the tampered value.",
+      "expected": "reject",
+      "overrides": {},
+      "mutation": {
+        "field": "oldCapacityCommitment",
+        "operation": "add",
+        "value": "1"
+      },
+      "recompute": [
+        "nullifier"
+      ]
+    },
+    {
+      "id": "tampered-order-commitment",
+      "description": "An order commitment that does not open to the supplied order workload must be rejected.",
+      "expected": "reject",
+      "overrides": {},
+      "mutation": {
+        "field": "orderCommitment",
+        "operation": "add",
+        "value": "1"
+      }
+    },
+    {
+      "id": "tampered-nullifier",
+      "description": "A nullifier not derived from the predecessor commitment and factory secret must be rejected.",
+      "expected": "reject",
+      "overrides": {},
+      "mutation": {
+        "field": "nullifier",
+        "operation": "add",
+        "value": "1"
+      }
+    },
+    {
+      "id": "capacity-over-uint64",
+      "description": "Capacity values outside the 64-bit circuit range must be rejected.",
+      "expected": "reject",
+      "overrides": {
+        "previousCapacity": "18446744073709551616",
+        "newCapacity": "18446744073709551616",
+        "orderWorkload": "0"
+      }
+    }
+  ],
+  "note": "This file is the versioned source of truth for the canonical positive and adversarial CapacitySpend witness vectors. Poseidon-derived public commitments are intentionally recomputed by the test harness from these exact decimal inputs so the vectors remain bound to the circuit's declared domain tags and circomlib implementation."
+}

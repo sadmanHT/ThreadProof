@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { buildPoseidon } from "circomlibjs";
@@ -7,32 +8,46 @@ const artifactsDir = path.resolve("artifacts");
 const testDir = path.join(artifactsDir, "witness-tests");
 const r1csPath = path.join(artifactsDir, "CapacitySpend.r1cs");
 const wasmPath = path.join(artifactsDir, "CapacitySpend_js", "CapacitySpend.wasm");
+const vectorPath = path.resolve("vectors/CapacitySpend.v1.json");
 mkdirSync(testDir, { recursive: true });
+
+const vectorBytes = readFileSync(vectorPath);
+const suite = JSON.parse(vectorBytes.toString("utf8"));
+if (
+  suite.schemaVersion !== 1 ||
+  suite.format !== "threadproof-capacity-spend-vectors/v1" ||
+  suite.circuit !== "CapacitySpend" ||
+  suite.circuitVersion !== 1
+) {
+  throw new Error("Unsupported or mismatched CapacitySpend vector suite");
+}
 
 const poseidon = await buildPoseidon();
 const field = poseidon.F;
+const domains = {
+  capacityCommitment: BigInt(suite.domains.capacityCommitment),
+  orderCommitment: BigInt(suite.domains.orderCommitment),
+  nullifier: BigInt(suite.domains.nullifier),
+};
 
 function hash(inputs) {
   return field.toString(poseidon(inputs.map((value) => BigInt(value))));
 }
 
-function deriveInput(overrides = {}) {
-  const input = {
-    factoryId: 101n,
-    periodId: 202610n,
-    processId: 1n,
-    orderId: 7001n,
-    policyHash: 9001n,
-    previousCapacity: 1_800_000n,
-    newCapacity: 1_260_000n,
-    orderWorkload: 540_000n,
-    oldRandomness: 111_111n,
-    newRandomness: 222_222n,
-    orderRandomness: 333_333n,
-    factoryNullifierSecret: 444_444n,
-    ...overrides,
-  };
+function decimalRecord(record, label) {
+  return Object.fromEntries(
+    Object.entries(record).map(([key, value]) => {
+      if (typeof value !== "string" || !/^[0-9]+$/.test(value)) {
+        throw new Error(`${label}.${key} must be an unsigned decimal string`);
+      }
+      return [key, BigInt(value)];
+    }),
+  );
+}
 
+const baseInput = decimalRecord(suite.baseInput, "baseInput");
+
+function recomputeDerived(input) {
   input.oldCapacityCommitment = BigInt(
     hash([
       input.factoryId,
@@ -41,8 +56,8 @@ function deriveInput(overrides = {}) {
       input.policyHash,
       input.previousCapacity,
       input.oldRandomness,
-      1n,
-    ])
+      domains.capacityCommitment,
+    ]),
   );
   input.newCapacityCommitment = BigInt(
     hash([
@@ -52,22 +67,44 @@ function deriveInput(overrides = {}) {
       input.policyHash,
       input.newCapacity,
       input.newRandomness,
-      1n,
-    ])
+      domains.capacityCommitment,
+    ]),
   );
   input.orderCommitment = BigInt(
-    hash([input.orderId, input.orderWorkload, input.orderRandomness, 2n])
+    hash([input.orderId, input.orderWorkload, input.orderRandomness, domains.orderCommitment]),
   );
   input.nullifier = BigInt(
-    hash([input.oldCapacityCommitment, input.factoryNullifierSecret, 3n])
+    hash([input.oldCapacityCommitment, input.factoryNullifierSecret, domains.nullifier]),
   );
+  return input;
+}
 
+function deriveInput(overrides = {}) {
+  return recomputeDerived({
+    ...baseInput,
+    ...decimalRecord(overrides, "overrides"),
+  });
+}
+
+function applyMutation(input, testCase) {
+  if (testCase.mutation) {
+    if (testCase.mutation.operation !== "add") {
+      throw new Error(`Unsupported mutation operation ${testCase.mutation.operation}`);
+    }
+    input[testCase.mutation.field] += BigInt(testCase.mutation.value);
+  }
+  for (const fieldName of testCase.recompute ?? []) {
+    if (fieldName !== "nullifier") throw new Error(`Unsupported recompute field ${fieldName}`);
+    input.nullifier = BigInt(
+      hash([input.oldCapacityCommitment, input.factoryNullifierSecret, domains.nullifier]),
+    );
+  }
   return input;
 }
 
 function toJsonInput(input) {
   return Object.fromEntries(
-    Object.entries(input).map(([key, value]) => [key, value.toString()])
+    Object.entries(input).map(([key, value]) => [key, value.toString()]),
   );
 }
 
@@ -101,83 +138,84 @@ function calculateAndCheck(name, input) {
   return { valid: true, witnessPath };
 }
 
-const validInput = deriveInput();
-const validResult = calculateAndCheck("valid", validInput);
-if (!validResult.valid) {
-  throw new Error(`Valid CapacitySpend witness was rejected at ${validResult.stage}:\n${validResult.output}`);
-}
+const results = [];
+let canonicalWritten = false;
 
-// Keep a canonical positive witness/input for the Groth16 smoke test.
-writeFileSync(
-  path.join(artifactsDir, "valid-input.json"),
-  `${JSON.stringify(toJsonInput(validInput), null, 2)}\n`
-);
-const canonicalWitness = path.join(artifactsDir, "valid.wtns");
-const canonicalCalculation = runSnarkjs([
-  "wtns",
-  "calculate",
-  wasmPath,
-  path.join(artifactsDir, "valid-input.json"),
-  canonicalWitness,
-]);
-if (canonicalCalculation.status !== 0) {
-  throw new Error(`Failed to create canonical valid witness:\n${canonicalCalculation.stdout}${canonicalCalculation.stderr}`);
-}
-const canonicalCheck = runSnarkjs(["wtns", "check", r1csPath, canonicalWitness]);
-if (canonicalCheck.status !== 0) {
-  throw new Error(`Canonical witness failed R1CS check:\n${canonicalCheck.stdout}${canonicalCheck.stderr}`);
-}
+for (const testCase of suite.cases) {
+  const input = applyMutation(deriveInput(testCase.overrides), testCase);
+  const result = calculateAndCheck(testCase.id, input);
+  const expectedValid = testCase.expected === "accept";
 
-const invalidCases = [
-  {
-    name: "insufficient-capacity",
-    input: deriveInput({ previousCapacity: 1_000n, orderWorkload: 1_001n, newCapacity: 0n }),
-  },
-  {
-    name: "wrong-subtraction",
-    input: deriveInput({ newCapacity: 1_260_001n }),
-  },
-  {
-    name: "tampered-old-commitment",
-    mutate(input) {
-      input.oldCapacityCommitment += 1n;
-      input.nullifier = BigInt(hash([input.oldCapacityCommitment, input.factoryNullifierSecret, 3n]));
-      return input;
-    },
-  },
-  {
-    name: "tampered-order-commitment",
-    mutate(input) {
-      input.orderCommitment += 1n;
-      return input;
-    },
-  },
-  {
-    name: "tampered-nullifier",
-    mutate(input) {
-      input.nullifier += 1n;
-      return input;
-    },
-  },
-  {
-    name: "capacity-over-uint64",
-    input: deriveInput({
-      previousCapacity: 1n << 64n,
-      newCapacity: 1n << 64n,
-      orderWorkload: 0n,
-    }),
-  },
-];
-
-for (const testCase of invalidCases) {
-  const input = testCase.input ?? testCase.mutate(deriveInput());
-  const result = calculateAndCheck(testCase.name, input);
-  if (result.valid) {
-    throw new Error(`Invalid CapacitySpend witness unexpectedly passed: ${testCase.name}`);
+  if (result.valid !== expectedValid) {
+    if (expectedValid) {
+      throw new Error(
+        `Valid CapacitySpend vector ${testCase.id} was rejected at ${result.stage}:\n${result.output}`,
+      );
+    }
+    throw new Error(`Invalid CapacitySpend vector unexpectedly passed: ${testCase.id}`);
   }
-  console.log(`Rejected invalid witness: ${testCase.name} (${result.stage})`);
+
+  if (expectedValid && !canonicalWritten) {
+    writeFileSync(
+      path.join(artifactsDir, "valid-input.json"),
+      `${JSON.stringify(toJsonInput(input), null, 2)}\n`,
+    );
+    const canonicalWitness = path.join(artifactsDir, "valid.wtns");
+    const canonicalCalculation = runSnarkjs([
+      "wtns",
+      "calculate",
+      wasmPath,
+      path.join(artifactsDir, "valid-input.json"),
+      canonicalWitness,
+    ]);
+    if (canonicalCalculation.status !== 0) {
+      throw new Error(
+        `Failed to create canonical valid witness:\n${canonicalCalculation.stdout}${canonicalCalculation.stderr}`,
+      );
+    }
+    const canonicalCheck = runSnarkjs(["wtns", "check", r1csPath, canonicalWitness]);
+    if (canonicalCheck.status !== 0) {
+      throw new Error(
+        `Canonical witness failed R1CS check:\n${canonicalCheck.stdout}${canonicalCheck.stderr}`,
+      );
+    }
+    canonicalWritten = true;
+  }
+
+  results.push({
+    id: testCase.id,
+    expected: testCase.expected,
+    result: result.valid ? "accepted" : "rejected",
+    rejectionStage: result.valid ? null : result.stage,
+  });
+  console.log(
+    result.valid
+      ? `Accepted valid witness: ${testCase.id}`
+      : `Rejected invalid witness: ${testCase.id} (${result.stage})`,
+  );
 }
 
+if (!canonicalWritten) throw new Error("CapacitySpend vector suite did not produce a canonical accepted witness");
+
+const vectorSha256 = `0x${createHash("sha256").update(vectorBytes).digest("hex")}`;
+const resultManifest = {
+  schemaVersion: 1,
+  format: "threadproof-capacity-spend-vector-results/v1",
+  circuit: "CapacitySpend",
+  circuitVersion: 1,
+  vectorSource: {
+    path: path.relative(process.cwd(), vectorPath).split(path.sep).join("/"),
+    sha256: vectorSha256,
+  },
+  results,
+};
+writeFileSync(
+  path.join(testDir, "vector-results.json"),
+  `${JSON.stringify(resultManifest, null, 2)}\n`,
+);
+
+const acceptedCount = results.filter((entry) => entry.result === "accepted").length;
+const rejectedCount = results.filter((entry) => entry.result === "rejected").length;
 console.log(
-  `CapacitySpend witness tests passed: 1 valid witness accepted, ${invalidCases.length} invalid witnesses rejected.`
+  `CapacitySpend witness vectors passed: ${acceptedCount} accepted case(s), ${rejectedCount} rejected case(s).`,
 );
