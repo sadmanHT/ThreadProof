@@ -31,13 +31,12 @@ export async function installDisposableTestWallet(page: Page, fixture: Disposabl
 
   await page.addInitScript(
     ({ address, chainId, signBinding }) => {
-      const browser = window as Window & {
+      const browser = window as typeof window & {
         ethereum?: {
           request(args: JsonRpcRequest): Promise<unknown>;
           on?(): void;
           removeListener?(): void;
         };
-        [key: string]: unknown;
       };
 
       browser.ethereum = {
@@ -58,7 +57,7 @@ export async function installDisposableTestWallet(page: Page, fixture: Disposabl
             if (typeof serialized !== "string") {
               throw new Error("Disposable test wallet expected serialized EIP-712 typed data.");
             }
-            const signer = browser[signBinding];
+            const signer = (browser as unknown as Record<string, unknown>)[signBinding];
             if (typeof signer !== "function") {
               throw new Error("Disposable test-wallet signing binding is unavailable.");
             }
