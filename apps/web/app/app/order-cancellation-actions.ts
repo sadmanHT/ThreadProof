@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { recoverTypedDataAddress, type Hex } from "viem";
+import { hashTypedData, recoverTypedDataAddress, type Hex } from "viem";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
@@ -159,6 +159,17 @@ export async function prepareOrderCancellationAction(input: unknown): Promise<Ca
 
     const deadlineSeconds = Math.floor(Date.now() / 1000) + 15 * 60;
     const deadlineIso = new Date(deadlineSeconds * 1000).toISOString();
+    const preparedForDigest: PreparedOrderCancellation = {
+      jobId: "pending",
+      orderId: chainOrderId,
+      chainId: actualChainId,
+      orderRegistryAddress: network.orderRegistryAddress,
+      buyerOrganizationId,
+      expectedVersion: order.current_version,
+      nonce: nonce.toString(),
+      deadline: deadlineSeconds.toString(),
+    };
+    const signedTypedDataHash = hashTypedData(buildCancelOrderTypedData(preparedForDigest));
     const { data: job, error: insertError } = await supabase
       .from("order_cancellation_jobs")
       .insert({
@@ -168,6 +179,9 @@ export async function prepareOrderCancellationAction(input: unknown): Promise<Ca
         expected_version: order.current_version,
         nonce: nonce.toString(),
         deadline: deadlineIso,
+        signed_chain_id: actualChainId,
+        signed_order_registry_address: network.orderRegistryAddress,
+        signed_typed_data_hash: signedTypedDataHash,
         created_by: viewer.userId,
         status: "prepared",
       })
@@ -214,10 +228,21 @@ export async function submitOrderCancellationSignatureAction(input: unknown): Pr
     if (actualChainId !== network.configuredChainId) {
       return { ok: false, error: "Configured Besu chain is unavailable or has the wrong chain ID." };
     }
+    if (
+      Number(job.signed_chain_id) !== actualChainId ||
+      String(job.signed_order_registry_address ?? "").toLowerCase() !== network.orderRegistryAddress.toLowerCase()
+    ) {
+      return { ok: false, error: "Prepared cancellation is bound to a different OrderRegistry domain. Prepare a fresh cancellation." };
+    }
 
     const cancellation = cancellationFromJob(job, actualChainId, network.orderRegistryAddress, buyerOrganizationId);
+    const typedData = buildCancelOrderTypedData(cancellation);
+    const signedTypedDataHash = hashTypedData(typedData);
+    if (String(job.signed_typed_data_hash ?? "").toLowerCase() !== signedTypedDataHash.toLowerCase()) {
+      return { ok: false, error: "Prepared cancellation digest no longer matches its signed payload. Prepare a fresh cancellation." };
+    }
     const signer = await recoverTypedDataAddress({
-      ...buildCancelOrderTypedData(cancellation),
+      ...typedData,
       signature: parsed.signature as Hex,
     });
 
