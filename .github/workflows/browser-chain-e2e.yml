@@ -21,7 +21,7 @@ jobs:
   order-authorization:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     env:
       NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
       NEXT_PUBLIC_SUPABASE_URL: https://mgxthhwzsvlxpsombydb.supabase.co
@@ -40,6 +40,9 @@ jobs:
       THREADPROOF_CONFIRMATIONS: "1"
       THREADPROOF_INDEXER_START_BLOCK: "0"
       THREADPROOF_INDEXER_BLOCK_BATCH: "500"
+      THREADPROOF_CAPACITY_WASM_PATH: ${{ github.workspace }}/packages/circuits/artifacts/CapacitySpend_js/CapacitySpend.wasm
+      THREADPROOF_CAPACITY_ZKEY_PATH: ${{ github.workspace }}/packages/circuits/artifacts/CapacitySpend_dev_final.zkey
+      THREADPROOF_CAPACITY_VKEY_PATH: ${{ github.workspace }}/packages/circuits/artifacts/verification_key.json
     steps:
       - name: Checkout exact source revision
         uses: actions/checkout@v7
@@ -74,7 +77,7 @@ jobs:
           node apps/web/scripts/check-browser-chain-projection-isolation.mjs
           echo "THREADPROOF_BROWSER_E2E_PROJECTION_OWNED=true" >> "$GITHUB_ENV"
 
-      - name: Derive disposable per-run signer keys
+      - name: Derive disposable per-run signer keys and factory nullifier secret
         shell: bash
         run: |
           set -euo pipefail
@@ -101,7 +104,42 @@ jobs:
               counter += 1;
             }
           }
+          process.stdout.write(`THREADPROOF_FACTORY_SECRETS_JSON=${JSON.stringify({ [`0x${"bb".repeat(32)}`]: "444444" })}\n`);
           NODE
+
+      - name: Install pinned Circom 2.2.0 compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install \
+            --git https://github.com/iden3/circom.git \
+            --rev 9fd40a34f42912ee52230f8b6a114d78f6df1a48 \
+            --locked \
+            --root "$RUNNER_TEMP/circom" \
+            circom
+          echo "$RUNNER_TEMP/circom/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/circom/bin/circom" --version | grep -F "2.2.0"
+
+      - name: Build exact-source CapacitySpend witness and Groth16 development artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @threadproof/circuits compile
+          pnpm --filter @threadproof/circuits test:witness
+          pnpm --filter @threadproof/circuits test:groth16
+
+      - name: Generate provenance-bound Groth16 verifier source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf packages/contracts/contracts/generated
+          mkdir -p packages/contracts/contracts/generated
+          cp packages/circuits/artifacts/CapacitySpendVerifier.sol \
+            packages/contracts/contracts/generated/CapacitySpendVerifier.sol
+          THREADPROOF_GENERATED_PROOF_DIR="$GITHUB_WORKSPACE/packages/circuits/artifacts" \
+            node packages/contracts/scripts/generate-verifier-provenance-wrapper.mjs
+          test -f packages/contracts/contracts/generated/CapacitySpendVerifierWithProvenance.sol
+          test -f packages/circuits/artifacts/verifier_provenance.json
 
       - name: Generate disposable five-validator QBFT topology
         run: pnpm pilot:prepare
@@ -123,9 +161,16 @@ jobs:
           pnpm --filter @threadproof/contracts deploy:browser-e2e
 
           deployment="$THREADPROOF_BROWSER_E2E_OUTPUT_PATH"
+          test "$(jq -r '.schemaVersion' "$deployment")" = "2"
           test "$(jq -r '.chainId' "$deployment")" = "2026"
           test "$(jq -r '.productionEvidence' "$deployment")" = "false"
           test "$(jq -r '.bootstrapAdminRetired' "$deployment")" = "true"
+          test "$(jq -r '.verifier.kind' "$deployment")" = "development-groth16-stage2"
+          test "$(jq -r '.verifier.productionTrustedSetup' "$deployment")" = "false"
+          test "$(jq -r '.verifier.circuitArtifactHash' "$deployment")" != "0x0000000000000000000000000000000000000000000000000000000000000000"
+          test "$(jq -r '.verifier.verificationKeyHash' "$deployment")" != "0x0000000000000000000000000000000000000000000000000000000000000000"
+          test "$(jq -r '.verifier.verifierCodeHash' "$deployment")" != "0x0000000000000000000000000000000000000000000000000000000000000000"
+          test "$(jq -r '.relayer.capacityVaultRelayerRole' "$deployment")" = "true"
 
           {
             echo "THREADPROOF_RPC_URL=$THREADPROOF_RPC_URL"
@@ -143,27 +188,48 @@ jobs:
       - name: Remove stale fixtures for this exact workflow run
         run: node apps/web/scripts/cleanup-browser-chain-e2e.mjs
 
-      - name: Start real order relayer and indexer
+      - name: Fail closed if shared proof queues already contain active work
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { createClient } from "@supabase/supabase-js";
+          const client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+            auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+          });
+          const { count, error } = await client
+            .from("proof_jobs")
+            .select("id", { count: "exact", head: true })
+            .in("status", ["queued", "generating", "generated", "submitted"]);
+          if (error) throw error;
+          if ((count ?? 0) !== 0) throw new Error(`Shared hosted proof queue contains ${count} active job(s); refusing disposable Stage 2 workers.`);
+          console.log("Shared hosted proof queue is empty before Stage 2 worker startup.");
+          NODE
+
+      - name: Start real order, indexer, proof-generator, and proof-submitter workers
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          # Give each long-lived writer its own session/process group. The PID we
-          # record is therefore also its PGID, so teardown can terminate pnpm and
-          # every tsx/node descendant before touching the hosted projection.
+          # Give every long-lived writer its own process group so teardown can prove
+          # all pnpm/tsx/node descendants are gone before hosted projection cleanup.
           setsid pnpm --filter @threadproof/worker relay:orders > artifacts/browser-chain-order-relayer.log 2>&1 &
           echo $! > "$RUNNER_TEMP/threadproof-order-relayer.pid"
           setsid pnpm --filter @threadproof/worker index > artifacts/browser-chain-indexer.log 2>&1 &
           echo $! > "$RUNNER_TEMP/threadproof-indexer.pid"
+          setsid env -u THREADPROOF_RELAYER_PRIVATE_KEY THREADPROOF_SIGNER_MODE=disabled \
+            pnpm --filter @threadproof/worker proof > artifacts/browser-chain-proof-generator.log 2>&1 &
+          echo $! > "$RUNNER_TEMP/threadproof-proof-generator.pid"
+          setsid pnpm --filter @threadproof/worker submit:proofs > artifacts/browser-chain-proof-submitter.log 2>&1 &
+          echo $! > "$RUNNER_TEMP/threadproof-proof-submitter.pid"
 
           timeout 45 bash -c 'until grep -q "Order relayer runtime ready on chain 2026" artifacts/browser-chain-order-relayer.log; do sleep 1; done'
           timeout 45 bash -c 'until grep -q "Indexer runtime ready on chain 2026" artifacts/browser-chain-indexer.log; do sleep 1; done'
+          timeout 45 bash -c 'until grep -q "Proof generator runtime ready on chain 2026" artifacts/browser-chain-proof-generator.log; do sleep 1; done'
+          timeout 45 bash -c 'until grep -q "Proof submitter runtime ready on chain 2026" artifacts/browser-chain-proof-submitter.log; do sleep 1; done'
 
-          # A worker can print its readiness banner and then immediately fail on its
-          # first database/chain operation. Give both loops one tick and prove each
-          # dedicated writer process group is still alive before browser automation.
           sleep 2
-          for worker in order-relayer indexer; do
+          for worker in order-relayer indexer proof-generator proof-submitter; do
             pid_file="$RUNNER_TEMP/threadproof-${worker}.pid"
             pid="$(cat "$pid_file")"
             if ! [[ "$pid" =~ ^[1-9][0-9]*$ ]] || ! kill -0 -- "-$pid" 2>/dev/null; then
@@ -179,29 +245,54 @@ jobs:
       - name: Drive authenticated buyer authorization to canonical OrderRegistry state
         run: pnpm --filter @threadproof/web exec playwright test e2e/browser-chain-order.spec.ts
 
+      - name: Drive auditor certification and factory browser journey through real Groth16 PoFC
+        run: pnpm --filter @threadproof/web exec playwright test e2e/browser-chain-pofc.spec.ts
+
       - name: Verify browser-chain evidence is exact-source attributed
         shell: bash
         run: |
           set -euo pipefail
-          evidence=artifacts/browser-chain-order-evidence.json
-          test -f "$evidence"
-          test "$(jq -r '.sourceSha' "$evidence")" = "$THREADPROOF_SOURCE_SHA"
-          test "$(jq -r '.chainId' "$evidence")" = "2026"
-          test "$(jq -r '.productionEvidence' "$evidence")" = "false"
-          test "$(jq -r '.applicationReconciled' "$evidence")" = "true"
-          test "$(jq -r '.browserRenderedCanonicalVersion' "$evidence")" = "true"
-          test "$(jq -r '.transactionHash' "$evidence")" != "null"
-          test "$(jq -r '.blockNumber' "$evidence")" != "null"
+          order_evidence=artifacts/browser-chain-order-evidence.json
+          pofc_evidence=artifacts/browser-chain-pofc-evidence.json
+          test -f "$order_evidence"
+          test -f "$pofc_evidence"
+
+          test "$(jq -r '.sourceSha' "$order_evidence")" = "$THREADPROOF_SOURCE_SHA"
+          test "$(jq -r '.chainId' "$order_evidence")" = "2026"
+          test "$(jq -r '.productionEvidence' "$order_evidence")" = "false"
+          test "$(jq -r '.applicationReconciled' "$order_evidence")" = "true"
+          test "$(jq -r '.browserRenderedCanonicalVersion' "$order_evidence")" = "true"
+          test "$(jq -r '.transactionHash' "$order_evidence")" != "null"
+          test "$(jq -r '.blockNumber' "$order_evidence")" != "null"
+
+          test "$(jq -r '.sourceSha' "$pofc_evidence")" = "$THREADPROOF_SOURCE_SHA"
+          test "$(jq -r '.chainId' "$pofc_evidence")" = "2026"
+          test "$(jq -r '.productionEvidence' "$pofc_evidence")" = "false"
+          test "$(jq -r '.trustedSetup' "$pofc_evidence")" = "development-only-groth16"
+          test "$(jq -r '.applicationReconciled' "$pofc_evidence")" = "true"
+          test "$(jq -r '.browserConfirmed' "$pofc_evidence")" = "true"
+          test "$(jq -r '.pofc.canonicalSuccessorMatches' "$pofc_evidence")" = "true"
+          test "$(jq -r '.pofc.nullifierConsumed' "$pofc_evidence")" = "true"
+          test "$(jq -r '.staleReplay.rejected' "$pofc_evidence")" = "true"
+          test "$(jq -r '.staleReplay.simulationErrorObserved' "$pofc_evidence")" = "true"
+          test "$(jq -r '.pofc.proofTxHash' "$pofc_evidence")" != "null"
+          test "$(jq -r '.staleReplay.transactionHash' "$pofc_evidence")" != "null"
 
       - name: Upload browser-to-chain evidence
         uses: actions/upload-artifact@v7
         with:
-          name: threadproof-browser-chain-order-${{ github.event.pull_request.head.sha || github.sha }}
+          name: threadproof-browser-chain-${{ github.event.pull_request.head.sha || github.sha }}
           retention-days: 14
           if-no-files-found: error
           path: |
             artifacts/browser-chain-order-evidence.json
+            artifacts/browser-chain-pofc-evidence.json
             infrastructure/besu/pilot/runtime/browser-e2e-deployment.json
+            packages/circuits/artifacts/verifier_provenance.json
+            packages/circuits/artifacts/CapacitySpend_benchmark.json
+            packages/circuits/artifacts/ceremony-validation/build-verification/CapacitySpend_build_attestation.json
+            packages/circuits/artifacts/ceremony-validation/CapacitySpend_ceremony_evidence.json
+            packages/contracts/contracts/generated/CapacitySpendVerifierWithProvenance.sol
 
       - name: Stop integration workers
         if: always()
@@ -242,9 +333,6 @@ jobs:
               done
             fi
 
-            # This teardown runs in a later Actions shell, so the leader is no
-            # longer our child and cannot be reliably waited on. Process-group
-            # disappearance is the authoritative shutdown condition instead.
             if kill -0 -- "-$pid" 2>/dev/null; then
               echo "::error::${worker} process group ${pid} is still alive; refusing projection cleanup."
               return 1
@@ -255,6 +343,8 @@ jobs:
           status=0
           stop_worker_group "order relayer" "$RUNNER_TEMP/threadproof-order-relayer.pid" || status=1
           stop_worker_group "indexer" "$RUNNER_TEMP/threadproof-indexer.pid" || status=1
+          stop_worker_group "proof generator" "$RUNNER_TEMP/threadproof-proof-generator.pid" || status=1
+          stop_worker_group "proof submitter" "$RUNNER_TEMP/threadproof-proof-submitter.pid" || status=1
           exit "$status"
 
       - name: Cleanup owned hosted fixtures and projection state
@@ -283,6 +373,8 @@ jobs:
           path: |
             artifacts/browser-chain-order-relayer.log
             artifacts/browser-chain-indexer.log
+            artifacts/browser-chain-proof-generator.log
+            artifacts/browser-chain-proof-submitter.log
             apps/web/playwright-report/
 
       - name: Pilot diagnostics
