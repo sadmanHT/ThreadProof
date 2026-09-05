@@ -184,13 +184,12 @@ async function main() {
     const firstNonce = await factorySigner.getNonce("pending");
     const transactions = [];
     for (let index = 0; index < independentSpends.length; index += 1) {
+      const spend = independentSpends[index]!;
       transactions.push(
-        await vault
-          .connect(factorySigner)
-          .spendCapacity(independentSpends[index], ZERO_A, ZERO_B, ZERO_C, {
-            gasLimit: 1_500_000,
-            nonce: firstNonce + index,
-          }),
+        await vault.connect(factorySigner).spendCapacity(spend, ZERO_A, ZERO_B, ZERO_C, {
+          gasLimit: 1_500_000,
+          nonce: firstNonce + index,
+        }),
       );
     }
     await network.provider.send("evm_mine");
