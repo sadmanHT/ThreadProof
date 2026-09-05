@@ -40,6 +40,29 @@ async function loadProjectionState() {
 
 let state = await loadProjectionState();
 
+if (state.eventCount === 0 && state.provenanceCount === 0 && state.cursor) {
+  console.warn(
+    `Browser-chain projection preflight found an otherwise empty chain ${chainId} projection with cursor ` +
+      `${state.cursor.last_block_number}@${state.cursor.last_block_hash}; asking the server-side recovery gate to reap it only if both the cursor and every chain indexer heartbeat are stale.`,
+  );
+
+  const { error: recoveryError } = await supabase.rpc("reap_orphan_browser_chain_e2e_cursor", {
+    target_chain_id: chainId,
+    expected_cursor_block: state.cursor.last_block_number,
+    expected_cursor_hash: state.cursor.last_block_hash,
+  });
+
+  if (recoveryError) {
+    console.error(
+      `Browser-chain orphan cursor recovery refused the state: ${recoveryError.message}. ` +
+        "This is a fail-closed result; a fresh or changed cursor must never be deleted by test preflight.",
+    );
+    process.exit(1);
+  }
+
+  state = await loadProjectionState();
+}
+
 if (state.eventCount !== 0 || state.cursor) {
   console.error(
     `Browser-to-chain integration refuses shared projection state for chain ${chainId}: ` +
