@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 
 const CANONICAL_REPOSITORY = "sadmanHT/ThreadProof";
+const MINIMUM_RELEASE_SOURCE = "8575371a84f6395a610d158fd498f4790f285a64";
+const PRODUCTION_READINESS_WORKFLOW = Object.freeze({
+  name: "ThreadProof Production Readiness",
+  path: ".github/workflows/production-readiness.yml",
+  blobSha: "c12ffa13a6956d5e96c25343aac3cc6840ef207a",
+});
 const REQUIRED_WORKFLOWS = Object.freeze([
   ["ThreadProof CI", ".github/workflows/ci.yml"],
   ["ThreadProof Endgame Scorecard", ".github/workflows/endgame-scorecard.yml"],
@@ -67,6 +73,7 @@ function requireHttpsUrl(value, label) {
     fail(`${label} must be a valid URL.`);
   }
   requireValue(url.protocol === "https:", `${label} must use https.`);
+  requireValue(!url.username && !url.password, `${label} must not contain URL credentials.`);
   url.search = "";
   url.hash = "";
   url.pathname = url.pathname.replace(/\/+$/, "");
@@ -220,6 +227,16 @@ async function compare(base, head, label) {
   return payload;
 }
 
+async function requirePinnedProductionReadinessWorkflow(sourceCommit) {
+  const path = PRODUCTION_READINESS_WORKFLOW.path.split("/").map(encodeURIComponent).join("/");
+  const payload = await github(`/repos/${CANONICAL_REPOSITORY}/contents/${path}?ref=${encodeURIComponent(sourceCommit)}`);
+  requireValue(payload?.type === "file", `${PRODUCTION_READINESS_WORKFLOW.path} is not a file at release.sourceDevelopCommit.`);
+  requireValue(
+    typeof payload?.sha === "string" && payload.sha.toLowerCase() === PRODUCTION_READINESS_WORKFLOW.blobSha,
+    `release.sourceDevelopCommit does not contain the trusted ${PRODUCTION_READINESS_WORKFLOW.path} bytes; expected Git blob ${PRODUCTION_READINESS_WORKFLOW.blobSha}. A separate trusted-main maintenance review is required before releasing a source with changed readiness workflow bytes.`,
+  );
+}
+
 async function fetchCanonicalRuns(sourceCommit) {
   const runs = [];
   for (let page = 1; page <= 10; page += 1) {
@@ -229,6 +246,17 @@ async function fetchCanonicalRuns(sourceCommit) {
     if (runs.length >= payload.total_count || payload.workflow_runs.length === 0) return runs;
   }
   fail("GitHub Actions evidence pagination exceeded 10 pages.");
+}
+
+async function fetchPullRequestRuns(candidateHead) {
+  const runs = [];
+  for (let page = 1; page <= 10; page += 1) {
+    const payload = await github(`/repos/${CANONICAL_REPOSITORY}/actions/runs?head_sha=${candidateHead}&event=pull_request&per_page=100&page=${page}`);
+    requireValue(Number.isInteger(payload?.total_count) && Array.isArray(payload?.workflow_runs), "GitHub pull-request Actions response is malformed.");
+    runs.push(...payload.workflow_runs);
+    if (runs.length >= payload.total_count || payload.workflow_runs.length === 0) return runs;
+  }
+  fail("GitHub pull-request Actions evidence pagination exceeded 10 pages.");
 }
 
 function verifyCanonicalRuns(runs, sourceCommit, cleanStateRunUrl, qbftFaultRunUrl) {
@@ -261,10 +289,63 @@ function verifyCanonicalRuns(runs, sourceCommit, cleanStateRunUrl, qbftFaultRunU
   return selected;
 }
 
+function verifyProductionReadinessRun(runs) {
+  const candidates = runs
+    .map((run) => {
+      const pullRequest = Array.isArray(run?.pull_requests)
+        ? run.pull_requests.find((item) => Number(item?.number) === prNumber)
+        : null;
+      return { run, pullRequest };
+    })
+    .filter(({ run, pullRequest }) =>
+      run?.name === PRODUCTION_READINESS_WORKFLOW.name &&
+      run?.path === PRODUCTION_READINESS_WORKFLOW.path &&
+      run?.head_sha?.toLowerCase() === headSha.toLowerCase() &&
+      run?.head_branch === headRef &&
+      run?.event === "pull_request" &&
+      run?.status === "completed" &&
+      run?.conclusion === "success" &&
+      run?.repository?.full_name === CANONICAL_REPOSITORY &&
+      pullRequest?.head?.sha?.toLowerCase() === headSha.toLowerCase() &&
+      pullRequest?.base?.sha?.toLowerCase() === baseSha.toLowerCase(),
+    )
+    .sort((a, b) => Number(b.run?.id ?? 0) - Number(a.run?.id ?? 0));
+
+  requireValue(
+    candidates.length > 0,
+    `${PRODUCTION_READINESS_WORKFLOW.name} has no successful pull_request run for exact release head ${headSha}, PR #${prNumber}, and main base ${baseSha}.`,
+  );
+  const selected = candidates[0].run;
+  requireValue(Number.isSafeInteger(selected.id) && selected.id > 0, `${PRODUCTION_READINESS_WORKFLOW.name} returned an invalid run id.`);
+  requireValue(
+    requireHttpsUrl(selected.html_url, `${PRODUCTION_READINESS_WORKFLOW.name} html_url`) === canonicalRunUrl(selected.id),
+    `${PRODUCTION_READINESS_WORKFLOW.name} does not resolve to its canonical GitHub Actions URL.`,
+  );
+  return selected;
+}
+
+async function requireStableReleasePr() {
+  const [mainBranch, pr] = await Promise.all([
+    github(`/repos/${CANONICAL_REPOSITORY}/branches/main`),
+    github(`/repos/${CANONICAL_REPOSITORY}/pulls/${prNumber}`),
+  ]);
+  requireValue(mainBranch?.commit?.sha?.toLowerCase() === baseSha.toLowerCase(), "main moved during trusted release verification; rerun against the current target is required.");
+  requireValue(pr?.state === "open", "production release PR must remain open during trusted release verification.");
+  requireValue(pr?.head?.sha?.toLowerCase() === headSha.toLowerCase(), "pull request head moved during trusted release verification; rerun is required.");
+  requireValue(pr?.base?.ref === "main", "trusted release guard only accepts PRs targeting main.");
+  requireValue(pr?.base?.sha?.toLowerCase() === baseSha.toLowerCase(), "pull request base moved during trusted release verification; rerun is required.");
+  requireValue(pr?.draft === false, "production release PR must be marked ready for review.");
+  requireValue(pr?.head?.repo?.full_name === CANONICAL_REPOSITORY, "release PR head repository changed or is not canonical.");
+  requireValue(pr?.head?.ref === headRef, "release PR head ref changed during verification.");
+  return pr;
+}
+
 try {
   const manifest = await fetchCandidateManifest();
   const { sourceDevelopCommit, cleanStateRunUrl, qbftFaultRunUrl } = validateManifest(manifest);
 
+  await compare(MINIMUM_RELEASE_SOURCE, sourceDevelopCommit, "trusted release security floor");
+  await requirePinnedProductionReadinessWorkflow(sourceDevelopCommit);
   await compare(sourceDevelopCommit, "develop", "release.sourceDevelopCommit");
   const releaseDelta = await compare(sourceDevelopCommit, headSha, "release.sourceDevelopCommit");
   requireValue(Array.isArray(releaseDelta.files), "GitHub compare did not return the release delta file list.");
@@ -276,24 +357,23 @@ try {
   }
   requireValue(releaseDelta.files.some((file) => file.filename === "release/production-release.json"), "release PR must add release/production-release.json after the tested develop source.");
 
-  const mainBranch = await github(`/repos/${CANONICAL_REPOSITORY}/branches/main`);
-  requireValue(mainBranch?.commit?.sha?.toLowerCase() === baseSha.toLowerCase(), "main moved during trusted release verification; rerun against the current target is required.");
-
-  const pr = await github(`/repos/${CANONICAL_REPOSITORY}/pulls/${prNumber}`);
-  requireValue(pr?.head?.sha?.toLowerCase() === headSha.toLowerCase(), "pull request head moved during trusted release verification; rerun is required.");
-  requireValue(pr?.base?.ref === "main", "trusted release guard only accepts PRs targeting main.");
-  requireValue(pr?.base?.sha?.toLowerCase() === baseSha.toLowerCase(), "pull request base moved during trusted release verification; rerun is required.");
-  requireValue(pr?.draft === false, "production release PR must be marked ready for review.");
-  requireValue(pr?.head?.repo?.full_name === CANONICAL_REPOSITORY, "release PR head repository changed or is not canonical.");
-  requireValue(pr?.head?.ref === headRef, "release PR head ref changed during verification.");
+  await requireStableReleasePr();
 
   const runs = await fetchCanonicalRuns(sourceDevelopCommit);
   const selected = verifyCanonicalRuns(runs, sourceDevelopCommit, cleanStateRunUrl, qbftFaultRunUrl);
 
+  const pullRequestRuns = await fetchPullRequestRuns(headSha);
+  const productionReadiness = verifyProductionReadinessRun(pullRequestRuns);
+
+  await requireStableReleasePr();
+
   console.log(`Trusted main release guard passed for PR #${prNumber}.`);
   console.log(`Release head: ${headSha}`);
   console.log(`Tested develop source: ${sourceDevelopCommit}`);
+  console.log(`Minimum trusted release source: ${MINIMUM_RELEASE_SOURCE}`);
+  console.log(`Pinned Production Readiness workflow blob: ${PRODUCTION_READINESS_WORKFLOW.blobSha}`);
   console.log(`Verified canonical workflows: ${selected.size}`);
+  console.log(`Exact-head Production Readiness run: ${canonicalRunUrl(productionReadiness.id)}`);
   console.log(`Release-only changed files: ${releaseDelta.files.length}`);
 } catch (error) {
   console.error(`THREADPROOF_TRUSTED_MAIN_RELEASE_GUARD_FAILED: ${error instanceof Error ? error.message : String(error)}`);

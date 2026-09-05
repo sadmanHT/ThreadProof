@@ -75,15 +75,18 @@ Production promotion remains separate and unchanged. A production release PR mus
 - use a `release/` branch and target `main`;
 - provide a valid `release/production-release.json` at the exact PR head SHA;
 - name a non-zero canonical `develop` source SHA;
+- use a source that descends from or equals the trusted release-security floor `8575371a84f6395a610d158fd498f4790f285a64`, so production promotion cannot intentionally downgrade to a certified source from before PR #80 exact-byte production ceremony-evidence binding and the preceding verifier-governance/release-evidence hardening;
+- contain the trusted `.github/workflows/production-readiness.yml` bytes at the selected source commit. The currently approved Git blob is `c12ffa13a6956d5e96c25343aac3cc6840ef207a`; changing those workflow bytes requires a separate trusted-main maintenance review before that newer source can be promoted;
 - prove that source is an ancestor of current `develop` and of the release head;
 - contain no untested post-source delta except `release/production-release.json`, `CHANGELOG.md`, and files under `docs/releases/`;
 - prove that target-only `main` history contains no application, contract, circuit, dependency, or infrastructure delta outside the trusted guard files and prior release metadata;
 - require non-zero circuit-build attestation SHA-256 commitments for both production verifier entries;
 - bind clean-state and QBFT evidence URLs to successful canonical GitHub Actions runs;
 - have all nine required ThreadProof workflows completed successfully as `push` runs on `develop` for exactly the manifest source SHA;
-- retain production ceremony, remote Web3Signer/KMS-HSM, external-control, UAT/recovery, and release-approval attestations required by the manifest schema.
+- have `ThreadProof Production Readiness` completed successfully as a `pull_request` run for the exact release PR head SHA, the same PR number, and the same `main` base SHA observed by the target-side guard;
+- retain production ceremony, verifier-governance, remote Web3Signer/KMS-HSM, external-control, UAT/recovery, and release-approval attestations required by the manifest schema.
 
-The guard re-reads the current `main` tip before succeeding so a moved target during verification fails closed. The candidate guard also re-reads the PR head/base before success. Branch protection's up-to-date/merge-queue requirement closes the later race in which `main` could advance after a successful guard run but before merge.
+The guard re-reads the current `main` tip and release PR metadata before and after remote Actions evidence verification so a moved target or head fails closed. Branch protection's up-to-date/merge-queue requirement closes the later race in which `main` could advance after a successful guard run but before merge.
 
 ## Final branch/ruleset policy
 
@@ -104,6 +107,14 @@ A tested `develop` source and `main` can be intentionally diverged. Without a ta
 The release branch is allowed to add only release metadata after the tested `develop` source. Because production build-attestation digests are security-critical release metadata, the target-side guard independently requires both verifier entries to carry a non-zero `buildAttestationSha256`. This check executes trusted code from `main`; a candidate cannot remove the requirement by editing a workflow in its own branch.
 
 The deeper source-to-R1CS proof is created on tested `develop`: production ceremony verification recompiles the exact clean source SHA with the pinned Circom toolchain, hashes the dependency closure rehydrated from the frozen lockfile, and requires the rebuilt R1CS hash to equal the supplied ceremony R1CS. The trusted `main` guard ensures the resulting attestation commitments remain present in the promoted release manifest.
+
+### Why exact-head Production Readiness can be required safely
+
+`ThreadProof Production Readiness` is a normal `pull_request` workflow, so its candidate-side execution is not independently trusted by itself. The target-side guard first proves two facts using code already trusted on `main`: the selected source cannot predate the trusted security floor, and the source commit contains the exact approved Production Readiness workflow blob. It then proves the release head contains no workflow/script/config change after that selected source except the narrow release metadata allowlist.
+
+Only after those checks does the target-side guard accept a successful Production Readiness run, and it requires that run to be for the exact release head, release branch, PR number, and current `main` base. That run performs the deeper release-manifest, exact-byte production ceremony-evidence, deployment, verifier-governance, UAT/adversarial, backup/recovery, platform-controls and canonical-GitHub evidence verification. The privileged `pull_request_target` job still never checks out or executes candidate code.
+
+If `.github/workflows/production-readiness.yml` changes on a future `develop` source, production release promotion intentionally fails until a separate `security/trusted-main-guard/*` maintenance PR reviews and updates the approved workflow blob. This prevents a later source from weakening its own readiness workflow and immediately using that weaker run as trusted promotion evidence.
 
 ## What this does not prove
 
