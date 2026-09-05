@@ -34,7 +34,7 @@
 
 .organization-context-form {
   display: flex;
-  align-items: end;
+  align-items: flex-end;
   gap: 10px;
   flex: 0 0 auto;
 }
@@ -82,13 +82,5 @@
 
   .organization-context-form select {
     width: 100%;
-    min-width: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .organization-context-bar,
-  .organization-context-form select {
-    scroll-behavior: auto;
   }
 }

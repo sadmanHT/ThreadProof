@@ -1,6 +1,7 @@
 import { requireConsortiumViewer } from "@/lib/viewer";
 import { titleCase } from "@/lib/format";
 import { AppShell } from "@/components/app-shell";
+import { ContentNavigationProgress } from "@/components/content-navigation-progress";
 import { OrganizationContextBar } from "@/components/organization-context-bar";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,7 @@ export default async function ProductLayout({ children }: { children: React.Reac
       userName={viewer.profile?.display_name || viewer.email}
       email={viewer.email}
     >
+      <ContentNavigationProgress />
       <OrganizationContextBar
         {...activeOrganizationProps}
         organizations={organizationOptions}

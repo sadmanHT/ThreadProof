@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { createOrderAction } from "@/app/app/actions";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 
 type OrganizationOption = { id: string; displayName: string; detail?: string };
 type Props = { buyers: OrganizationOption[]; factories: OrganizationOption[] };
@@ -100,7 +101,7 @@ export function OrderCreateWizard({ buyers, factories }: Props) {
         <div className="callout"><strong>What happens after creation?</strong><span>You can refine the private draft. When ready, the buyer prepares and signs an immutable EIP-712 order version. Only the indexed OrderRegistry event changes canonical order authorization.</span></div>
       </section>
 
-      <div className="wizard-actions"><div>{step > 0 ? <button type="button" className="button ghost" onClick={() => setStep((value) => Math.max(0, value - 1))}>Back</button> : <Link className="button ghost" href="/app/orders">Cancel</Link>}</div><div><span className="wizard-step-count">{step + 1} of {steps.length}</span>{step < steps.length - 1 ? <button type="button" className="button primary" onClick={next}>Continue</button> : <button className="button primary">Create private draft</button>}</div></div>
+      <div className="wizard-actions"><div>{step > 0 ? <button type="button" className="button ghost" onClick={() => setStep((value) => Math.max(0, value - 1))}>Back</button> : <Link className="button ghost" href="/app/orders">Cancel</Link>}</div><div><span className="wizard-step-count">{step + 1} of {steps.length}</span>{step < steps.length - 1 ? <button type="button" className="button primary" onClick={next}>Continue</button> : <PendingSubmitButton className="button primary" pendingLabel="Creating draft…">Create private draft</PendingSubmitButton>}</div></div>
     </form>
   </div>;
 }

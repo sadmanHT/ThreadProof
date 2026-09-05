@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import clsx from "clsx";
@@ -11,7 +11,6 @@ import {
   ArrowRight,
   BadgeCheck,
   BrainCircuit,
-  Building2,
   Command,
   FileText,
   Gauge,
@@ -114,9 +113,12 @@ type Props = {
 
 export function AppShell({ children, organizationName, organizationRole, memberRole, roleKeys, userName, email }: Props) {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
+  const [paletteIndex, setPaletteIndex] = useState(0);
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
   const currentPage = useMemo(() => pageName(pathname), [pathname]);
   const visibleNav = useMemo(() => nav.filter((item) => !item.roles || item.roles.some((role) => roleKeys.includes(role))), [roleKeys]);
   const commands = useMemo(() => {
@@ -124,12 +126,25 @@ export function AppShell({ children, organizationName, organizationRole, memberR
     if (!query) return visibleNav;
     return visibleNav.filter((item) => `${item.label} ${item.description}`.toLowerCase().includes(query));
   }, [paletteQuery, visibleNav]);
+  const navigatingLabel = useMemo(() => visibleNav.find((item) => item.href === navigatingTo)?.label ?? "workspace", [navigatingTo, visibleNav]);
 
   useEffect(() => {
     setMobileOpen(false);
     setPaletteOpen(false);
     setPaletteQuery("");
+    setPaletteIndex(0);
+    setNavigatingTo(null);
   }, [pathname]);
+
+  useEffect(() => {
+    setPaletteIndex(0);
+  }, [paletteQuery, paletteOpen]);
+
+  useEffect(() => {
+    if (!navigatingTo) return;
+    const timer = window.setTimeout(() => setNavigatingTo(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [navigatingTo]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -149,13 +164,43 @@ export function AppShell({ children, organizationName, organizationRole, memberR
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  function beginNavigation(href: string) {
+    if (href !== pathname) setNavigatingTo(href);
+  }
+
+  function openCommand(item: NavItem) {
+    beginNavigation(item.href);
+    setPaletteOpen(false);
+    router.push(item.href);
+  }
+
+  function handlePaletteKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setPaletteOpen(false);
+      return;
+    }
+    if (!commands.length) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setPaletteIndex((current) => (current + 1) % commands.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setPaletteIndex((current) => (current - 1 + commands.length) % commands.length);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const item = commands[paletteIndex];
+      if (item) openCommand(item);
+    }
+  }
+
   const renderNav = (section: NavItem["section"]) => visibleNav.filter((item) => item.section === section).map((item) => {
     const active = isActive(pathname, item.href);
     const Icon = iconMap[item.icon];
     return (
       <Tooltip.Root key={item.href}>
         <Tooltip.Trigger asChild>
-          <Link href={item.href} className={clsx("sidebar-link", active && "active")} aria-current={active ? "page" : undefined}>
+          <Link href={item.href} className={clsx("sidebar-link", active && "active")} aria-current={active ? "page" : undefined} onClick={() => beginNavigation(item.href)}>
             <span className="nav-icon"><Icon size={17} strokeWidth={1.8} /></span>
             <span className="sidebar-link-copy"><strong>{item.label}</strong><small>{item.description}</small></span>
             <span className="nav-active-rail" aria-hidden="true" />
@@ -175,10 +220,12 @@ export function AppShell({ children, organizationName, organizationRole, memberR
   return (
     <Tooltip.Provider delayDuration={420} skipDelayDuration={120}>
       <div className="app-frame premium-product-shell">
+        <div className={clsx("route-progress", navigatingTo && "active")} aria-hidden="true" />
+        <span className="sr-only" role="status" aria-live="polite">{navigatingTo ? `Loading ${navigatingLabel}` : ""}</span>
         <button className={clsx("sidebar-backdrop", mobileOpen && "visible")} aria-label="Close navigation" onClick={() => setMobileOpen(false)} />
         <aside className={clsx("sidebar", mobileOpen && "open")}>
           <div className="sidebar-head">
-            <Link href="/app" className="sidebar-brand">
+            <Link href="/app" className="sidebar-brand" onClick={() => beginNavigation("/app")}>
               <span className="brand-mark"><ShieldCheck size={19} strokeWidth={1.9} /></span>
               <span><strong>ThreadProof</strong><small>Production assurance</small></span>
             </Link>
@@ -271,16 +318,36 @@ export function AppShell({ children, organizationName, organizationRole, memberR
                     autoFocus
                     value={paletteQuery}
                     onChange={(event) => setPaletteQuery(event.target.value)}
+                    onKeyDown={handlePaletteKeyDown}
                     placeholder="Search pages and workflows…"
                     aria-label="Search pages and workflows"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-expanded="true"
+                    aria-controls="workspace-command-results"
+                    aria-activedescendant={commands[paletteIndex] ? `workspace-command-${paletteIndex}` : undefined}
                   />
                   <kbd>ESC</kbd>
                 </div>
-                <div className="command-results" role="listbox">
-                  {commands.length ? commands.map((item) => {
+                <div className="command-results" role="listbox" id="workspace-command-results">
+                  {commands.length ? commands.map((item, index) => {
                     const Icon = iconMap[item.icon];
+                    const selected = index === paletteIndex;
                     return (
-                      <Link className="command-result" href={item.href} key={item.href} onClick={() => setPaletteOpen(false)}>
+                      <Link
+                        className="command-result"
+                        href={item.href}
+                        key={item.href}
+                        id={`workspace-command-${index}`}
+                        role="option"
+                        aria-selected={selected}
+                        onMouseEnter={() => setPaletteIndex(index)}
+                        onFocus={() => setPaletteIndex(index)}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          openCommand(item);
+                        }}
+                      >
                         <span className="command-result-icon"><Icon size={17} /></span>
                         <span><strong>{item.label}</strong><small>{item.description}</small></span>
                         <ArrowRight size={15} />
@@ -288,7 +355,7 @@ export function AppShell({ children, organizationName, organizationRole, memberR
                     );
                   }) : <div className="command-empty"><Search size={20} /><strong>No matching workspace</strong><span>Try an order, proof, credential, governance, network, or operations term.</span></div>}
                 </div>
-                <footer className="command-footer"><span><kbd>↑</kbd><kbd>↓</kbd> browse</span><span><kbd>↵</kbd> open</span><span>Authority remains enforced by RLS and chain state.</span></footer>
+                <footer className="command-footer"><span><kbd>↑</kbd><kbd>↓</kbd> select</span><span><kbd>↵</kbd> open</span><span>Authority remains enforced by RLS and chain state.</span></footer>
               </motion.section>
             </motion.div>
           ) : null}

@@ -1,8 +1,7 @@
 "use server";
 
-import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { redirectAfterAction } from "@/lib/action-redirect.server";
 import { createClient } from "@/lib/supabase/server";
 import { getBlockchainStatus } from "@/lib/blockchain";
 import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
@@ -25,7 +24,7 @@ import {
 } from "@/lib/ai/audit.server";
 
 function failRedirect(message: string): never {
-  redirect(`/app/intelligence?error=${encodeURIComponent(message.slice(0, 500))}`);
+  redirectAfterAction(`/app/intelligence?error=${encodeURIComponent(message.slice(0, 500))}`);
 }
 
 function selectedMembership(
@@ -177,8 +176,7 @@ export async function runOrderIntelligenceAction(formData: FormData) {
     failRedirect(error instanceof Error ? error.message : "Order intelligence failed.");
   }
 
-  revalidatePath("/app/intelligence");
-  redirect(`/app/intelligence?run=${runId}&message=${encodeURIComponent("Order intelligence completed. Review the evidence-backed extraction and deterministic pressure signals before using any value in a business workflow.")}`);
+  redirectAfterAction(`/app/intelligence?run=${runId}&message=${encodeURIComponent("Order intelligence completed. Review the evidence-backed extraction and deterministic pressure signals before using any value in a business workflow.")}`);
 }
 
 export async function runAuditCopilotAction(formData: FormData) {
@@ -323,8 +321,7 @@ export async function runAuditCopilotAction(formData: FormData) {
     failRedirect(error instanceof Error ? error.message : "Evidence Investigator failed.");
   }
 
-  revalidatePath("/app/intelligence");
-  redirect(`/app/intelligence?run=${runId}&message=${encodeURIComponent("Evidence Investigator completed. Claims are locked to supplied evidence IDs and verbatim evidence text; critical decisions still require direct contract/proof validation.")}`);
+  redirectAfterAction(`/app/intelligence?run=${runId}&message=${encodeURIComponent("Evidence Investigator completed. Claims are locked to supplied evidence IDs and verbatim evidence text; critical decisions still require direct contract/proof validation.")}`);
 }
 
 export async function reviewAiFindingAction(formData: FormData) {
@@ -355,9 +352,8 @@ export async function reviewAiFindingAction(formData: FormData) {
   });
   if (reviewError) failRedirect("Unable to update the AI finding review state.");
 
-  revalidatePath("/app/intelligence");
   const query = new URLSearchParams();
   if (parsed.data.runId) query.set("run", parsed.data.runId);
   query.set("message", `AI finding marked ${parsed.data.status}. This review is operational only and does not authorize protocol state.`);
-  redirect(`/app/intelligence?${query.toString()}`);
+  redirectAfterAction(`/app/intelligence?${query.toString()}`);
 }

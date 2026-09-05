@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import { Building2, ChevronDown, ShieldCheck } from "lucide-react";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 
 type OrganizationOption = {
   id: string;
@@ -57,7 +58,7 @@ export function OrganizationContextBar({ activeOrganizationId, organizations }: 
             </select>
             <ChevronDown size={14} aria-hidden="true" />
           </label>
-          <button className="button context-switch-button" type="submit">Switch</button>
+          <PendingSubmitButton className="button context-switch-button" pendingLabel="Switching…">Switch</PendingSubmitButton>
         </form>
       ) : (
         <span className="organization-context-single premium-context-single"><Building2 size={13} /> Single membership</span>

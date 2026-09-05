@@ -21,7 +21,7 @@ test.describe("authenticated role workspaces", () => {
   test("buyer reaches the RLS-scoped order workspace and proof evidence", async ({ page }) => {
     await login(page, "buyer.demo@threadproof.test");
 
-    await expect(page.locator("main").getByText("Demo Buyer", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Demo Buyer", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Authorize production without asking factories to reveal capacity." })).toBeVisible();
     await expect(page.getByText("DEMO-PO-002", { exact: false })).toBeVisible();
 
@@ -34,7 +34,7 @@ test.describe("authenticated role workspaces", () => {
   test("factory reaches its private capacity and proof workspace", async ({ page }) => {
     await login(page, "factory.demo@threadproof.test");
 
-    await expect(page.locator("main").getByText("Demo Factory", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Demo Factory", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Spend certified capacity privately and exactly once." })).toBeVisible();
     await expect(page.getByText("DEMO-2026-Q4", { exact: false })).toBeVisible();
     await expect(page.getByText("Proofs in progress", { exact: true })).toBeVisible();
@@ -43,7 +43,7 @@ test.describe("authenticated role workspaces", () => {
   test("auditor reaches certification work without order visibility", async ({ page }) => {
     await login(page, "auditor.demo@threadproof.test");
 
-    await expect(page.locator("main").getByText("Demo Auditor", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Demo Auditor", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Certify the commitment, not a public capacity number." })).toBeVisible();
     await expect(page.getByText("DEMO-2027-Q1", { exact: false })).toBeVisible();
     await expect(page.getByText("Certification in progress", { exact: true })).toBeVisible();
@@ -52,7 +52,7 @@ test.describe("authenticated role workspaces", () => {
   test("governance participant reaches Charter due-process state", async ({ page }) => {
     await login(page, "governance.demo@threadproof.test");
 
-    await expect(page.locator("main").getByText("Demo Regulator", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Demo Regulator", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Exercise exceptional powers through attributable due process." })).toBeVisible();
     await expect(page.getByText("Pending / timelocked", { exact: true })).toBeVisible();
 

@@ -12,6 +12,7 @@ import "./product-premium.css";
 import "./product-responsive.css";
 import "./runtime-resilience.css";
 import "./chain-operations.css";
+import "./ux-flow.css";
 
 export const metadata: Metadata = {
   title: { default: "ThreadProof", template: "%s · ThreadProof" },

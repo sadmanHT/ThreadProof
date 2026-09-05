@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { createWalletClient, custom } from "viem";
 import {
   prepareOrderCancellationAction,
@@ -17,6 +18,7 @@ type Stage = "idle" | "preparing" | "wallet" | "storing" | "signed";
 type InjectedProvider = Parameters<typeof custom>[0];
 
 export function OrderCancellationForm({ orderId, currentVersion }: Props) {
+  const router = useRouter();
   const [stage, setStage] = useState<Stage>("idle");
   const [error, setError] = useState<string | null>(null);
   const [signer, setSigner] = useState<string | null>(null);
@@ -62,6 +64,7 @@ export function OrderCancellationForm({ orderId, currentVersion }: Props) {
 
       setSigner(stored.signer);
       setStage("signed");
+      router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to cancel this order.");
       setStage("idle");
@@ -69,6 +72,7 @@ export function OrderCancellationForm({ orderId, currentVersion }: Props) {
   }
 
   const busy = stage !== "idle" && stage !== "signed";
+  const locked = busy || stage === "signed";
   const buttonLabel = stage === "preparing"
     ? "Checking canonical order…"
     : stage === "wallet"
@@ -90,23 +94,23 @@ export function OrderCancellationForm({ orderId, currentVersion }: Props) {
       <p className="muted">
         Cancellation is not a database status change. Your wallet signs a nonce- and version-bound EIP-712 cancellation, the relayer submits it, and this page changes to cancelled only after the OrderCancelled event is indexed from Besu.
       </p>
-      {error ? <div className="alert alert-error">{error}</div> : null}
+      {error ? <div className="alert alert-error" role="alert">{error}</div> : null}
       {stage === "signed" ? (
-        <div className="alert alert-success">
-          Cancellation signature validated and queued for relay{signer ? <> from <span className="mono">{signer}</span></> : null}. The order remains active until the chain event confirms it.
+        <div className="alert alert-success" role="status">
+          Cancellation signature validated and queued for relay{signer ? <> from <span className="mono">{signer}</span></> : null}. The order remains active until the chain event confirms it; the timeline is refreshing now.
         </div>
       ) : null}
-      <form className="stack-form" onSubmit={cancel}>
+      <form className="stack-form" onSubmit={cancel} aria-busy={busy || undefined}>
         <label>
           Type <span className="mono">CANCEL</span> to confirm
-          <input name="confirmation" autoComplete="off" required disabled={busy || stage === "signed"} placeholder="CANCEL" />
+          <input name="confirmation" autoComplete="off" required disabled={locked} placeholder="CANCEL" />
         </label>
         <div className="callout">
           <strong>Fail-closed cancellation</strong>
           <span>The server verifies the mirrored version, version hash, commitment, policy, buyer mapping and buyer nonce against OrderRegistry before asking your wallet to sign. A concurrent version authorization is blocked at the database transaction boundary.</span>
         </div>
         <div className="form-actions">
-          <button className="button danger" type="submit" disabled={busy || stage === "signed"}>{buttonLabel}</button>
+          <button className="button danger" type="submit" disabled={locked} aria-busy={busy || undefined}>{buttonLabel}</button>
         </div>
       </form>
     </section>
