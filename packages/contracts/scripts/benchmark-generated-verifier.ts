@@ -77,7 +77,10 @@ async function main() {
   const proof = loadProof(path.join(proofDir, "proof.json"));
   const publicSignals = loadPublicSignals(path.join(proofDir, "public.json"));
 
-  const [signer] = await ethers.getSigners();
+  // Keep the same EIP-1193 provider boundary used by the existing verifier/live-PoFC scripts.
+  // This remains type-safe even though generated verifier contracts have no checked-in TypeChain binding.
+  const provider = new ethers.BrowserProvider(network.provider as never);
+  const signer = await provider.getSigner(0);
   const Verifier = await ethers.getContractFactory(
     "CapacitySpendVerifierWithProvenance",
     signer,
@@ -127,7 +130,7 @@ async function main() {
   })
     .trim()
     .toLowerCase();
-  const chainId = (await ethers.provider.getNetwork()).chainId;
+  const chainId = (await provider.getNetwork()).chainId;
   const result = {
     schemaVersion: 1,
     format: "threadproof-groth16-verifier-gas/v1",
