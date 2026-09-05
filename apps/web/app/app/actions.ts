@@ -149,7 +149,6 @@ export async function queueProofAction(formData: FormData) {
     target_capacity_opening_id: parsed.data.capacityOpeningId,
   });
   if (error) redirect(`/app/proofs?error=${encodeURIComponent(error.message)}`);
-  revalidatePath("/app/proofs");
   redirect("/app/proofs?message=Proof+job+queued.+The+worker+must+generate+and+submit+the+proof.");
 }
 
@@ -206,6 +205,5 @@ export async function updateProfileAction(formData: FormData) {
     updated_at: new Date().toISOString(),
   }).eq("id", viewer.userId);
   if (error) redirect(`/app/settings?error=${encodeURIComponent(error.message)}`);
-  revalidatePath("/app/settings");
   redirect("/app/settings?message=Profile+updated.");
 }
