@@ -18,9 +18,99 @@ if (!/^[A-Za-z0-9._-]{1,120}$/.test(runId)) {
 }
 
 const prefix = `E2E-CHAIN-${runId}-`;
+const stage2Prefix = `${prefix}POFC-`;
 const supabase = createClient(url, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
 });
+
+async function assertNoStage2ForbiddenDescendants(order) {
+  const { data: versions, error: versionsError } = await supabase
+    .from("order_versions")
+    .select("id")
+    .eq("purchase_order_id", order.id);
+  if (versionsError) throw versionsError;
+  const versionIds = (versions ?? []).map((version) => version.id);
+
+  const [subcontracts, cancellations] = await Promise.all([
+    supabase
+      .from("subcontract_authorization_jobs")
+      .select("id", { count: "exact", head: true })
+      .or(`parent_order_id.eq.${order.id},child_order_id.eq.${order.id}`),
+    supabase
+      .from("order_cancellation_jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("purchase_order_id", order.id),
+  ]);
+  if (subcontracts.error) throw subcontracts.error;
+  if (cancellations.error) throw cancellations.error;
+  if ((subcontracts.count ?? 0) > 0 || (cancellations.count ?? 0) > 0) {
+    throw new Error(`Refusing Stage-2 cleanup for order ${order.id}: subcontract or cancellation state exists.`);
+  }
+
+  if (versionIds.length > 0) {
+    const releases = await supabase
+      .from("capacity_release_jobs")
+      .select("id", { count: "exact", head: true })
+      .in("order_version_id", versionIds);
+    if (releases.error) throw releases.error;
+    if ((releases.count ?? 0) > 0) {
+      throw new Error(`Refusing Stage-2 cleanup for order ${order.id}: capacity-release state exists.`);
+    }
+  }
+}
+
+async function cleanupStage1Order(order) {
+  const { data: versions, error: versionsError } = await supabase
+    .from("order_versions")
+    .select("id")
+    .eq("purchase_order_id", order.id);
+  if (versionsError) throw versionsError;
+  const versionIds = (versions ?? []).map((version) => version.id);
+
+  if (versionIds.length > 0) {
+    const [proofs, allocations, releases] = await Promise.all([
+      supabase.from("proof_jobs").select("id", { count: "exact", head: true }).in("order_version_id", versionIds),
+      supabase.from("capacity_allocations").select("id", { count: "exact", head: true }).in("order_version_id", versionIds),
+      supabase.from("capacity_release_jobs").select("id", { count: "exact", head: true }).in("order_version_id", versionIds),
+    ]);
+    for (const [label, result] of [["proof jobs", proofs], ["capacity allocations", allocations], ["capacity release jobs", releases]]) {
+      if (result.error) throw result.error;
+      if ((result.count ?? 0) > 0) {
+        throw new Error(`Refusing to clean Stage-1 order ${order.id}: dependent ${label} exist.`);
+      }
+    }
+  }
+
+  const { count: subcontractCount, error: subcontractError } = await supabase
+    .from("subcontract_authorization_jobs")
+    .select("id", { count: "exact", head: true })
+    .or(`parent_order_id.eq.${order.id},child_order_id.eq.${order.id}`);
+  if (subcontractError) throw subcontractError;
+  if ((subcontractCount ?? 0) > 0) {
+    throw new Error(`Refusing to clean Stage-1 order ${order.id}: subcontract authorization work exists.`);
+  }
+
+  const { data: removed, error: deleteError } = await supabase.rpc("cleanup_browser_chain_e2e_order", {
+    target_order_id: order.id,
+    target_run_id: runId,
+  });
+  if (deleteError) throw new Error(`Unable to delete Stage-1 browser-chain fixture ${order.id}: ${deleteError.message}`);
+  if (removed !== true) throw new Error(`Stage-1 browser-chain fixture ${order.id} disappeared before guarded cleanup completed.`);
+}
+
+async function cleanupStage2Order(order) {
+  if (!order.external_reference?.startsWith(stage2Prefix)) {
+    throw new Error(`Refusing Stage-2 cleanup outside ${stage2Prefix}: ${order.id}.`);
+  }
+  await assertNoStage2ForbiddenDescendants(order);
+
+  const { data: removed, error: deleteError } = await supabase.rpc("cleanup_browser_chain_stage2_e2e_fixture", {
+    target_order_id: order.id,
+    target_run_id: runId,
+  });
+  if (deleteError) throw new Error(`Unable to delete Stage-2 browser-chain fixture ${order.id}: ${deleteError.message}`);
+  if (removed !== true) throw new Error(`Stage-2 browser-chain fixture ${order.id} disappeared before guarded cleanup completed.`);
+}
 
 async function cleanupNamespacedOrders() {
   const { data: orders, error: listError } = await supabase
@@ -35,51 +125,31 @@ async function cleanupNamespacedOrders() {
       throw new Error(`Refusing to clean non-namespaced order ${order.id}.`);
     }
 
-    const { data: versions, error: versionsError } = await supabase
-      .from("order_versions")
-      .select("id")
-      .eq("purchase_order_id", order.id);
-    if (versionsError) throw versionsError;
-    const versionIds = (versions ?? []).map((version) => version.id);
-
-    if (versionIds.length > 0) {
-      const [proofs, allocations, releases] = await Promise.all([
-        supabase.from("proof_jobs").select("id", { count: "exact", head: true }).in("order_version_id", versionIds),
-        supabase.from("capacity_allocations").select("id", { count: "exact", head: true }).in("order_version_id", versionIds),
-        supabase.from("capacity_release_jobs").select("id", { count: "exact", head: true }).in("order_version_id", versionIds),
-      ]);
-      for (const [label, result] of [["proof jobs", proofs], ["capacity allocations", allocations], ["capacity release jobs", releases]]) {
-        if (result.error) throw result.error;
-        if ((result.count ?? 0) > 0) {
-          throw new Error(`Refusing to clean Stage-1 order ${order.id}: dependent ${label} exist.`);
-        }
-      }
+    if (order.external_reference.startsWith(stage2Prefix)) {
+      await cleanupStage2Order(order);
+    } else {
+      await cleanupStage1Order(order);
     }
-
-    const { count: subcontractCount, error: subcontractError } = await supabase
-      .from("subcontract_authorization_jobs")
-      .select("id", { count: "exact", head: true })
-      .or(`parent_order_id.eq.${order.id},child_order_id.eq.${order.id}`);
-    if (subcontractError) throw subcontractError;
-    if ((subcontractCount ?? 0) > 0) {
-      throw new Error(`Refusing to clean Stage-1 order ${order.id}: subcontract authorization work exists.`);
-    }
-
-    const { data: removed, error: deleteError } = await supabase.rpc("cleanup_browser_chain_e2e_order", {
-      target_order_id: order.id,
-      target_run_id: runId,
-    });
-    if (deleteError) throw new Error(`Unable to delete browser-chain fixture ${order.id}: ${deleteError.message}`);
-    if (removed !== true) throw new Error(`Browser-chain fixture ${order.id} disappeared before guarded cleanup completed.`);
     deleted += 1;
   }
 
-  const { count: remaining, error: remainingError } = await supabase
-    .from("purchase_orders")
-    .select("id", { count: "exact", head: true })
-    .like("external_reference", `${prefix}%`);
-  if (remainingError) throw remainingError;
-  if ((remaining ?? 0) !== 0) throw new Error(`Browser-chain cleanup left ${remaining} order fixture(s).`);
+  const [{ count: remainingOrders, error: remainingOrderError }, { count: remainingCertifications, error: remainingCertificationError }] = await Promise.all([
+    supabase
+      .from("purchase_orders")
+      .select("id", { count: "exact", head: true })
+      .like("external_reference", `${prefix}%`),
+    supabase
+      .from("capacity_certification_jobs")
+      .select("id", { count: "exact", head: true })
+      .like("period_label", `${stage2Prefix}%`),
+  ]);
+  if (remainingOrderError) throw remainingOrderError;
+  if (remainingCertificationError) throw remainingCertificationError;
+  if ((remainingOrders ?? 0) !== 0 || (remainingCertifications ?? 0) !== 0) {
+    throw new Error(
+      `Browser-chain cleanup left ${remainingOrders ?? 0} order fixture(s) or ${remainingCertifications ?? 0} Stage-2 certification fixture(s).`,
+    );
+  }
 
   return deleted;
 }
