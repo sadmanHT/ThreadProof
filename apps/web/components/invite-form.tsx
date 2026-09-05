@@ -1,12 +1,19 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { createInvitationAction, type InviteState } from "@/app/app/actions";
 
 const initialState: InviteState = { ok: false, message: "" };
 
 export function InviteForm({ organizationId }: { organizationId: string }) {
+  const router = useRouter();
   const [state, action, pending] = useActionState(createInvitationAction, initialState);
+
+  useEffect(() => {
+    if (state.ok) router.refresh();
+  }, [router, state.ok]);
+
   return (
     <div className="invite-widget">
       <form action={action} className="inline-form invite-grid" aria-busy={pending || undefined}>
