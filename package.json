@@ -27,7 +27,8 @@
     "pilot:verify": "node scripts/pilot-chain.mjs verify",
     "pilot:fault-resilience": "node scripts/pilot-fault-resilience.mjs",
     "pilot:down": "node scripts/pilot-chain.mjs down",
-    "pilot:reset": "node scripts/pilot-chain.mjs reset"
+    "pilot:reset": "node scripts/pilot-chain.mjs reset",
+    "reset:e2e-users": "node apps/web/scripts/reset-e2e-demo-users.mjs"
   },
   "devDependencies": {
     "turbo": "^2.5.6",
