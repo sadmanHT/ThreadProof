@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 
 const EXPECTED_USERS = [
@@ -14,6 +15,8 @@ const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_
 const suppliedPassword = process.env.THREADPROOF_E2E_DEMO_PASSWORD?.trim();
 const generatedPassword = suppliedPassword ? null : `TP-E2E-${randomBytes(24).toString("base64url")}!`;
 const password = suppliedPassword ?? generatedPassword;
+const syncGitHubSecret = process.argv.includes("--sync-github-secret");
+const githubRepository = process.env.GITHUB_REPOSITORY ?? "sadmanHT/ThreadProof";
 
 function fail(message) {
   throw new Error(message);
@@ -88,6 +91,28 @@ async function verifyPasswordLogin() {
   }
 }
 
+function syncPasswordToGitHub() {
+  const result = spawnSync(
+    "gh",
+    ["secret", "set", "THREADPROOF_E2E_DEMO_PASSWORD", "--repo", githubRepository],
+    {
+      input: `${password}\n`,
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+
+  if (result.error) {
+    fail(`Unable to run GitHub CLI: ${result.error.message}. The Supabase reset succeeded; rerun without --sync-github-secret to print the generated password for manual recovery.`);
+  }
+  if (result.status !== 0) {
+    const detail = result.stderr?.trim() || result.stdout?.trim() || `exit code ${result.status}`;
+    fail(`Unable to set GitHub Actions secret for ${githubRepository}: ${detail}. The Supabase reset succeeded; rerun with THREADPROOF_E2E_DEMO_PASSWORD set to the same password before retrying GitHub sync.`);
+  }
+
+  console.log(`✓ GitHub Actions secret THREADPROOF_E2E_DEMO_PASSWORD updated for ${githubRepository}`);
+}
+
 async function main() {
   console.log("ThreadProof E2E demo-user reset");
   console.log(`Project: ${new URL(supabaseUrl).host}`);
@@ -97,8 +122,12 @@ async function main() {
   await resetUsers();
   await verifyPasswordLogin();
 
+  if (syncGitHubSecret) syncPasswordToGitHub();
+
   console.log("\nAll four ThreadProof demo users are ready for authenticated E2E tests.");
-  if (generatedPassword) {
+  if (syncGitHubSecret) {
+    console.log("The shared password was synchronized directly to GitHub Actions and was not printed.");
+  } else if (generatedPassword) {
     console.log("\nGenerated shared E2E password (shown once):");
     console.log(generatedPassword);
     console.log("\nStore that exact value as the GitHub Actions secret THREADPROOF_E2E_DEMO_PASSWORD.");
