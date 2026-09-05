@@ -148,21 +148,25 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          pnpm --filter @threadproof/worker relay:orders > artifacts/browser-chain-order-relayer.log 2>&1 &
+          # Give each long-lived writer its own session/process group. The PID we
+          # record is therefore also its PGID, so teardown can terminate pnpm and
+          # every tsx/node descendant before touching the hosted projection.
+          setsid pnpm --filter @threadproof/worker relay:orders > artifacts/browser-chain-order-relayer.log 2>&1 &
           echo $! > "$RUNNER_TEMP/threadproof-order-relayer.pid"
-          pnpm --filter @threadproof/worker index > artifacts/browser-chain-indexer.log 2>&1 &
+          setsid pnpm --filter @threadproof/worker index > artifacts/browser-chain-indexer.log 2>&1 &
           echo $! > "$RUNNER_TEMP/threadproof-indexer.pid"
 
           timeout 45 bash -c 'until grep -q "Order relayer runtime ready on chain 2026" artifacts/browser-chain-order-relayer.log; do sleep 1; done'
           timeout 45 bash -c 'until grep -q "Indexer runtime ready on chain 2026" artifacts/browser-chain-indexer.log; do sleep 1; done'
 
           # A worker can print its readiness banner and then immediately fail on its
-          # first database/chain operation. Give both loops one tick and prove the
-          # actual background processes are still alive before browser automation.
+          # first database/chain operation. Give both loops one tick and prove each
+          # dedicated writer process group is still alive before browser automation.
           sleep 2
           for worker in order-relayer indexer; do
             pid_file="$RUNNER_TEMP/threadproof-${worker}.pid"
-            if ! kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+            pid="$(cat "$pid_file")"
+            if ! [[ "$pid" =~ ^[1-9][0-9]*$ ]] || ! kill -0 -- "-$pid" 2>/dev/null; then
               echo "ThreadProof ${worker} exited immediately after readiness." >&2
               cat "artifacts/browser-chain-${worker}.log" >&2 || true
               exit 1
@@ -203,16 +207,71 @@ jobs:
         if: always()
         shell: bash
         run: |
-          set +e
-          for pid_file in "$RUNNER_TEMP/threadproof-order-relayer.pid" "$RUNNER_TEMP/threadproof-indexer.pid"; do
-            if [ -f "$pid_file" ]; then
-              kill "$(cat "$pid_file")" 2>/dev/null || true
+          set -euo pipefail
+
+          stop_worker_group() {
+            local worker="$1"
+            local pid_file="$2"
+            local pid
+
+            [ -f "$pid_file" ] || return 0
+            pid="$(cat "$pid_file")"
+            if ! [[ "$pid" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::Invalid ${worker} process-group id in ${pid_file}."
+              return 1
             fi
-          done
+
+            if kill -0 -- "-$pid" 2>/dev/null; then
+              kill -TERM -- "-$pid" 2>/dev/null || true
+              for _ in $(seq 1 40); do
+                if ! kill -0 -- "-$pid" 2>/dev/null; then
+                  break
+                fi
+                sleep 0.25
+              done
+            fi
+
+            if kill -0 -- "-$pid" 2>/dev/null; then
+              echo "${worker} did not stop after SIGTERM; escalating to SIGKILL." >&2
+              kill -KILL -- "-$pid" 2>/dev/null || true
+              for _ in $(seq 1 20); do
+                if ! kill -0 -- "-$pid" 2>/dev/null; then
+                  break
+                fi
+                sleep 0.25
+              done
+            fi
+
+            # This teardown runs in a later Actions shell, so the leader is no
+            # longer our child and cannot be reliably waited on. Process-group
+            # disappearance is the authoritative shutdown condition instead.
+            if kill -0 -- "-$pid" 2>/dev/null; then
+              echo "::error::${worker} process group ${pid} is still alive; refusing projection cleanup."
+              return 1
+            fi
+            rm -f "$pid_file"
+          }
+
+          status=0
+          stop_worker_group "order relayer" "$RUNNER_TEMP/threadproof-order-relayer.pid" || status=1
+          stop_worker_group "indexer" "$RUNNER_TEMP/threadproof-indexer.pid" || status=1
+          exit "$status"
 
       - name: Cleanup owned hosted fixtures and projection state
         if: always()
         run: node apps/web/scripts/cleanup-browser-chain-e2e.mjs
+
+      - name: Verify owned projection stays clean after writer shutdown
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${THREADPROOF_BROWSER_E2E_PROJECTION_OWNED:-}" != "true" ]; then
+            echo "Projection ownership was never established; skipping stability assertion."
+            exit 0
+          fi
+          sleep 3
+          node apps/web/scripts/check-browser-chain-projection-isolation.mjs
 
       - name: Upload browser-chain diagnostics
         if: always()
