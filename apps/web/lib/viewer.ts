@@ -84,5 +84,7 @@ export async function requireConsortiumViewer() {
 }
 
 export function hasOperationalRole(membership: ViewerMembership) {
-  return membership.active && ["admin", "operator", "signer"].includes(membership.member_role);
+  return membership.active
+    && membership.organization.status === "active"
+    && ["admin", "operator", "signer"].includes(membership.member_role);
 }
