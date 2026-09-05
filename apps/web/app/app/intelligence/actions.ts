@@ -1,7 +1,6 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getBlockchainStatus } from "@/lib/blockchain";
@@ -177,7 +176,6 @@ export async function runOrderIntelligenceAction(formData: FormData) {
     failRedirect(error instanceof Error ? error.message : "Order intelligence failed.");
   }
 
-  revalidatePath("/app/intelligence");
   redirect(`/app/intelligence?run=${runId}&message=${encodeURIComponent("Order intelligence completed. Review the evidence-backed extraction and deterministic pressure signals before using any value in a business workflow.")}`);
 }
 
@@ -323,7 +321,6 @@ export async function runAuditCopilotAction(formData: FormData) {
     failRedirect(error instanceof Error ? error.message : "Evidence Investigator failed.");
   }
 
-  revalidatePath("/app/intelligence");
   redirect(`/app/intelligence?run=${runId}&message=${encodeURIComponent("Evidence Investigator completed. Claims are locked to supplied evidence IDs and verbatim evidence text; critical decisions still require direct contract/proof validation.")}`);
 }
 
@@ -355,7 +352,6 @@ export async function reviewAiFindingAction(formData: FormData) {
   });
   if (reviewError) failRedirect("Unable to update the AI finding review state.");
 
-  revalidatePath("/app/intelligence");
   const query = new URLSearchParams();
   if (parsed.data.runId) query.set("run", parsed.data.runId);
   query.set("message", `AI finding marked ${parsed.data.status}. This review is operational only and does not authorize protocol state.`);
