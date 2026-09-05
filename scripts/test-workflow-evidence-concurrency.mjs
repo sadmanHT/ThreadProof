@@ -12,6 +12,7 @@ const workflows = [
   ".github/workflows/capacity-release-live.yml",
   ".github/workflows/clean-state-endgame.yml",
   ".github/workflows/qbft-fault-resilience.yml",
+  ".github/workflows/browser-chain-e2e.yml",
 ];
 
 const failures = [];
