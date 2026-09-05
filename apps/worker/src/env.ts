@@ -8,6 +8,7 @@ const address = z
 const privateKey = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 const deploymentEnvironment = z.enum(["development", "staging", "production"]).default("development");
 const signerMode = z.enum(["disabled", "remote", "local-dev"]).default("disabled");
+const indexerProjectionMode = z.enum(["persistent", "ephemeral"]).default("persistent");
 
 const commonSchema = z.object({
   SUPABASE_URL: z.string().url(),
@@ -126,7 +127,17 @@ const indexerSchema = commonSchema.extend({
   THREADPROOF_CONFIRMATIONS: z.coerce.bigint().positive().max(256n).default(1n),
   THREADPROOF_INDEXER_START_BLOCK: z.coerce.bigint().nonnegative().default(0n),
   THREADPROOF_INDEXER_BLOCK_BATCH: z.coerce.bigint().positive().max(10_000n).default(1_000n),
-}).superRefine((value, ctx) => validateDeploymentConfig(value, ctx));
+  THREADPROOF_INDEXER_PROJECTION_MODE: indexerProjectionMode,
+}).superRefine((value, ctx) => {
+  validateDeploymentConfig(value, ctx);
+  if (value.THREADPROOF_INDEXER_PROJECTION_MODE === "ephemeral" && value.THREADPROOF_DEPLOYMENT_ENV !== "development") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["THREADPROOF_INDEXER_PROJECTION_MODE"],
+      message: "Ephemeral indexer projection mode is development-only; staging and production must persist canonical cursor and event-journal state.",
+    });
+  }
+});
 
 const orderRelayerSchema = commonSchema.extend({
   THREADPROOF_REGISTRY_ADDRESS: address,
