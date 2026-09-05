@@ -111,6 +111,10 @@ test.describe("authenticated browser-to-chain order authorization", () => {
       version_hash: string;
       order_version_tx_hash: string;
       order_version_block: number;
+      signed_chain_id: number;
+      signed_order_registry_address: string;
+      signed_typed_data_hash: string;
+      validated_buyer_signer: string;
     };
 
     let confirmation: Confirmation | null = null;
@@ -126,7 +130,7 @@ test.describe("authenticated browser-to-chain order authorization", () => {
       const [{ data: job, error: jobError }, { data: version, error: versionError }] = await Promise.all([
         service
           .from("order_authorization_jobs")
-          .select("status,chain_tx_hash,chain_block_number")
+          .select("status,chain_tx_hash,chain_block_number,signed_chain_id,signed_order_registry_address,signed_typed_data_hash,validated_buyer_signer")
           .eq("purchase_order_id", orderId!)
           .eq("target_version", 1)
           .order("created_at", { ascending: false })
@@ -148,6 +152,10 @@ test.describe("authenticated browser-to-chain order authorization", () => {
       if (version.chain_tx_hash.toLowerCase() !== job.chain_tx_hash.toLowerCase()) return "tx-mismatch";
       if (BigInt(version.order_commitment) !== BigInt(order.current_order_commitment)) return "commitment-mismatch";
       if (version.policy_hash.toLowerCase() !== order.current_policy_hash.toLowerCase()) return "policy-mismatch";
+      if (Number(job.signed_chain_id) !== chainId) return "signed-chain-id-mismatch";
+      if (String(job.signed_order_registry_address ?? "").toLowerCase() !== orderRegistryAddress!.toLowerCase()) return "signed-registry-mismatch";
+      if (!/^0x[0-9a-fA-F]{64}$/.test(String(job.signed_typed_data_hash ?? ""))) return "signed-digest-missing";
+      if (String(job.validated_buyer_signer ?? "").toLowerCase() !== buyerAddress.toLowerCase()) return "validated-signer-mismatch";
 
       confirmation = {
         chain_tx_hash: job.chain_tx_hash,
@@ -158,10 +166,14 @@ test.describe("authenticated browser-to-chain order authorization", () => {
         version_hash: version.version_hash,
         order_version_tx_hash: version.chain_tx_hash,
         order_version_block: version.chain_block_number,
+        signed_chain_id: Number(job.signed_chain_id),
+        signed_order_registry_address: String(job.signed_order_registry_address),
+        signed_typed_data_hash: String(job.signed_typed_data_hash),
+        validated_buyer_signer: String(job.validated_buyer_signer),
       };
       return "confirmed";
     }, {
-      message: "OrderRegistry event was not reconciled into the application read model.",
+      message: "OrderRegistry event was not reconciled into the application read model with signed-domain evidence.",
       timeout: 90_000,
       intervals: [1_000, 1_500, 2_000, 3_000],
     }).toBe("confirmed");
@@ -192,7 +204,7 @@ test.describe("authenticated browser-to-chain order authorization", () => {
 
     await mkdir("artifacts", { recursive: true });
     await writeFile("artifacts/browser-chain-order-evidence.json", `${JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       evidenceClass: "disposable-browser-integration",
       productionEvidence: false,
       sourceSha,
@@ -201,6 +213,7 @@ test.describe("authenticated browser-to-chain order authorization", () => {
         organizationId: BUYER_CHAIN_ID,
         signer: buyerAddress,
         activeOnChain: buyerActive,
+        validatedRelayerSigner: canonical.validated_buyer_signer,
       },
       factoryOrganizationId: FACTORY_CHAIN_ID,
       applicationOrderId: orderId,
@@ -209,6 +222,11 @@ test.describe("authenticated browser-to-chain order authorization", () => {
       versionHash: canonical.version_hash,
       orderCommitment: canonical.current_order_commitment,
       policyHash: canonical.current_policy_hash,
+      signedDomain: {
+        chainId: canonical.signed_chain_id,
+        orderRegistryAddress: canonical.signed_order_registry_address,
+        typedDataHash: canonical.signed_typed_data_hash,
+      },
       transactionHash: canonical.chain_tx_hash,
       blockNumber: canonical.chain_block_number,
       applicationReconciled: true,
