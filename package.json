@@ -14,6 +14,7 @@
     "circuits:compile": "pnpm --filter @threadproof/circuits compile",
     "circuits:test": "pnpm --filter @threadproof/circuits test",
     "endgame:scorecard": "node scripts/endgame-scorecard.mjs",
+    "benchmarks:report": "node scripts/competition-benchmark-report.mjs",
     "recovery:verify": "node scripts/production-recovery-verify.mjs",
     "recovery:test": "node scripts/test-production-recovery-evidence.mjs && node scripts/test-production-recovery-source-binding.mjs",
     "evidence:test:capture": "node scripts/test-production-evidence-capture.mjs && pnpm --filter @threadproof/contracts test:production-evidence-capture",

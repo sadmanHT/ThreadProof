@@ -18,7 +18,8 @@
     "test:production-evidence-capture": "node scripts/test-production-evidence-capture-adapter.mjs",
     "test:production-verifier-wrapper": "node scripts/test-production-verifier-wrapper.mjs",
     "generate:production-verifier-wrapper": "node scripts/generate-production-verifier-wrapper.mjs",
-    "benchmark:verifier": "hardhat run scripts/benchmark-generated-verifier.ts"
+    "benchmark:verifier": "hardhat run scripts/benchmark-generated-verifier.ts",
+    "benchmark:concurrency": "hardhat run scripts/benchmark-capacity-concurrency.ts"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0"
