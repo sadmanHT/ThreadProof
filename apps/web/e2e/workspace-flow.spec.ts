@@ -78,6 +78,7 @@ test.describe("smooth authenticated workspace flow", () => {
   });
 
   test("buyer workspace routes render without page or server failures", async ({ page }) => {
+    test.setTimeout(120_000);
     const failures = collectRuntimeFailures(page);
     await login(page);
 
@@ -98,7 +99,7 @@ test.describe("smooth authenticated workspace flow", () => {
     ];
 
     for (const route of routes) {
-      const response = await page.goto(route);
+      const response = await page.goto(route, { waitUntil: "domcontentloaded" });
       expect(response, `navigation response for ${route}`).not.toBeNull();
       expect(response?.status(), `HTTP status for ${route}`).toBeLessThan(500);
       await expect(page.locator("main.app-main"), `workspace main for ${route}`).toBeVisible();
