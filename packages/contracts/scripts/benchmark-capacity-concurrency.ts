@@ -26,6 +26,18 @@ const ORDER_TYPES = {
   ],
 };
 
+async function pendingNonce(address: string): Promise<number> {
+  const raw = await network.provider.send("eth_getTransactionCount", [address, "pending"]);
+  if (typeof raw !== "string" || !/^0x[0-9a-fA-F]+$/.test(raw)) {
+    throw new Error(`Invalid pending nonce response for ${address}: ${String(raw)}`);
+  }
+  const nonce = BigInt(raw);
+  if (nonce > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`Pending nonce exceeds JavaScript safe integer range: ${nonce.toString()}`);
+  }
+  return Number(nonce);
+}
+
 async function main() {
   const provider = new ethers.BrowserProvider(network.provider as never);
   const [admin, buyerSigner, factorySigner, auditorSigner, relayer] = await Promise.all([
@@ -181,7 +193,7 @@ async function main() {
   const independentStarted = performance.now();
   await network.provider.send("evm_setAutomine", [false]);
   try {
-    const firstNonce = await factorySigner.getNonce("pending");
+    const firstNonce = await pendingNonce(factoryAddress);
     const transactions = [];
     for (let index = 0; index < independentSpends.length; index += 1) {
       const spend = independentSpends[index]!;
@@ -236,7 +248,7 @@ async function main() {
   let raceReceipts: Array<Awaited<ReturnType<typeof provider.getTransactionReceipt>>> = [];
   await network.provider.send("evm_setAutomine", [false]);
   try {
-    const firstNonce = await factorySigner.getNonce("pending");
+    const firstNonce = await pendingNonce(factoryAddress);
     const txA = await vault
       .connect(factorySigner)
       .spendCapacity(raceSpendA, ZERO_A, ZERO_B, ZERO_C, {
