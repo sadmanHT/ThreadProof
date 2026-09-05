@@ -1,0 +1,212 @@
+name: ThreadProof Browser-to-Chain
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: threadproof-browser-chain-${{ github.event_name }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  order-authorization:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_SUPABASE_URL: https://mgxthhwzsvlxpsombydb.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LdvioX_0DM6Dwlfwebfc0Q_XiM7VLfs
+      SUPABASE_URL: https://mgxthhwzsvlxpsombydb.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.THREADPROOF_E2E_SUPABASE_SERVICE_ROLE_KEY }}
+      THREADPROOF_E2E_DEMO_PASSWORD: ${{ secrets.THREADPROOF_E2E_DEMO_PASSWORD }}
+      THREADPROOF_BROWSER_CHAIN_E2E: "true"
+      THREADPROOF_BROWSER_E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      THREADPROOF_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      THREADPROOF_CHAIN_ID: "2026"
+      NEXT_PUBLIC_THREADPROOF_CHAIN_ID: "2026"
+      THREADPROOF_DEPLOYMENT_ENV: development
+      THREADPROOF_SIGNER_MODE: local-dev
+      THREADPROOF_DATA_KEY_BASE64: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      THREADPROOF_CONFIRMATIONS: "1"
+      THREADPROOF_INDEXER_START_BLOCK: "0"
+      THREADPROOF_INDEXER_BLOCK_BATCH: "500"
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fail closed when authenticated integration secrets are absent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${THREADPROOF_E2E_DEMO_PASSWORD:-}" || { echo "THREADPROOF_E2E_DEMO_PASSWORD is required."; exit 1; }
+          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}" || { echo "THREADPROOF_E2E_SUPABASE_SERVICE_ROLE_KEY is required for the real worker/indexer path."; exit 1; }
+
+      - name: Derive disposable per-run signer keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE' >> "$GITHUB_ENV"
+          const { createHash } = require("node:crypto");
+          const runId = process.env.THREADPROOF_BROWSER_E2E_RUN_ID;
+          const order = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+          if (!runId) throw new Error("THREADPROOF_BROWSER_E2E_RUN_ID is missing");
+          for (const [role, envName] of [
+            ["buyer", "THREADPROOF_E2E_BUYER_PRIVATE_KEY"],
+            ["factory", "THREADPROOF_E2E_FACTORY_PRIVATE_KEY"],
+            ["auditor", "THREADPROOF_E2E_AUDITOR_PRIVATE_KEY"],
+            ["regulator", "THREADPROOF_E2E_REGULATOR_PRIVATE_KEY"],
+            ["relayer", "THREADPROOF_E2E_RELAYER_PRIVATE_KEY"],
+          ]) {
+            let counter = 0;
+            while (true) {
+              const hex = createHash("sha256").update(`threadproof-browser-e2e:${runId}:${role}:${counter}`).digest("hex");
+              const value = BigInt(`0x${hex}`);
+              if (value > 0n && value < order) {
+                process.stdout.write(`${envName}=0x${hex}\n`);
+                break;
+              }
+              counter += 1;
+            }
+          }
+          NODE
+
+      - name: Generate disposable five-validator QBFT topology
+        run: pnpm pilot:prepare
+
+      - name: Validate disposable Compose graph
+        run: docker compose -f infrastructure/besu/pilot/docker-compose.yml config >/dev/null
+
+      - name: Boot and verify five-validator chain 2026
+        run: pnpm pilot:up
+
+      - name: Deploy browser integration fixture and export runtime addresses
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          . infrastructure/besu/pilot/runtime/pilot.env
+          set +a
+          export THREADPROOF_BROWSER_E2E_OUTPUT_PATH="$GITHUB_WORKSPACE/infrastructure/besu/pilot/runtime/browser-e2e-deployment.json"
+          pnpm --filter @threadproof/contracts deploy:browser-e2e
+
+          deployment="$THREADPROOF_BROWSER_E2E_OUTPUT_PATH"
+          test "$(jq -r '.chainId' "$deployment")" = "2026"
+          test "$(jq -r '.productionEvidence' "$deployment")" = "false"
+          test "$(jq -r '.bootstrapAdminRetired' "$deployment")" = "true"
+
+          {
+            echo "THREADPROOF_RPC_URL=$THREADPROOF_RPC_URL"
+            echo "THREADPROOF_REGISTRY_ADDRESS=$(jq -r '.contracts.ThreadProofRegistry' "$deployment")"
+            echo "THREADPROOF_CREDENTIAL_REGISTRY_ADDRESS=$(jq -r '.contracts.CredentialRegistry' "$deployment")"
+            echo "THREADPROOF_ORDER_REGISTRY_ADDRESS=$(jq -r '.contracts.OrderRegistry' "$deployment")"
+            echo "ORDER_REGISTRY_ADDRESS=$(jq -r '.contracts.OrderRegistry' "$deployment")"
+            echo "THREADPROOF_CAPACITY_VAULT_ADDRESS=$(jq -r '.contracts.CapacityVault' "$deployment")"
+            echo "THREADPROOF_SUBCONTRACT_GOVERNOR_ADDRESS=$(jq -r '.contracts.SubcontractGovernor' "$deployment")"
+            echo "THREADPROOF_CHARTER_ADDRESS=$(jq -r '.contracts.ThreadProofCharter' "$deployment")"
+            echo "THREADPROOF_RELAYER_ADDRESS=$(jq -r '.relayer.account' "$deployment")"
+            echo "THREADPROOF_RELAYER_PRIVATE_KEY=$THREADPROOF_E2E_RELAYER_PRIVATE_KEY"
+          } >> "$GITHUB_ENV"
+
+      - name: Remove stale fixtures for this exact workflow run
+        run: node apps/web/scripts/cleanup-browser-chain-e2e.mjs
+
+      - name: Start real order relayer and indexer
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          pnpm --filter @threadproof/worker relay:orders > artifacts/browser-chain-order-relayer.log 2>&1 &
+          echo $! > "$RUNNER_TEMP/threadproof-order-relayer.pid"
+          pnpm --filter @threadproof/worker index > artifacts/browser-chain-indexer.log 2>&1 &
+          echo $! > "$RUNNER_TEMP/threadproof-indexer.pid"
+
+          timeout 45 bash -c 'until grep -q "Order relayer runtime ready on chain 2026" artifacts/browser-chain-order-relayer.log; do sleep 1; done'
+          timeout 45 bash -c 'until grep -q "Indexer runtime ready on chain 2026" artifacts/browser-chain-indexer.log; do sleep 1; done'
+
+      - name: Install pinned Playwright Chromium
+        run: pnpm --filter @threadproof/web exec playwright install --with-deps chromium
+
+      - name: Drive authenticated buyer authorization to canonical OrderRegistry state
+        run: pnpm --filter @threadproof/web exec playwright test e2e/browser-chain-order.spec.ts
+
+      - name: Verify browser-chain evidence is exact-source attributed
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence=artifacts/browser-chain-order-evidence.json
+          test -f "$evidence"
+          test "$(jq -r '.sourceSha' "$evidence")" = "$THREADPROOF_SOURCE_SHA"
+          test "$(jq -r '.chainId' "$evidence")" = "2026"
+          test "$(jq -r '.productionEvidence' "$evidence")" = "false"
+          test "$(jq -r '.applicationReconciled' "$evidence")" = "true"
+          test "$(jq -r '.browserRenderedCanonicalVersion' "$evidence")" = "true"
+          test "$(jq -r '.transactionHash' "$evidence")" != "null"
+          test "$(jq -r '.blockNumber' "$evidence")" != "null"
+
+      - name: Upload browser-to-chain evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: threadproof-browser-chain-order-${{ github.event.pull_request.head.sha || github.sha }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            artifacts/browser-chain-order-evidence.json
+            infrastructure/besu/pilot/runtime/browser-e2e-deployment.json
+
+      - name: Cleanup namespaced hosted fixtures
+        if: always()
+        run: node apps/web/scripts/cleanup-browser-chain-e2e.mjs
+
+      - name: Stop integration workers
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          for pid_file in "$RUNNER_TEMP/threadproof-order-relayer.pid" "$RUNNER_TEMP/threadproof-indexer.pid"; do
+            if [ -f "$pid_file" ]; then
+              kill "$(cat "$pid_file")" 2>/dev/null || true
+            fi
+          done
+
+      - name: Upload browser-chain diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: threadproof-browser-chain-diagnostics-${{ github.event.pull_request.head.sha || github.sha }}
+          retention-days: 3
+          if-no-files-found: ignore
+          path: |
+            artifacts/browser-chain-order-relayer.log
+            artifacts/browser-chain-indexer.log
+            apps/web/playwright-report/
+
+      - name: Pilot diagnostics
+        if: failure()
+        run: docker compose -f infrastructure/besu/pilot/docker-compose.yml logs --no-color || true
+
+      - name: Destroy disposable pilot network
+        if: always()
+        run: pnpm pilot:reset
