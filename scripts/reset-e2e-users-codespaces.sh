@@ -46,6 +46,52 @@ if ! gh auth status >/dev/null 2>&1; then
   exit 1
 fi
 
+# Codespaces can expose a GitHub App/integration credential that is authenticated
+# but is not allowed to read the Actions public key or write repository secrets.
+# Preflight that exact permission before mutating Supabase so a failed sync cannot
+# strand the four demo users on a generated password that CI never received.
+if ! gh api "/repos/${GITHUB_REPOSITORY}/actions/secrets/public-key" >/dev/null 2>&1; then
+  echo
+  echo "GitHub CLI is authenticated, but this Codespace credential cannot write repository Actions secrets."
+  echo "Automatic secret synchronization is unavailable in this environment."
+  echo
+  echo "We will use manual-safe recovery instead: choose one test-only password now,"
+  echo "apply it to all four Supabase demo users, verify real login, then store that same"
+  echo "value manually as GitHub Actions secret THREADPROOF_E2E_DEMO_PASSWORD."
+  echo
+
+  if [[ -z "${THREADPROOF_E2E_DEMO_PASSWORD:-}" ]]; then
+    read -r -s -p "Choose a test-only E2E password (minimum 16 characters, input hidden): " manual_password
+    echo
+    read -r -s -p "Repeat the same E2E password: " manual_password_confirm
+    echo
+
+    if [[ ${#manual_password} -lt 16 ]]; then
+      echo "The E2E password must be at least 16 characters." >&2
+      exit 1
+    fi
+    if [[ "$manual_password" != "$manual_password_confirm" ]]; then
+      echo "The two E2E password entries did not match; no Supabase users were changed." >&2
+      exit 1
+    fi
+
+    export THREADPROOF_E2E_DEMO_PASSWORD="$manual_password"
+    unset manual_password manual_password_confirm
+  elif [[ ${#THREADPROOF_E2E_DEMO_PASSWORD} -lt 16 ]]; then
+    echo "THREADPROOF_E2E_DEMO_PASSWORD must be at least 16 characters." >&2
+    exit 1
+  fi
+
+  npm run reset:e2e-users
+
+  echo
+  echo "Supabase demo-user recovery succeeded, but GitHub Actions still needs the same password."
+  echo "Open GitHub → sadmanHT/ThreadProof → Settings → Secrets and variables → Actions."
+  echo "Create or update repository secret THREADPROOF_E2E_DEMO_PASSWORD with the exact"
+  echo "test-only password you just entered. The password was not printed or committed."
+  exit 0
+fi
+
 npm run reset:e2e-users:sync
 
 echo
