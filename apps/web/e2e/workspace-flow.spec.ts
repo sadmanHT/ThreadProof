@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
 const demoPassword = process.env.THREADPROOF_E2E_DEMO_PASSWORD;
@@ -6,6 +7,22 @@ const hostedSupabaseConfigured = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY &&
     demoPassword,
 );
+
+function isCanonicalGitHubActionsRun() {
+  if (process.env.GITHUB_ACTIONS !== "true") return false;
+  const canonicalRepository = process.env.GITHUB_REPOSITORY;
+  const eventPath = process.env.GITHUB_EVENT_PATH;
+  if (!canonicalRepository || !eventPath) return true;
+  try {
+    const payload = JSON.parse(readFileSync(eventPath, "utf8")) as {
+      pull_request?: { head?: { repo?: { full_name?: string | null } | null } | null } | null;
+    };
+    const headRepository = payload.pull_request?.head?.repo?.full_name;
+    return !headRepository || headRepository === canonicalRepository;
+  } catch {
+    return true;
+  }
+}
 
 async function login(page: Page, email = "buyer.demo@threadproof.test") {
   await page.goto("/login?next=%2Fapp");
@@ -24,6 +41,14 @@ function collectRuntimeFailures(page: Page) {
   });
   return { pageErrors, serverErrors };
 }
+
+test("canonical CI cannot silently skip authenticated browser journeys", () => {
+  test.skip(!isCanonicalGitHubActionsRun(), "Hosted authenticated E2E is only mandatory on canonical GitHub Actions runs.");
+  expect(
+    hostedSupabaseConfigured,
+    "Set repository secret THREADPROOF_E2E_DEMO_PASSWORD to the shared password for the four hosted *.demo@threadproof.test identities before treating browser integration as green.",
+  ).toBe(true);
+});
 
 test.describe("smooth authenticated workspace flow", () => {
   test.skip(!hostedSupabaseConfigured, "Hosted Supabase E2E credentials are not configured.");
