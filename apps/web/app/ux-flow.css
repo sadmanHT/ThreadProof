@@ -74,8 +74,72 @@
   color: #1d4ed8;
 }
 
+.recovery-page {
+  min-height: min(620px, 72vh);
+  display: grid;
+  place-items: center;
+}
+
+.recovery-card {
+  width: min(680px, 100%);
+  padding: clamp(24px, 4vw, 38px) !important;
+  display: grid;
+  gap: 14px;
+  text-align: left;
+}
+
+.recovery-card h1 {
+  margin: 0;
+  color: #182230;
+  font-size: clamp(1.7rem, 4vw, 2.6rem);
+  line-height: 1.05;
+  letter-spacing: -.045em;
+}
+
+.recovery-card > p {
+  margin: 0;
+  color: #667085;
+  line-height: 1.65;
+}
+
+.recovery-icon {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #dce6f5;
+  border-radius: 13px;
+  background: #eff6ff;
+  color: #2459a9;
+}
+
+.recovery-icon.danger {
+  border-color: #f2d0cd;
+  background: #fff2f0;
+  color: #b42318;
+}
+
+.recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 3px;
+}
+
+.recovery-actions .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
 @media (max-width: 860px) {
   .route-progress { left: 0; }
+}
+
+@media (max-width: 560px) {
+  .recovery-actions { display: grid; grid-template-columns: 1fr; }
+  .recovery-actions .button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
