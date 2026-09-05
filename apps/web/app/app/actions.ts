@@ -94,7 +94,6 @@ export async function updateOrderAction(formData: FormData) {
     ...(parsed.data.requestedDeliveryDate ? { new_requested_delivery_date: parsed.data.requestedDeliveryDate } : {}),
   });
   if (error) redirect(`/app/orders/${orderId.data}?error=${encodeURIComponent(error.message)}`);
-  revalidatePath(`/app/orders/${orderId.data}`);
   revalidatePath("/app/orders");
   redirect(`/app/orders/${orderId.data}?message=Draft+updated.`);
 }
