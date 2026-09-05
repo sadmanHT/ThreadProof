@@ -143,18 +143,14 @@ async function cleanupOwnedProjectionState() {
     }
   }
 
-  if ((events ?? []).length > 0) {
-    const { error } = await supabase.from("chain_events").delete().eq("chain_id", chainId);
-    if (error) throw error;
-  }
-  if (cursor) {
-    const { error } = await supabase
-      .from("chain_indexer_cursors")
-      .delete()
-      .eq("chain_id", chainId)
-      .eq("last_block_number", cursor.last_block_number)
-      .eq("last_block_hash", cursor.last_block_hash);
-    if (error) throw error;
+  const { error: cleanupError } = await supabase.rpc("cleanup_browser_chain_e2e_projection", {
+    target_chain_id: chainId,
+    expected_event_count: (events ?? []).length,
+    expected_cursor_block: cursor?.last_block_number ?? null,
+    expected_cursor_hash: cursor?.last_block_hash ?? null,
+  });
+  if (cleanupError) {
+    throw new Error(`Unable to atomically clean verified browser-chain projection state: ${cleanupError.message}`);
   }
 
   const [{ count: remainingEvents, error: remainingEventsError }, { data: remainingCursor, error: remainingCursorError }] = await Promise.all([
