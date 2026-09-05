@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { createWalletClient, custom } from "viem";
 import {
   prepareOrderAuthorizationAction,
@@ -18,6 +19,7 @@ type Stage = "idle" | "preparing" | "wallet" | "storing" | "signed";
 type InjectedProvider = Parameters<typeof custom>[0];
 
 export function OrderAuthorizationForm({ orderId, nextVersion }: Props) {
+  const router = useRouter();
   const [stage, setStage] = useState<Stage>("idle");
   const [error, setError] = useState<string | null>(null);
   const [signer, setSigner] = useState<string | null>(null);
@@ -65,6 +67,7 @@ export function OrderAuthorizationForm({ orderId, nextVersion }: Props) {
 
       setSigner(stored.signer);
       setStage("signed");
+      router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to authorize this order version.");
       setStage("idle");
@@ -72,6 +75,7 @@ export function OrderAuthorizationForm({ orderId, nextVersion }: Props) {
   }
 
   const busy = stage !== "idle" && stage !== "signed";
+  const locked = busy || stage === "signed";
   const buttonLabel = stage === "preparing"
     ? "Preparing commitment…"
     : stage === "wallet"
@@ -93,31 +97,31 @@ export function OrderAuthorizationForm({ orderId, nextVersion }: Props) {
       <p className="muted">
         Workload and commitment randomness are encrypted before storage. Your wallet signs only the OrderRegistry EIP-712 authorization; the relayer cannot change its buyer, factory, version, commitment, policy, nonce, or deadline.
       </p>
-      {error ? <div className="alert alert-error">{error}</div> : null}
+      {error ? <div className="alert alert-error" role="alert">{error}</div> : null}
       {stage === "signed" ? (
-        <div className="alert alert-success">
-          Signature validated against the on-chain buyer organization and queued for relay{signer ? <> from <span className="mono">{signer}</span></> : null}.
+        <div className="alert alert-success" role="status">
+          Signature validated against the on-chain buyer organization and queued for relay{signer ? <> from <span className="mono">{signer}</span></> : null}. The order timeline is refreshing now.
         </div>
       ) : null}
-      <form className="stack-form" onSubmit={authorize}>
+      <form className="stack-form" onSubmit={authorize} aria-busy={busy || undefined}>
         <div className="field-grid two">
           <label>
             Confidential workload
-            <input name="orderWorkload" inputMode="numeric" pattern="[0-9]+" required placeholder="e.g. 540000" disabled={busy} />
+            <input name="orderWorkload" inputMode="numeric" pattern="[0-9]+" required placeholder="e.g. 540000" disabled={locked} />
           </label>
           <label>
             Consortium policy hash
-            <input name="policyHash" className="mono" required pattern="0x[0-9a-fA-F]{64}" placeholder="0x…" disabled={busy} />
+            <input name="policyHash" className="mono" required pattern="0x[0-9a-fA-F]{64}" placeholder="0x…" disabled={locked} />
           </label>
         </div>
         <div className="field-grid two">
           <label>
             Production period start <span className="optional">optional</span>
-            <input name="productionPeriodStart" type="date" disabled={busy} />
+            <input name="productionPeriodStart" type="date" disabled={locked} />
           </label>
           <label>
             Production period end <span className="optional">optional</span>
-            <input name="productionPeriodEnd" type="date" disabled={busy} />
+            <input name="productionPeriodEnd" type="date" disabled={locked} />
           </label>
         </div>
         <div className="callout">
@@ -125,7 +129,7 @@ export function OrderAuthorizationForm({ orderId, nextVersion }: Props) {
           <span>The server reads the current buyer nonce from Besu, verifies any prior mirrored order version against OrderRegistry, and rejects a wallet that is not currently mapped to the buyer organization.</span>
         </div>
         <div className="form-actions">
-          <button className="button primary" type="submit" disabled={busy || stage === "signed"}>{buttonLabel}</button>
+          <button className="button primary" type="submit" disabled={locked} aria-busy={busy || undefined}>{buttonLabel}</button>
         </div>
       </form>
     </section>
