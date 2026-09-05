@@ -10,6 +10,7 @@ const DEMO_DRAFT_ORDER_ID = "10000000-0000-4000-8000-000000000001";
 const DEMO_CAPACITY_OPENING_ID = "70000000-0000-4000-8000-000000000001";
 const NONEXISTENT_ORDER_VERSION_ID = "00000000-0000-4000-8000-000000000001";
 const NONEXISTENT_CAPACITY_OPENING_ID = "00000000-0000-4000-8000-000000000002";
+const FAKE_SIGNER = `0x${"11".repeat(20)}`;
 
 function client() {
   if (!supabaseUrl || !publishableKey) throw new Error("Hosted Supabase E2E configuration is missing.");
@@ -84,6 +85,23 @@ test.describe("hosted Supabase trust boundaries", () => {
 
       expect(error).not.toBeNull();
       expect(error?.message.toLowerCase()).toContain("permission denied");
+    } finally {
+      await supabase.auth.signOut({ scope: "local" });
+    }
+  });
+
+  test("buyer browser session cannot forge relayer-validated signer evidence", async () => {
+    const supabase = await signedInClient("buyer.demo@threadproof.test");
+    try {
+      for (const table of ["order_authorization_jobs", "order_cancellation_jobs"] as const) {
+        const { error } = await supabase
+          .from(table)
+          .update({ validated_buyer_signer: FAKE_SIGNER })
+          .eq("id", NONEXISTENT_ORDER_VERSION_ID);
+
+        expect(error, `${table} validated signer update must be denied`).not.toBeNull();
+        expect(error?.message.toLowerCase()).toContain("permission denied");
+      }
     } finally {
       await supabase.auth.signOut({ scope: "local" });
     }
