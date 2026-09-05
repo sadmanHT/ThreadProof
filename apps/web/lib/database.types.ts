@@ -182,8 +182,8 @@ export type Database = {
         production_period_start: string | null;
         purchase_order_id: string;
         signed_chain_id: number | null;
-        signed_eip712_digest: string | null;
         signed_order_registry_address: string | null;
+        signed_typed_data_hash: string | null;
         status: string;
         target_version: number;
         updated_at: string;
@@ -207,8 +207,8 @@ export type Database = {
         nonce: string;
         purchase_order_id: string;
         signed_chain_id: number | null;
-        signed_eip712_digest: string | null;
         signed_order_registry_address: string | null;
+        signed_typed_data_hash: string | null;
         status: string;
         updated_at: string;
         validated_buyer_signer: string | null;
