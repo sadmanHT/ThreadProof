@@ -29,6 +29,8 @@ jobs:
           node-version: 22
       - name: Test production release manifest policy
         run: node scripts/test-release-readiness.mjs
+      - name: Test release-bound production ceremony evidence policy
+        run: node scripts/test-release-ceremony-evidence.mjs
       - name: Test production deployment evidence policy
         run: |
           node scripts/test-production-deployment-evidence.mjs
