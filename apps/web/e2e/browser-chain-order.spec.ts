@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { createPublicClient, http, parseAbi, type Address, type Hex } from "viem";
@@ -202,8 +203,9 @@ test.describe("authenticated browser-to-chain order authorization", () => {
     await expect(page.getByRole("heading", { name: "Version 1 anchored" })).toBeVisible();
     await expect(page.locator(`a[href="/app/chain/transactions/${canonical.chain_tx_hash}"]`).first()).toBeVisible();
 
-    await mkdir("artifacts", { recursive: true });
-    await writeFile("artifacts/browser-chain-order-evidence.json", `${JSON.stringify({
+    const artifactDirectory = join(process.env.GITHUB_WORKSPACE ?? process.cwd(), "artifacts");
+    await mkdir(artifactDirectory, { recursive: true });
+    await writeFile(join(artifactDirectory, "browser-chain-order-evidence.json"), `${JSON.stringify({
       schemaVersion: 2,
       evidenceClass: "disposable-browser-integration",
       productionEvidence: false,
