@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { recoverTypedDataAddress, type Hex } from "viem";
+import { hashTypedData, recoverTypedDataAddress, type Hex } from "viem";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { hasOperationalRole, requireConsortiumViewer } from "@/lib/viewer";
@@ -197,6 +197,21 @@ export async function prepareOrderAuthorizationAction(input: unknown): Promise<A
     });
     const deadlineSeconds = Math.floor(Date.now() / 1000) + 15 * 60;
     const deadlineIso = new Date(deadlineSeconds * 1000).toISOString();
+    const preparedForDigest: PreparedOrderAuthorization = {
+      jobId: "pending",
+      orderId: chainOrderId,
+      chainId: actualChainId,
+      orderRegistryAddress: network.orderRegistryAddress,
+      buyerOrganizationId: buyerChainId,
+      factoryOrganizationId: factoryChainId,
+      version: targetVersion,
+      previousVersionHash,
+      orderCommitment: orderCommitment.toString(),
+      policyHash,
+      nonce: nonce.toString(),
+      deadline: deadlineSeconds.toString(),
+    };
+    const signedTypedDataHash = hashTypedData(buildOrderTypedData(preparedForDigest));
 
     const { data: job, error: insertError } = await supabase
       .from("order_authorization_jobs")
@@ -215,6 +230,9 @@ export async function prepareOrderAuthorizationAction(input: unknown): Promise<A
         payload_nonce: encrypted.nonce,
         production_period_start: parsed.productionPeriodStart || null,
         production_period_end: parsed.productionPeriodEnd || null,
+        signed_chain_id: actualChainId,
+        signed_order_registry_address: network.orderRegistryAddress,
+        signed_typed_data_hash: signedTypedDataHash,
         created_by: viewer.userId,
         status: "prepared",
       })
@@ -268,9 +286,20 @@ export async function submitOrderSignatureAction(input: unknown): Promise<Signat
     const network = getOrderNetwork();
     const actualChainId = await network.client.getChainId();
     if (actualChainId !== network.configuredChainId) return { ok: false, error: "Configured Besu chain is unavailable or has the wrong chain ID." };
+    if (
+      Number(job.signed_chain_id) !== actualChainId ||
+      String(job.signed_order_registry_address ?? "").toLowerCase() !== network.orderRegistryAddress.toLowerCase()
+    ) {
+      return { ok: false, error: "Prepared authorization is bound to a different OrderRegistry domain. Prepare a fresh authorization." };
+    }
 
     const authorization = authorizationFromJob(job, actualChainId, network.orderRegistryAddress, buyerChainId, factoryChainId);
-    const signer = await recoverTypedDataAddress({ ...buildOrderTypedData(authorization), signature: parsed.signature as Hex });
+    const typedData = buildOrderTypedData(authorization);
+    const signedTypedDataHash = hashTypedData(typedData);
+    if (String(job.signed_typed_data_hash ?? "").toLowerCase() !== signedTypedDataHash.toLowerCase()) {
+      return { ok: false, error: "Prepared authorization digest no longer matches its signed payload. Prepare a fresh authorization." };
+    }
+    const signer = await recoverTypedDataAddress({ ...typedData, signature: parsed.signature as Hex });
     const [signerOrganizationId, signerActive, currentNonce] = await Promise.all([
       network.client.readContract({
         address: network.organizationRegistryAddress,

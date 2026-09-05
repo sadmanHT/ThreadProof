@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 const SOURCE_EXPR = "github.event.pull_request.head.sha || github.sha";
 const SOURCE_EXPR_LITERAL = "${{ " + SOURCE_EXPR + " }}";
-const workflows = [
+const canonicalWorkflows = [
   ".github/workflows/ci.yml",
   ".github/workflows/endgame-scorecard.yml",
   ".github/workflows/release-policy.yml",
@@ -13,6 +13,7 @@ const workflows = [
   ".github/workflows/clean-state-endgame.yml",
   ".github/workflows/qbft-fault-resilience.yml",
 ];
+const browserChainWorkflowPath = ".github/workflows/browser-chain-e2e.yml";
 
 const failures = [];
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -25,7 +26,31 @@ const exactArtifactNamePattern = new RegExp(
   "g",
 );
 
-for (const workflowPath of workflows) {
+function verifyExactSourceCheckoutAndArtifacts(workflowPath, source) {
+  const checkoutCount = (source.match(/uses:\s*actions\/checkout@v7/g) ?? []).length;
+  const exactCheckoutCount = (source.match(exactRefPattern) ?? []).length;
+  if (checkoutCount === 0) {
+    failures.push(`${workflowPath}: missing checkout action`);
+  } else if (exactCheckoutCount !== checkoutCount) {
+    failures.push(
+      `${workflowPath}: ${exactCheckoutCount}/${checkoutCount} checkout step(s) bind to the exact source SHA`,
+    );
+  }
+
+  const uploadCount = (source.match(/uses:\s*actions\/upload-artifact@v7/g) ?? []).length;
+  const exactArtifactNameCount = (source.match(exactArtifactNamePattern) ?? []).length;
+  if (exactArtifactNameCount !== uploadCount) {
+    failures.push(
+      `${workflowPath}: ${exactArtifactNameCount}/${uploadCount} uploaded artifact name(s) bind to the exact source SHA`,
+    );
+  }
+
+  if (/name:\s*[^\n]*\$\{\{\s*github\.sha\s*\}\}/.test(source)) {
+    failures.push(`${workflowPath}: raw github.sha must not label evidence artifacts on pull requests`);
+  }
+}
+
+for (const workflowPath of canonicalWorkflows) {
   const source = readFileSync(workflowPath, "utf8");
   const concurrency = source.match(/concurrency:\n([\s\S]*?)\n\njobs:/)?.[1] ?? "";
 
@@ -50,27 +75,33 @@ for (const workflowPath of workflows) {
     failures.push(`${workflowPath}: duplicate runs for the same event/SHA should remain cancellable`);
   }
 
-  const checkoutCount = (source.match(/uses:\s*actions\/checkout@v7/g) ?? []).length;
-  const exactCheckoutCount = (source.match(exactRefPattern) ?? []).length;
-  if (checkoutCount === 0) {
-    failures.push(`${workflowPath}: missing checkout action`);
-  } else if (exactCheckoutCount !== checkoutCount) {
-    failures.push(
-      `${workflowPath}: ${exactCheckoutCount}/${checkoutCount} checkout step(s) bind to the exact source SHA`,
-    );
-  }
+  verifyExactSourceCheckoutAndArtifacts(workflowPath, source);
+}
 
-  const uploadCount = (source.match(/uses:\s*actions\/upload-artifact@v7/g) ?? []).length;
-  const exactArtifactNameCount = (source.match(exactArtifactNamePattern) ?? []).length;
-  if (exactArtifactNameCount !== uploadCount) {
-    failures.push(
-      `${workflowPath}: ${exactArtifactNameCount}/${uploadCount} uploaded artifact name(s) bind to the exact source SHA`,
-    );
+const browserSource = readFileSync(browserChainWorkflowPath, "utf8");
+const browserConcurrency = browserSource.match(/concurrency:\n([\s\S]*?)\n\njobs:/)?.[1] ?? "";
+if (!browserConcurrency) {
+  failures.push(`${browserChainWorkflowPath}: missing concurrency block`);
+} else {
+  if (!browserConcurrency.includes("group: threadproof-browser-chain-shared-hosted-projection")) {
+    failures.push(`${browserChainWorkflowPath}: browser-chain runs must serialize on the shared hosted projection group`);
   }
-
-  if (/name:\s*[^\n]*\$\{\{\s*github\.sha\s*\}\}/.test(source)) {
-    failures.push(`${workflowPath}: raw github.sha must not label release evidence artifacts on pull requests`);
+  if (!browserConcurrency.includes("cancel-in-progress: false")) {
+    failures.push(`${browserChainWorkflowPath}: older exact-source browser-chain evidence must finish and clean up instead of being cancelled`);
   }
+  if (browserConcurrency.includes("github.event.pull_request.head.ref") || browserConcurrency.includes("github.ref_name")) {
+    failures.push(`${browserChainWorkflowPath}: branch names must not define browser-chain evidence identity`);
+  }
+}
+verifyExactSourceCheckoutAndArtifacts(browserChainWorkflowPath, browserSource);
+if (!browserSource.includes("check-browser-chain-projection-isolation.mjs")) {
+  failures.push(`${browserChainWorkflowPath}: missing fail-closed hosted projection isolation preflight`);
+}
+if (!browserSource.includes('THREADPROOF_BROWSER_E2E_PROJECTION_OWNED=true')) {
+  failures.push(`${browserChainWorkflowPath}: projection cleanup ownership must be established only after isolation preflight succeeds`);
+}
+if (browserSource.indexOf("Stop integration workers") > browserSource.indexOf("Cleanup owned hosted fixtures and projection state")) {
+  failures.push(`${browserChainWorkflowPath}: workers must stop before hosted projection cleanup to prevent post-cleanup writes`);
 }
 
 const qbftWorkflow = readFileSync(".github/workflows/qbft-fault-resilience.yml", "utf8");
@@ -83,11 +114,11 @@ if (!qbftHarness.includes("process.env.THREADPROOF_SOURCE_COMMIT || process.env.
 }
 
 if (failures.length > 0) {
-  console.error("ThreadProof exact-source workflow evidence regression detected:");
+  console.error("ThreadProof workflow evidence regression detected:");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
 
 console.log(
-  `Verified exact-source checkout, concurrency, artifact naming, and QBFT source attribution for ${workflows.length} canonical evidence workflows.`,
+  `Verified exact-source checkout/artifact attribution for ${canonicalWorkflows.length + 1} evidence workflows, canonical exact-SHA concurrency for ${canonicalWorkflows.length}, serialized non-cancelling browser-chain projection isolation, and QBFT source attribution.`,
 );

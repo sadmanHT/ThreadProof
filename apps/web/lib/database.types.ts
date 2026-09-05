@@ -181,9 +181,13 @@ export type Database = {
         production_period_end: string | null;
         production_period_start: string | null;
         purchase_order_id: string;
+        signed_chain_id: number | null;
+        signed_order_registry_address: string | null;
+        signed_typed_data_hash: string | null;
         status: string;
         target_version: number;
         updated_at: string;
+        validated_buyer_signer: string | null;
         worker_claim_token: string | null;
         worker_claimed_at: string | null;
       }>;
@@ -202,8 +206,12 @@ export type Database = {
         id: string;
         nonce: string;
         purchase_order_id: string;
+        signed_chain_id: number | null;
+        signed_order_registry_address: string | null;
+        signed_typed_data_hash: string | null;
         status: string;
         updated_at: string;
+        validated_buyer_signer: string | null;
         worker_claim_token: string | null;
         worker_claimed_at: string | null;
       }>;
