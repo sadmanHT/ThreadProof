@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   createPublicClient,
+  hashTypedData,
   http,
   recoverTypedDataAddress,
   type Hex,
@@ -18,6 +19,7 @@ import { createServiceClient } from "./supabase.js";
 
 const ZERO_HASH = `0x${"0".repeat(64)}` as Hex;
 const HEX32 = /^0x[0-9a-fA-F]{64}$/;
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const SIGNATURE = /^0x[0-9a-fA-F]{130}$/;
 
 const orderVersionTypes = {
@@ -73,6 +75,50 @@ function orderRegistryDomain(chainId: number, verifyingContract: `0x${string}`) 
     chainId,
     verifyingContract,
   } as const;
+}
+
+function assertSignedDomainBinding(
+  job: Row,
+  chainId: number,
+  orderRegistryAddress: `0x${string}`,
+  recomputedDigest: Hex,
+  label: string,
+) {
+  const signedChainId = Number(job.signed_chain_id);
+  if (!Number.isSafeInteger(signedChainId) || signedChainId !== chainId) {
+    throw new StaleAuthorizationError(`${label} signed chain ID does not match the relayer RPC chain`);
+  }
+
+  const signedRegistry = String(job.signed_order_registry_address ?? "");
+  if (!ADDRESS.test(signedRegistry) || signedRegistry.toLowerCase() !== orderRegistryAddress.toLowerCase()) {
+    throw new StaleAuthorizationError(`${label} signed OrderRegistry address does not match the relayer deployment`);
+  }
+
+  const signedDigest = String(job.signed_typed_data_hash ?? "");
+  if (!HEX32.test(signedDigest) || signedDigest.toLowerCase() !== recomputedDigest.toLowerCase()) {
+    throw new StaleAuthorizationError(`${label} stored EIP-712 digest does not match the reconstructed signed payload`);
+  }
+}
+
+async function persistValidatedSigner(
+  supabase: ServiceClient,
+  table: JobTable,
+  job: Row,
+  token: string,
+  signer: `0x${string}`,
+) {
+  const { data, error } = await supabase
+    .from(table)
+    .update({ validated_buyer_signer: signer, updated_at: new Date().toISOString() })
+    .eq("id", job.id)
+    .eq("status", "submitting")
+    .eq("worker_claim_token", token)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) {
+    throw new WorkerClaimLostError(`${table} job ${job.id} claim was lost before validated signer evidence could be persisted.`);
+  }
 }
 
 async function releaseAbandonedClaims(supabase: ServiceClient, leaseSeconds: number) {
@@ -314,6 +360,7 @@ async function relayAuthorization(supabase: ServiceClient, job: Row, lease: Clai
   const buyerOrganizationId = hex32(buyer.chain_organization_id, "buyer organization id");
   const factoryOrganizationId = hex32(factory.chain_organization_id, "factory organization id");
   const { env, publicClient, chainId } = await publicClientForRelayer();
+  const orderRegistryAddress = env.THREADPROOF_ORDER_REGISTRY_ADDRESS as `0x${string}`;
   const deadline = BigInt(Math.floor(new Date(job.deadline).getTime() / 1000));
   const authorization = {
     orderId,
@@ -326,13 +373,18 @@ async function relayAuthorization(supabase: ServiceClient, job: Row, lease: Clai
     nonce: BigInt(job.nonce),
     deadline,
   } as const;
+  const typedData = {
+    domain: orderRegistryDomain(chainId, orderRegistryAddress),
+    types: orderVersionTypes,
+    primaryType: "OrderVersion" as const,
+    message: authorization,
+  };
+  const signedTypedDataHash = hashTypedData(typedData);
+  assertSignedDomainBinding(job, chainId, orderRegistryAddress, signedTypedDataHash, "Authorization");
 
   const signature = job.buyer_signature as Hex;
   const signer = await recoverTypedDataAddress({
-    domain: orderRegistryDomain(chainId, env.THREADPROOF_ORDER_REGISTRY_ADDRESS as `0x${string}`),
-    types: orderVersionTypes,
-    primaryType: "OrderVersion",
-    message: authorization,
+    ...typedData,
     signature,
   });
 
@@ -350,7 +402,7 @@ async function relayAuthorization(supabase: ServiceClient, job: Row, lease: Clai
       args: [signer],
     }),
     publicClient.readContract({
-      address: env.THREADPROOF_ORDER_REGISTRY_ADDRESS as `0x${string}`,
+      address: orderRegistryAddress,
       abi: orderRegistryAbi,
       functionName: "nonces",
       args: [buyerOrganizationId],
@@ -366,7 +418,7 @@ async function relayAuthorization(supabase: ServiceClient, job: Row, lease: Clai
 
   if (authorization.version > 1) {
     const current = await publicClient.readContract({
-      address: env.THREADPROOF_ORDER_REGISTRY_ADDRESS as `0x${string}`,
+      address: orderRegistryAddress,
       abi: orderRegistryAbi,
       functionName: "getOrder",
       args: [orderId],
@@ -384,9 +436,11 @@ async function relayAuthorization(supabase: ServiceClient, job: Row, lease: Clai
   }
 
   await lease.renewNow();
+  await persistValidatedSigner(supabase, "order_authorization_jobs", job, token, signer);
+  await lease.renewNow();
   const { account, wallet } = await createRelayerWallet(env, chainId);
   const { request } = await publicClient.simulateContract({
-    address: env.THREADPROOF_ORDER_REGISTRY_ADDRESS as `0x${string}`,
+    address: orderRegistryAddress,
     abi: orderRegistryAbi,
     functionName: "submitOrderVersion",
     args: [authorization, signature],
@@ -418,6 +472,7 @@ async function relayCancellation(supabase: ServiceClient, job: Row, lease: Claim
 
   const buyerOrganizationId = hex32(buyer.chain_organization_id, "buyer organization id");
   const { env, publicClient, chainId } = await publicClientForRelayer();
+  const orderRegistryAddress = env.THREADPROOF_ORDER_REGISTRY_ADDRESS as `0x${string}`;
   const authorization = {
     orderId,
     buyerOrganizationId,
@@ -425,12 +480,18 @@ async function relayCancellation(supabase: ServiceClient, job: Row, lease: Claim
     nonce: BigInt(job.nonce),
     deadline: BigInt(Math.floor(new Date(job.deadline).getTime() / 1000)),
   } as const;
+  const typedData = {
+    domain: orderRegistryDomain(chainId, orderRegistryAddress),
+    types: cancelOrderTypes,
+    primaryType: "CancelOrder" as const,
+    message: authorization,
+  };
+  const signedTypedDataHash = hashTypedData(typedData);
+  assertSignedDomainBinding(job, chainId, orderRegistryAddress, signedTypedDataHash, "Cancellation");
+
   const signature = job.buyer_signature as Hex;
   const signer = await recoverTypedDataAddress({
-    domain: orderRegistryDomain(chainId, env.THREADPROOF_ORDER_REGISTRY_ADDRESS as `0x${string}`),
-    types: cancelOrderTypes,
-    primaryType: "CancelOrder",
-    message: authorization,
+    ...typedData,
     signature,
   });
 
@@ -448,13 +509,13 @@ async function relayCancellation(supabase: ServiceClient, job: Row, lease: Claim
       args: [signer],
     }),
     publicClient.readContract({
-      address: env.THREADPROOF_ORDER_REGISTRY_ADDRESS as `0x${string}`,
+      address: orderRegistryAddress,
       abi: orderRegistryAbi,
       functionName: "nonces",
       args: [buyerOrganizationId],
     }),
     publicClient.readContract({
-      address: env.THREADPROOF_ORDER_REGISTRY_ADDRESS as `0x${string}`,
+      address: orderRegistryAddress,
       abi: orderRegistryAbi,
       functionName: "getOrder",
       args: [orderId],
@@ -476,9 +537,11 @@ async function relayCancellation(supabase: ServiceClient, job: Row, lease: Claim
   }
 
   await lease.renewNow();
+  await persistValidatedSigner(supabase, "order_cancellation_jobs", job, token, signer);
+  await lease.renewNow();
   const { account, wallet } = await createRelayerWallet(env, chainId);
   const { request } = await publicClient.simulateContract({
-    address: env.THREADPROOF_ORDER_REGISTRY_ADDRESS as `0x${string}`,
+    address: orderRegistryAddress,
     abi: orderRegistryAbi,
     functionName: "cancelOrder",
     args: [authorization, signature],
